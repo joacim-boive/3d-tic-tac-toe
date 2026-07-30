@@ -11,7 +11,12 @@ import type { AiDifficulty, BoardDims, CellCoord, PlayerId } from "./types";
 import { cellCount, winLength } from "./types";
 
 const EASY_RANDOM_RATE = 0.7;
+/** Depth for boards larger than 3×3×3. */
 const HARD_SHALLOW_DEPTH = 3;
+/** Cap for 3×3×3 — full endgame search freezes Mobile Safari (main-thread watchdog). */
+const HARD_DEEP_DEPTH = 5;
+/** Soft wall-clock budget; iterative deepening stops when exceeded. */
+const HARD_BUDGET_MS = 80;
 const WIN_SCORE = 1_000_000;
 
 function opponentOf(player: PlayerId): PlayerId {
@@ -117,7 +122,7 @@ function evaluate(board: Board, dims: BoardDims, aiPlayer: PlayerId): number {
   return score;
 }
 
-type SearchResult = { score: number; move: CellCoord | null };
+type SearchResult = { score: number; move: CellCoord | null; aborted: boolean };
 
 function minimax(
   board: Board,
@@ -128,15 +133,19 @@ function minimax(
   occupiedCount: number,
   alpha: number,
   beta: number,
-  useHeuristic: boolean,
+  deadline: number,
 ): SearchResult {
-  const empties = orderEmpties(listEmptyCells(board, dims), dims);
-  if (empties.length === 0 || isDraw(occupiedCount, dims)) {
-    return { score: 0, move: null };
+  if (performance.now() >= deadline) {
+    return { score: 0, move: null, aborted: true };
   }
 
-  if (depthLeft === 0 && useHeuristic) {
-    return { score: evaluate(board, dims, aiPlayer), move: null };
+  const empties = orderEmpties(listEmptyCells(board, dims), dims);
+  if (empties.length === 0 || isDraw(occupiedCount, dims)) {
+    return { score: 0, move: null, aborted: false };
+  }
+
+  if (depthLeft === 0) {
+    return { score: evaluate(board, dims, aiPlayer), move: null, aborted: false };
   }
 
   const maximizing = toMove === aiPlayer;
@@ -148,16 +157,15 @@ function minimax(
     board.set(key, toMove);
     const win = checkWin(board, dims, cell, toMove);
 
-    let score: number;
+    let child: SearchResult;
     if (win) {
       // Prefer faster wins / slower losses.
-      score = toMove === aiPlayer ? WIN_SCORE + depthLeft : -WIN_SCORE - depthLeft;
+      const score = toMove === aiPlayer ? WIN_SCORE + depthLeft : -WIN_SCORE - depthLeft;
+      child = { score, move: null, aborted: false };
     } else if (isDraw(occupiedCount + 1, dims)) {
-      score = 0;
-    } else if (depthLeft === 0) {
-      score = useHeuristic ? evaluate(board, dims, aiPlayer) : 0;
+      child = { score: 0, move: null, aborted: false };
     } else {
-      score = minimax(
+      child = minimax(
         board,
         dims,
         aiPlayer,
@@ -166,12 +174,15 @@ function minimax(
         occupiedCount + 1,
         alpha,
         beta,
-        useHeuristic,
-      ).score;
+        deadline,
+      );
     }
 
     board.delete(key);
 
+    if (child.aborted) return { score: bestScore, move: bestMove, aborted: true };
+
+    const score = child.score;
     if (maximizing) {
       if (score > bestScore) {
         bestScore = score;
@@ -188,7 +199,7 @@ function minimax(
     if (beta <= alpha) break;
   }
 
-  return { score: bestScore, move: bestMove };
+  return { score: bestScore, move: bestMove, aborted: false };
 }
 
 function hardMove(
@@ -202,21 +213,31 @@ function hardMove(
   if (tactical) return tactical;
 
   const total = cellCount(dims);
-  const fullSearch = total <= 27;
-  const depth = fullSearch ? total - occupiedCount : HARD_SHALLOW_DEPTH;
-
-  const result = minimax(
-    board,
-    dims,
-    aiPlayer,
-    aiPlayer,
-    depth,
-    occupiedCount,
-    -Infinity,
-    Infinity,
-    !fullSearch,
+  // ponytail: full endgame α-β on 3×3×3 hangs Safari; deepen within a budget instead.
+  const maxDepth = Math.min(
+    total <= 27 ? HARD_DEEP_DEPTH : HARD_SHALLOW_DEPTH,
+    total - occupiedCount,
   );
-  return result.move ?? pickRandom(empties);
+  const deadline = performance.now() + HARD_BUDGET_MS;
+
+  let best = pickRandom(empties);
+  for (let depth = 1; depth <= maxDepth; depth++) {
+    if (performance.now() >= deadline) break;
+    const result = minimax(
+      board,
+      dims,
+      aiPlayer,
+      aiPlayer,
+      depth,
+      occupiedCount,
+      -Infinity,
+      Infinity,
+      deadline,
+    );
+    if (result.aborted) break;
+    if (result.move) best = result.move;
+  }
+  return best;
 }
 
 function mediumMove(

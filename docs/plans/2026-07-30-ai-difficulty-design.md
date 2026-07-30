@@ -13,7 +13,7 @@ Replace the random vs-AI opponent with Easy / Medium / Hard levels that run enti
 - **HUD:** Keep “vs AI”; no difficulty subtitle (YAGNI).
 - **Runtime:** Browser only. No workers, no server, no new deps. Keep ~400ms AI delay.
 - **Hard strategy is adaptive by board size:**
-  - **3×3×3:** α-β minimax to endgame (near-perfect).
+  - **3×3×3:** iterative-deepening α-β (depth ≤ 5, ~80ms budget) — near-perfect without freezing Mobile Safari.
   - **4×4×3 / 5×5×3:** win/block + shallow depth-2/3 search with a simple line-score heuristic.
 
 ## Behavior ladder
