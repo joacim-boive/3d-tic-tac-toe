@@ -14,6 +14,8 @@ type SelectionCursorProps = {
 };
 
 const DRAG_PX = 10;
+/** Wait for a second finger before treating touch as aim (orbit/pinch start). */
+const MULTI_WAIT_MS = 120;
 
 function isTouchPointer(type: string): boolean {
   return type === "touch" || type === "pen";
@@ -45,10 +47,14 @@ export function SelectionCursor({ dims, spacing = 1 }: SelectionCursorProps) {
     active: false,
     moved: false,
     touchAim: false,
+    /** True once this gesture saw 2+ pointers — never aim/place until all up. */
+    multi: false,
     x: 0,
     y: 0,
   });
   const pointersRef = useRef(new Set<number>());
+  const aimDelayRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pendingAimRef = useRef({ x: 0, y: 0 });
 
   const cellSize = spacing * 0.96;
   const edges = useMemo(() => {
@@ -105,56 +111,102 @@ export function SelectionCursor({ dims, spacing = 1 }: SelectionCursorProps) {
       if (cell) setCursor(cell);
     };
 
+    const clearAimDelay = () => {
+      if (aimDelayRef.current === null) return;
+      clearTimeout(aimDelayRef.current);
+      aimDelayRef.current = null;
+    };
+
+    const beginTouchAim = () => {
+      if (dragRef.current.multi || pointersRef.current.size !== 1) return;
+      dragRef.current.touchAim = true;
+      setTouchAiming(true);
+      aimAt(pendingAimRef.current.x, pendingAimRef.current.y);
+    };
+
     const onDown = (e: PointerEvent) => {
       pointersRef.current.add(e.pointerId);
       const touch = isTouchPointer(e.pointerType);
-      const multi = pointersRef.current.size > 1;
+      const count = pointersRef.current.size;
 
-      dragRef.current = {
-        active: true,
-        moved: false,
-        touchAim: touch && !multi,
-        x: e.clientX,
-        y: e.clientY,
-      };
-
-      if (touch && multi) {
+      if (count > 1) {
+        // Second finger arrived — this is orbit/pinch, not aim.
+        clearAimDelay();
+        dragRef.current.multi = true;
         dragRef.current.touchAim = false;
+        dragRef.current.moved = true;
         setTouchAiming(false);
         return;
       }
 
-      if (touch) {
-        setTouchAiming(true);
-        aimAt(e.clientX, e.clientY);
-      }
+      dragRef.current = {
+        active: true,
+        moved: false,
+        touchAim: false,
+        multi: false,
+        x: e.clientX,
+        y: e.clientY,
+      };
+      pendingAimRef.current = { x: e.clientX, y: e.clientY };
+
+      if (!touch) return;
+
+      // Defer aim so a quick second finger can claim the gesture as orbit.
+      clearAimDelay();
+      aimDelayRef.current = setTimeout(() => {
+        aimDelayRef.current = null;
+        beginTouchAim();
+      }, MULTI_WAIT_MS);
     };
 
     const onMove = (e: PointerEvent) => {
       if (!dragRef.current.active) return;
+      pendingAimRef.current = { x: e.clientX, y: e.clientY };
+
       const dx = e.clientX - dragRef.current.x;
       const dy = e.clientY - dragRef.current.y;
-      if (dx * dx + dy * dy > DRAG_PX * DRAG_PX) dragRef.current.moved = true;
+      const pastDrag = dx * dx + dy * dy > DRAG_PX * DRAG_PX;
+      if (pastDrag) dragRef.current.moved = true;
 
-      if (dragRef.current.touchAim && pointersRef.current.size === 1) {
+      // One-finger drag past threshold → commit to aim early (won't become orbit).
+      if (
+        pastDrag &&
+        aimDelayRef.current !== null &&
+        pointersRef.current.size === 1 &&
+        !dragRef.current.multi
+      ) {
+        clearAimDelay();
+        beginTouchAim();
+      }
+
+      if (dragRef.current.touchAim && pointersRef.current.size === 1 && !dragRef.current.multi) {
         aimAt(e.clientX, e.clientY);
       }
     };
 
     const onUp = (e: PointerEvent) => {
-      const { active, moved, touchAim } = dragRef.current;
+      const { active, moved, touchAim, multi } = dragRef.current;
+      const touch = isTouchPointer(e.pointerType);
       pointersRef.current.delete(e.pointerId);
 
       if (pointersRef.current.size === 0) {
+        // Quick tap lifted before MULTI_WAIT_MS — still aim, never place.
+        const pendingAim = aimDelayRef.current !== null;
+        clearAimDelay();
+        if (touch && active && !multi && !touchAim && pendingAim) {
+          aimAt(pendingAimRef.current.x, pendingAimRef.current.y);
+        }
         dragRef.current.active = false;
         dragRef.current.touchAim = false;
+        dragRef.current.multi = false;
         setTouchAiming(false);
       }
 
       // Touch never auto-places — Place button commits after preview.
-      if (!active || moved || touchAim) return;
+      // Multi-touch orbit must not place even if pointerType is misreported.
+      if (!active || moved || touchAim || multi) return;
       if (status !== "playing") return;
-      if (!isTouchPointer(e.pointerType)) placeAtCursor();
+      if (!touch) placeAtCursor();
     };
 
     el.addEventListener("pointerdown", onDown);
@@ -162,6 +214,7 @@ export function SelectionCursor({ dims, spacing = 1 }: SelectionCursorProps) {
     el.addEventListener("pointerup", onUp);
     el.addEventListener("pointercancel", onUp);
     return () => {
+      clearAimDelay();
       el.removeEventListener("pointerdown", onDown);
       el.removeEventListener("pointermove", onMove);
       el.removeEventListener("pointerup", onUp);
