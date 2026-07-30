@@ -143,6 +143,10 @@ button {
   gap: 0.55rem;
 }
 
+.setup__modes--three {
+  grid-template-columns: 1fr 1fr 1fr;
+}
+
 .mode-chip {
   padding: 0.85rem 1rem;
   border-radius: 999px;

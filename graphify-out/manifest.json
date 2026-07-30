@@ -1,0 +1,122 @@
+{
+  "/Users/joacim.boive/Repos/3d-tic-tac-toe/.oxfmtrc.json": {
+    "mtime": 1785413316.418468,
+    "ast_hash": "7d4fd8d4e976676aa171e7f52ef168b0",
+    "semantic_hash": "7d4fd8d4e976676aa171e7f52ef168b0"
+  },
+  "/Users/joacim.boive/Repos/3d-tic-tac-toe/.oxlintrc.json": {
+    "mtime": 1785413330.5998666,
+    "ast_hash": "effa53a4995501583ef726a6980c75fa",
+    "semantic_hash": "effa53a4995501583ef726a6980c75fa"
+  },
+  "/Users/joacim.boive/Repos/3d-tic-tac-toe/next.config.ts": {
+    "mtime": 1785413317.9491973,
+    "ast_hash": "51b2f239419eb3b6fa868a41778767e9",
+    "semantic_hash": "51b2f239419eb3b6fa868a41778767e9"
+  },
+  "/Users/joacim.boive/Repos/3d-tic-tac-toe/package.json": {
+    "mtime": 1785417583.0807116,
+    "ast_hash": "7db093eaf6549f156ffa4daa349fecb8",
+    "semantic_hash": "7db093eaf6549f156ffa4daa349fecb8"
+  },
+  "/Users/joacim.boive/Repos/3d-tic-tac-toe/src/app/layout.tsx": {
+    "mtime": 1785413340.1471355,
+    "ast_hash": "ed561dce732ea3f40175c34b4c5e8651",
+    "semantic_hash": "ed561dce732ea3f40175c34b4c5e8651"
+  },
+  "/Users/joacim.boive/Repos/3d-tic-tac-toe/src/app/page.tsx": {
+    "mtime": 1785414353.3465679,
+    "ast_hash": "5224593572875938b5107c0e8ce2973d",
+    "semantic_hash": "5224593572875938b5107c0e8ce2973d"
+  },
+  "/Users/joacim.boive/Repos/3d-tic-tac-toe/src/css-modules.d.ts": {
+    "mtime": 1785413371.246356,
+    "ast_hash": "fb8214c6467938c43691a41c63101314",
+    "semantic_hash": "fb8214c6467938c43691a41c63101314"
+  },
+  "/Users/joacim.boive/Repos/3d-tic-tac-toe/src/game/board.ts": {
+    "mtime": 1785413780.384817,
+    "ast_hash": "3555c12d66ff27a9d65647a39f6b4d0e",
+    "semantic_hash": "3555c12d66ff27a9d65647a39f6b4d0e"
+  },
+  "/Users/joacim.boive/Repos/3d-tic-tac-toe/src/game/presets.ts": {
+    "mtime": 1785413780.0263762,
+    "ast_hash": "e53c73de907714e875a003c8d4d76d3b",
+    "semantic_hash": "e53c73de907714e875a003c8d4d76d3b"
+  },
+  "/Users/joacim.boive/Repos/3d-tic-tac-toe/src/game/store.ts": {
+    "mtime": 1785414278.2669983,
+    "ast_hash": "739793d430bfc331ee314c34727bbbbc",
+    "semantic_hash": "739793d430bfc331ee314c34727bbbbc"
+  },
+  "/Users/joacim.boive/Repos/3d-tic-tac-toe/src/game/types.ts": {
+    "mtime": 1785414273.7925105,
+    "ast_hash": "45c9c9d429f323817ebae8eb3e445d59",
+    "semantic_hash": "45c9c9d429f323817ebae8eb3e445d59"
+  },
+  "/Users/joacim.boive/Repos/3d-tic-tac-toe/src/game/winCheck.selftest.ts": {
+    "mtime": 1785413807.1583493,
+    "ast_hash": "be07f8513c29401afccab436318764a3",
+    "semantic_hash": "be07f8513c29401afccab436318764a3"
+  },
+  "/Users/joacim.boive/Repos/3d-tic-tac-toe/src/scene/GameCanvas.tsx": {
+    "mtime": 1785418702.4636364,
+    "ast_hash": "cff36f1f61b28969009b6cf6cdc3f8a6",
+    "semantic_hash": "cff36f1f61b28969009b6cf6cdc3f8a6"
+  },
+  "/Users/joacim.boive/Repos/3d-tic-tac-toe/src/scene/Grid.tsx": {
+    "mtime": 1785414294.2552743,
+    "ast_hash": "534b58b7f8c99ff763ed1c0b5b766567",
+    "semantic_hash": "534b58b7f8c99ff763ed1c0b5b766567"
+  },
+  "/Users/joacim.boive/Repos/3d-tic-tac-toe/src/scene/Markers.tsx": {
+    "mtime": 1785416094.8933678,
+    "ast_hash": "27bd7024ad15b192d760080f12e0a667",
+    "semantic_hash": "27bd7024ad15b192d760080f12e0a667"
+  },
+  "/Users/joacim.boive/Repos/3d-tic-tac-toe/src/scene/SelectionCursor.tsx": {
+    "mtime": 1785418677.5797021,
+    "ast_hash": "e2332fb58d848811a1689fa59c46ba51",
+    "semantic_hash": "e2332fb58d848811a1689fa59c46ba51"
+  },
+  "/Users/joacim.boive/Repos/3d-tic-tac-toe/src/scene/pickCellAlongRay.selftest.ts": {
+    "mtime": 1785417619.8535976,
+    "ast_hash": "cc7385cc4ee3994d50842b04685d6ffc",
+    "semantic_hash": "cc7385cc4ee3994d50842b04685d6ffc"
+  },
+  "/Users/joacim.boive/Repos/3d-tic-tac-toe/src/scene/pickCellAlongRay.ts": {
+    "mtime": 1785417525.1634831,
+    "ast_hash": "6c415d01253ec36f535572c7d27cc651",
+    "semantic_hash": "6c415d01253ec36f535572c7d27cc651"
+  },
+  "/Users/joacim.boive/Repos/3d-tic-tac-toe/src/ui/GameChrome.tsx": {
+    "mtime": 1785418702.0734448,
+    "ast_hash": "fec876684f476e7ad864be445de59a7e",
+    "semantic_hash": "fec876684f476e7ad864be445de59a7e"
+  },
+  "/Users/joacim.boive/Repos/3d-tic-tac-toe/src/ui/SetupScreen.tsx": {
+    "mtime": 1785413330.602816,
+    "ast_hash": "1f43ba1b2056612f15ce9bdb620b0f2b",
+    "semantic_hash": "1f43ba1b2056612f15ce9bdb620b0f2b"
+  },
+  "/Users/joacim.boive/Repos/3d-tic-tac-toe/src/ui/useGameControls.ts": {
+    "mtime": 1785414335.4174652,
+    "ast_hash": "a4f07dbec03a68ca068cf57e17c96542",
+    "semantic_hash": "a4f07dbec03a68ca068cf57e17c96542"
+  },
+  "/Users/joacim.boive/Repos/3d-tic-tac-toe/tsconfig.json": {
+    "mtime": 1785412500.7112908,
+    "ast_hash": "0571b7572750de64278b413e513f8022",
+    "semantic_hash": "0571b7572750de64278b413e513f8022"
+  },
+  "/Users/joacim.boive/Repos/3d-tic-tac-toe/README.md": {
+    "mtime": 1785417566.7773502,
+    "ast_hash": "c9954ff0cc38ea66ebfb9189e0060e82",
+    "semantic_hash": "c9954ff0cc38ea66ebfb9189e0060e82"
+  },
+  "/Users/joacim.boive/Repos/3d-tic-tac-toe/docs/plans/2026-07-30-3d-tic-tac-toe-mvp-design.md": {
+    "mtime": 1785413330.8173742,
+    "ast_hash": "fd2bc30e42f7cbd4532bcf2bd37289a0",
+    "semantic_hash": "fd2bc30e42f7cbd4532bcf2bd37289a0"
+  }
+}

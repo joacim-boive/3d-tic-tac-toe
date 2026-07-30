@@ -117,13 +117,16 @@ export function GameChrome({ children }: GameChromeProps) {
           {touchUi ? (
             <>
               <li>
-                <kbd>drag</kbd> orbit
+                <kbd>drag</kbd> aim
+              </li>
+              <li>
+                <kbd>2 fingers</kbd> orbit
               </li>
               <li>
                 <kbd>pinch</kbd> zoom
               </li>
               <li>
-                <kbd>tap</kbd> place
+                <kbd>Place</kbd> commit
               </li>
             </>
           ) : (

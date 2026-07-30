@@ -1,7 +1,7 @@
 "use client";
 
 import { useFrame, useThree } from "@react-three/fiber";
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { BoxGeometry, EdgesGeometry, Raycaster, Vector2, Vector3 } from "three";
 import { cellKey, cellToWorld } from "@/game/board";
 import { useGameStore } from "@/game/store";
@@ -15,10 +15,14 @@ type SelectionCursorProps = {
 
 const DRAG_PX = 10;
 
+function isTouchPointer(type: string): boolean {
+  return type === "touch" || type === "pen";
+}
+
 /**
  * Always-visible aim cursor.
- * Desktop: hold Shift + move to aim (orbit paused); click / Space places.
- * Touch: tap a cell to place there; drag orbits, pinch zooms.
+ * Desktop: Shift + move aims (orbit paused); click / Space places.
+ * Touch: one-finger drag aims (preview); two-finger orbits / pinches; Place commits.
  */
 export function SelectionCursor({ dims, spacing = 1 }: SelectionCursorProps) {
   const { camera, gl } = useThree();
@@ -29,7 +33,9 @@ export function SelectionCursor({ dims, spacing = 1 }: SelectionCursorProps) {
   const board = useGameStore((s) => s.board);
   const setCursor = useGameStore((s) => s.setCursor);
   const placeAtCursor = useGameStore((s) => s.placeAtCursor);
-  const place = useGameStore((s) => s.place);
+
+  const [touchAiming, setTouchAiming] = useState(false);
+  const showAim = aiming || touchAiming;
 
   const raycaster = useMemo(() => new Raycaster(), []);
   const ndc = useMemo(() => new Vector2(), []);
@@ -38,10 +44,9 @@ export function SelectionCursor({ dims, spacing = 1 }: SelectionCursorProps) {
   const dragRef = useRef({
     active: false,
     moved: false,
-    multi: false,
+    touchAim: false,
     x: 0,
     y: 0,
-    pointerType: "mouse",
   });
   const pointersRef = useRef(new Set<number>());
 
@@ -53,6 +58,7 @@ export function SelectionCursor({ dims, spacing = 1 }: SelectionCursorProps) {
     return geo;
   }, [cellSize]);
 
+  // Desktop Shift-aim: follow pointer each frame (orbit paused via store.aiming).
   useFrame((state) => {
     if (!aiming || status !== "playing") return;
 
@@ -93,17 +99,35 @@ export function SelectionCursor({ dims, spacing = 1 }: SelectionCursorProps) {
       });
     };
 
+    const aimAt = (clientX: number, clientY: number) => {
+      if (status !== "playing") return;
+      const cell = clientToCell(clientX, clientY);
+      if (cell) setCursor(cell);
+    };
+
     const onDown = (e: PointerEvent) => {
       pointersRef.current.add(e.pointerId);
+      const touch = isTouchPointer(e.pointerType);
       const multi = pointersRef.current.size > 1;
+
       dragRef.current = {
         active: true,
         moved: false,
-        multi: dragRef.current.multi || multi,
+        touchAim: touch && !multi,
         x: e.clientX,
         y: e.clientY,
-        pointerType: e.pointerType,
       };
+
+      if (touch && multi) {
+        dragRef.current.touchAim = false;
+        setTouchAiming(false);
+        return;
+      }
+
+      if (touch) {
+        setTouchAiming(true);
+        aimAt(e.clientX, e.clientY);
+      }
     };
 
     const onMove = (e: PointerEvent) => {
@@ -111,25 +135,26 @@ export function SelectionCursor({ dims, spacing = 1 }: SelectionCursorProps) {
       const dx = e.clientX - dragRef.current.x;
       const dy = e.clientY - dragRef.current.y;
       if (dx * dx + dy * dy > DRAG_PX * DRAG_PX) dragRef.current.moved = true;
+
+      if (dragRef.current.touchAim && pointersRef.current.size === 1) {
+        aimAt(e.clientX, e.clientY);
+      }
     };
 
     const onUp = (e: PointerEvent) => {
-      const { active, moved, multi, pointerType, x, y } = dragRef.current;
+      const { active, moved, touchAim } = dragRef.current;
       pointersRef.current.delete(e.pointerId);
+
       if (pointersRef.current.size === 0) {
         dragRef.current.active = false;
-        dragRef.current.multi = false;
+        dragRef.current.touchAim = false;
+        setTouchAiming(false);
       }
-      if (!active || moved || multi) return;
-      if (status !== "playing") return;
 
-      const isTouch = pointerType === "touch" || pointerType === "pen";
-      if (isTouch) {
-        const cell = clientToCell(x, y);
-        if (cell) place(cell);
-        return;
-      }
-      placeAtCursor();
+      // Touch never auto-places — Place button commits after preview.
+      if (!active || moved || touchAim) return;
+      if (status !== "playing") return;
+      if (!isTouchPointer(e.pointerType)) placeAtCursor();
     };
 
     el.addEventListener("pointerdown", onDown);
@@ -142,7 +167,19 @@ export function SelectionCursor({ dims, spacing = 1 }: SelectionCursorProps) {
       el.removeEventListener("pointerup", onUp);
       el.removeEventListener("pointercancel", onUp);
     };
-  }, [gl, camera, dims, spacing, place, placeAtCursor, status, raycaster, ndc, point, center]);
+  }, [
+    gl,
+    camera,
+    dims,
+    spacing,
+    placeAtCursor,
+    setCursor,
+    status,
+    raycaster,
+    ndc,
+    point,
+    center,
+  ]);
 
   if (status !== "playing") return null;
 
@@ -169,9 +206,9 @@ export function SelectionCursor({ dims, spacing = 1 }: SelectionCursorProps) {
         <meshStandardMaterial
           color={color}
           transparent
-          opacity={occupied ? 0.2 : aiming ? 0.85 : 0.55}
+          opacity={occupied ? 0.2 : showAim ? 0.85 : 0.55}
           emissive={color}
-          emissiveIntensity={aiming ? 0.45 : 0.2}
+          emissiveIntensity={showAim ? 0.45 : 0.2}
           depthWrite={false}
           roughness={0.3}
         />

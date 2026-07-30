@@ -1,7 +1,8 @@
 import { create } from "zustand";
-import { cellKey, checkWin, createEmptyBoard, isDraw, randomEmptyCell, type Board } from "./board";
+import { pickAiMove } from "./ai";
+import { cellKey, checkWin, createEmptyBoard, isDraw, type Board } from "./board";
 import { getPreset } from "./presets";
-import type { CellCoord, GameStatus, PlayMode, PlayerId, PresetId } from "./types";
+import type { AiDifficulty, CellCoord, GameStatus, PlayMode, PlayerId, PresetId } from "./types";
 import { centerCell } from "./types";
 
 const AI_DELAY_MS = 400;
@@ -12,6 +13,7 @@ type GameState = {
   phase: "setup" | "playing";
   presetId: PresetId;
   playMode: PlayMode;
+  aiDifficulty: AiDifficulty;
   board: Board;
   occupiedCount: number;
   currentPlayer: PlayerId;
@@ -24,6 +26,7 @@ type GameState = {
   aiming: boolean;
   setPresetId: (id: PresetId) => void;
   setPlayMode: (mode: PlayMode) => void;
+  setAiDifficulty: (difficulty: AiDifficulty) => void;
   setAiming: (aiming: boolean) => void;
   setCursor: (coord: CellCoord) => void;
   nudgeCursor: (dx: number, dy: number, dz: number) => void;
@@ -59,7 +62,13 @@ function scheduleAiMove(get: () => GameState, set: (partial: Partial<GameState>)
     if (state.currentPlayer !== AI_PLAYER) return;
 
     const preset = getPreset(state.presetId);
-    const move = randomEmptyCell(state.board, preset.dims, state.occupiedCount);
+    const move = pickAiMove(
+      state.board,
+      preset.dims,
+      state.aiDifficulty,
+      AI_PLAYER,
+      state.occupiedCount,
+    );
     if (!move) return;
 
     applyPlace(get, set, move, AI_PLAYER);
@@ -130,6 +139,7 @@ export const useGameStore = create<GameState>((set, get) => ({
   phase: "setup",
   presetId: "3x3x3",
   playMode: "hotseat",
+  aiDifficulty: "medium",
   board: createEmptyBoard(),
   occupiedCount: 0,
   currentPlayer: "a",
@@ -141,6 +151,7 @@ export const useGameStore = create<GameState>((set, get) => ({
 
   setPresetId: (id) => set({ presetId: id }),
   setPlayMode: (mode) => set({ playMode: mode }),
+  setAiDifficulty: (difficulty) => set({ aiDifficulty: difficulty }),
   setAiming: (aiming) => set({ aiming }),
   setCursor: (coord) => {
     const dims = getPreset(get().presetId).dims;

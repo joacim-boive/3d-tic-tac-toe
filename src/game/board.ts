@@ -93,6 +93,18 @@ export function isDraw(occupiedCount: number, dims: BoardDims): boolean {
   return occupiedCount >= cellCount(dims);
 }
 
+export function listEmptyCells(board: Board, dims: BoardDims): CellCoord[] {
+  const empty: CellCoord[] = [];
+  for (let x = 0; x < dims.x; x++) {
+    for (let y = 0; y < dims.y; y++) {
+      for (let z = 0; z < dims.z; z++) {
+        if (!board.has(cellKey(x, y, z))) empty.push({ x, y, z });
+      }
+    }
+  }
+  return empty;
+}
+
 /** Rejection sampling until density is high, then linear scan. */
 export function randomEmptyCell(
   board: Board,
@@ -114,16 +126,8 @@ export function randomEmptyCell(
     }
   }
 
-  for (let x = 0; x < dims.x; x++) {
-    for (let y = 0; y < dims.y; y++) {
-      for (let z = 0; z < dims.z; z++) {
-        if (!board.has(cellKey(x, y, z))) {
-          return { x, y, z };
-        }
-      }
-    }
-  }
-  return null;
+  const empty = listEmptyCells(board, dims);
+  return empty[0] ?? null;
 }
 
 /** World position for cell center; board centered at origin. */

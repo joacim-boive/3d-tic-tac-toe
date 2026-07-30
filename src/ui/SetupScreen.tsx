@@ -2,13 +2,15 @@
 
 import { PRESETS } from "@/game/presets";
 import { useGameStore } from "@/game/store";
-import type { PlayMode, PresetId } from "@/game/types";
+import type { AiDifficulty, PlayMode, PresetId } from "@/game/types";
 
 export function SetupScreen() {
   const presetId = useGameStore((s) => s.presetId);
   const playMode = useGameStore((s) => s.playMode);
+  const aiDifficulty = useGameStore((s) => s.aiDifficulty);
   const setPresetId = useGameStore((s) => s.setPresetId);
   const setPlayMode = useGameStore((s) => s.setPlayMode);
+  const setAiDifficulty = useGameStore((s) => s.setAiDifficulty);
   const startGame = useGameStore((s) => s.startGame);
 
   return (
@@ -65,6 +67,34 @@ export function SetupScreen() {
           })}
         </div>
       </section>
+
+      {playMode === "ai" ? (
+        <section className="setup__section" aria-label="AI difficulty">
+          <h2 className="setup__label">Difficulty</h2>
+          <div className="setup__modes setup__modes--three" role="group">
+            {(
+              [
+                { id: "easy", label: "Easy" },
+                { id: "medium", label: "Medium" },
+                { id: "hard", label: "Hard" },
+              ] as const
+            ).map((level) => {
+              const selected = aiDifficulty === level.id;
+              return (
+                <button
+                  key={level.id}
+                  type="button"
+                  className={`mode-chip${selected ? " is-selected" : ""}`}
+                  onClick={() => setAiDifficulty(level.id as AiDifficulty)}
+                  aria-pressed={selected}
+                >
+                  {level.label}
+                </button>
+              );
+            })}
+          </div>
+        </section>
+      ) : null}
 
       <button type="button" className="setup__start" onClick={startGame}>
         Start game

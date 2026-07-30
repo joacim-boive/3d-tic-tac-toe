@@ -4,6 +4,8 @@ export type GameStatus = "playing" | "won" | "draw";
 
 export type PlayMode = "hotseat" | "ai";
 
+export type AiDifficulty = "easy" | "medium" | "hard";
+
 export type CellCoord = {
   x: number;
   y: number;
