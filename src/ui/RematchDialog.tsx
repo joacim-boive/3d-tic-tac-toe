@@ -30,12 +30,14 @@ export function RematchDialog() {
   }
 
   return (
-    <div className="rematch" role="dialog" aria-modal="true" aria-labelledby="rematch-title">
+    <div className="rematch" role="dialog" aria-labelledby="rematch-title">
       <div className="rematch__card">
-        <h2 id="rematch-title" className="rematch__title">
-          {headline}
-        </h2>
-        <p className="rematch__detail">{detail}</p>
+        <div className="rematch__copy">
+          <h2 id="rematch-title" className="rematch__title">
+            {headline}
+          </h2>
+          <p className="rematch__detail">{detail}</p>
+        </div>
         <div className="rematch__actions">
           <button
             type="button"

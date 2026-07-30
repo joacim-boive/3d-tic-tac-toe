@@ -168,6 +168,7 @@ function applyPlace(
       winner: win.winner,
       winningLine: win.line,
       cursor: coord,
+      aiming: false,
       onlineStatus: state.playMode === "online" ? "ended" : state.onlineStatus,
       rematchVotes: state.playMode === "online" ? { ...EMPTY_VOTES } : state.rematchVotes,
     });
@@ -182,6 +183,7 @@ function applyPlace(
       winner: null,
       winningLine: [],
       cursor: coord,
+      aiming: false,
       onlineStatus: state.playMode === "online" ? "ended" : state.onlineStatus,
       rematchVotes: state.playMode === "online" ? { ...EMPTY_VOTES } : state.rematchVotes,
     });

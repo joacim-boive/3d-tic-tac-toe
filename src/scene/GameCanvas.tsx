@@ -49,9 +49,12 @@ function BlockNativeGestures() {
 function SceneContent() {
   const presetId = useGameStore((s) => s.presetId);
   const aiming = useGameStore((s) => s.aiming);
+  const status = useGameStore((s) => s.status);
   const touchUi = useCoarsePointer();
   const dims = getPreset(presetId).dims;
   const camDist = camDistance(dims);
+  // Match over: free orbit/zoom to review the line; aim gestures off.
+  const reviewing = status === "won" || status === "draw";
 
   return (
     <>
@@ -66,23 +69,25 @@ function SceneContent() {
       <SelectionCursor dims={dims} />
 
       {/*
-        Touch: one-finger reserved for aiming (PAN mapping + enablePan false = no-op).
-        Two-finger dolly-rotate = orbit + pinch zoom. Mouse left-drag still rotates.
+        Playing (touch): one-finger reserved for aiming (PAN + enablePan false = no-op);
+        two-finger dolly-rotate = orbit + pinch. Mouse left-drag still rotates.
+        Reviewing: one-finger orbit so the winning line can be inspected.
       */}
       <OrbitControls
-        enablePan={!touchUi}
+        enablePan={!touchUi || reviewing}
         enableZoom
         enableRotate
-        enabled={!aiming}
+        enabled={reviewing || !aiming}
         enableDamping
         dampingFactor={0.08}
         minDistance={camDist * 0.35}
         maxDistance={camDist * 2.4}
         target={[0, 0, 0]}
-        touches={{
-          ONE: TOUCH.PAN,
-          TWO: TOUCH.DOLLY_ROTATE,
-        }}
+        touches={
+          reviewing
+            ? { ONE: TOUCH.ROTATE, TWO: TOUCH.DOLLY_PAN }
+            : { ONE: TOUCH.PAN, TWO: TOUCH.DOLLY_ROTATE }
+        }
         makeDefault
       />
     </>

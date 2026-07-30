@@ -142,7 +142,16 @@ export function GameChrome({ children }: GameChromeProps) {
 
       <footer className="chrome chrome--bottom">
         <ul className="chrome__hints">
-          {touchUi ? (
+          {status === "won" || status === "draw" ? (
+            <>
+              <li>
+                <kbd>drag</kbd> orbit
+              </li>
+              <li>
+                <kbd>pinch</kbd> zoom
+              </li>
+            </>
+          ) : touchUi ? (
             <>
               <li>
                 <kbd>drag</kbd> aim

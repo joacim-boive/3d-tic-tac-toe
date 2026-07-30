@@ -20,7 +20,7 @@ export function useGameControls() {
 
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key === "Shift") {
-        setAiming(true);
+        if (status === "playing") setAiming(true);
         return;
       }
 
@@ -36,36 +36,42 @@ export function useGameControls() {
         case "ArrowLeft":
         case "a":
         case "A":
+          if (status !== "playing") break;
           e.preventDefault();
           nudgeCursor(-1, 0, 0);
           break;
         case "ArrowRight":
         case "d":
         case "D":
+          if (status !== "playing") break;
           e.preventDefault();
           nudgeCursor(1, 0, 0);
           break;
         case "ArrowUp":
         case "w":
         case "W":
+          if (status !== "playing") break;
           e.preventDefault();
           nudgeCursor(0, 1, 0);
           break;
         case "ArrowDown":
         case "s":
         case "S":
+          if (status !== "playing") break;
           e.preventDefault();
           nudgeCursor(0, -1, 0);
           break;
         case "q":
         case "Q":
         case "[":
+          if (status !== "playing") break;
           e.preventDefault();
           nudgeCursor(0, 0, -1);
           break;
         case "e":
         case "E":
         case "]":
+          if (status !== "playing") break;
           e.preventDefault();
           nudgeCursor(0, 0, 1);
           break;

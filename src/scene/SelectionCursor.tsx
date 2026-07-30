@@ -85,6 +85,11 @@ export function SelectionCursor({ dims, spacing = 1 }: SelectionCursorProps) {
   });
 
   useEffect(() => {
+    if (status !== "playing") {
+      setTouchAiming(false);
+      return;
+    }
+
     const el = gl.domElement;
 
     const clientToCell = (clientX: number, clientY: number) => {
