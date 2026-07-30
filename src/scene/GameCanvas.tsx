@@ -1,8 +1,8 @@
 "use client";
 
 import { OrbitControls } from "@react-three/drei";
-import { Canvas } from "@react-three/fiber";
-import { Suspense } from "react";
+import { Canvas, useThree } from "@react-three/fiber";
+import { Suspense, useEffect } from "react";
 import { getPreset } from "@/game/presets";
 import { useGameStore } from "@/game/store";
 import { Grid } from "./Grid";
@@ -13,6 +13,26 @@ function camDistance(dims: { x: number; y: number; z: number }): number {
   return Math.max(dims.x, dims.y, dims.z) * 1.6 + 2;
 }
 
+/** Kill long-press callouts / text selection on the WebGL surface. */
+function BlockNativeGestures() {
+  const gl = useThree((s) => s.gl);
+
+  useEffect(() => {
+    const el = gl.domElement;
+    const block = (e: Event) => e.preventDefault();
+    el.addEventListener("contextmenu", block);
+    el.addEventListener("selectstart", block);
+    el.addEventListener("gesturestart", block);
+    return () => {
+      el.removeEventListener("contextmenu", block);
+      el.removeEventListener("selectstart", block);
+      el.removeEventListener("gesturestart", block);
+    };
+  }, [gl]);
+
+  return null;
+}
+
 function SceneContent() {
   const presetId = useGameStore((s) => s.presetId);
   const aiming = useGameStore((s) => s.aiming);
@@ -21,6 +41,7 @@ function SceneContent() {
 
   return (
     <>
+      <BlockNativeGestures />
       <color attach="background" args={["#0e141b"]} />
       <ambientLight intensity={0.55} />
       <directionalLight position={[dims.x, dims.y * 1.2, dims.z * 0.8]} intensity={1.1} />
@@ -52,7 +73,7 @@ export function GameCanvas() {
   const camDist = camDistance(dims);
 
   return (
-    <div className="game-viewport__canvas">
+    <div className="game-viewport__canvas" onContextMenu={(e) => e.preventDefault()}>
       <Canvas
         dpr={[1, 1.5]}
         camera={{

@@ -12,7 +12,8 @@
     "format:write": "oxfmt",
     "typecheck": "tsgo --noEmit",
     "check": "tsgo --noEmit && oxlint && oxfmt --check",
-    "check:win": "npx tsx src/game/winCheck.selftest.ts"
+    "check:win": "npx tsx src/game/winCheck.selftest.ts",
+    "check:pick": "npx tsx src/scene/pickCellAlongRay.selftest.ts"
   },
   "dependencies": {
     "@react-three/drei": "^10.7.7",

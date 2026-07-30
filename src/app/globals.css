@@ -182,6 +182,9 @@ button {
   height: 100dvh;
   overflow: hidden;
   background: #0a1016;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
 }
 
 .game-viewport {
@@ -206,6 +209,9 @@ button {
   width: 100% !important;
   height: 100% !important;
   touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
 }
 
 .chrome {
@@ -213,6 +219,8 @@ button {
   z-index: 2;
   background: #0a1016;
   border-color: var(--line);
+  user-select: none;
+  -webkit-user-select: none;
 }
 
 .chrome--top {

@@ -1,6 +1,6 @@
 "use client";
 
-import type { ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { getPreset } from "@/game/presets";
 import { useGameStore } from "@/game/store";
 import { PLAYER_COLORS, PLAYER_LABELS } from "@/game/types";
@@ -10,8 +10,24 @@ type GameChromeProps = {
   children: ReactNode;
 };
 
+/** Coarse pointer ≈ phone/tablet; fine + hover ≈ mouse/trackpad. */
+function useCoarsePointer(): boolean {
+  const [coarse, setCoarse] = useState(false);
+
+  useEffect(() => {
+    const mq = window.matchMedia("(pointer: coarse)");
+    const sync = () => setCoarse(mq.matches);
+    sync();
+    mq.addEventListener("change", sync);
+    return () => mq.removeEventListener("change", sync);
+  }, []);
+
+  return coarse;
+}
+
 export function GameChrome({ children }: GameChromeProps) {
   useGameControls();
+  const touchUi = useCoarsePointer();
 
   const presetId = useGameStore((s) => s.presetId);
   const playMode = useGameStore((s) => s.playMode);
@@ -61,7 +77,12 @@ export function GameChrome({ children }: GameChromeProps) {
         <div className="chrome__actions">
           {(status === "won" || status === "draw") && (
             <button type="button" className="chrome__btn chrome__btn--accent" onClick={startGame}>
-              Rematch <kbd>R</kbd>
+              Rematch{!touchUi && (
+                <>
+                  {" "}
+                  <kbd>R</kbd>
+                </>
+              )}
             </button>
           )}
           {status === "playing" && (
@@ -70,11 +91,21 @@ export function GameChrome({ children }: GameChromeProps) {
               className="chrome__btn chrome__btn--accent"
               onClick={placeAtCursor}
             >
-              Place <kbd>Space</kbd>
+              Place{!touchUi && (
+                <>
+                  {" "}
+                  <kbd>Space</kbd>
+                </>
+              )}
             </button>
           )}
           <button type="button" className="chrome__btn" onClick={returnToSetup}>
-            Menu <kbd>Esc</kbd>
+            Menu{!touchUi && (
+              <>
+                {" "}
+                <kbd>Esc</kbd>
+              </>
+            )}
           </button>
         </div>
       </header>
@@ -83,24 +114,40 @@ export function GameChrome({ children }: GameChromeProps) {
 
       <footer className="chrome chrome--bottom">
         <ul className="chrome__hints">
-          <li>
-            <kbd>drag</kbd> orbit
-          </li>
-          <li>
-            <kbd>pinch</kbd> zoom
-          </li>
-          <li>
-            <kbd>Shift</kbd> + move aim
-          </li>
-          <li>
-            <kbd>WASD</kbd> nudge
-          </li>
-          <li>
-            <kbd>Q</kbd>/<kbd>E</kbd> depth
-          </li>
-          <li>
-            <kbd>Space</kbd> / click place
-          </li>
+          {touchUi ? (
+            <>
+              <li>
+                <kbd>drag</kbd> orbit
+              </li>
+              <li>
+                <kbd>pinch</kbd> zoom
+              </li>
+              <li>
+                <kbd>tap</kbd> place
+              </li>
+            </>
+          ) : (
+            <>
+              <li>
+                <kbd>drag</kbd> orbit
+              </li>
+              <li>
+                <kbd>pinch</kbd> zoom
+              </li>
+              <li>
+                <kbd>Shift</kbd> + move aim
+              </li>
+              <li>
+                <kbd>WASD</kbd> nudge
+              </li>
+              <li>
+                <kbd>Q</kbd>/<kbd>E</kbd> depth
+              </li>
+              <li>
+                <kbd>Space</kbd> / click place
+              </li>
+            </>
+          )}
         </ul>
       </footer>
     </div>
