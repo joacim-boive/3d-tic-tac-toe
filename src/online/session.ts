@@ -4,6 +4,7 @@ import { generateRoomCode, isValidRoomCode, normalizeRoomCode } from "@/game/roo
 import { setLocalPlacePublisher, useGameStore } from "@/game/store";
 import type { PlayerId, PlayerNames, PresetId } from "@/game/types";
 import type { PresenceData, RoomMessage, StateMessage } from "./messages";
+import { notifyOpponentConnected } from "./notify";
 import { disconnectPusher, getPusherClient } from "./pusherClient";
 
 const JOIN_TIMEOUT_MS = 3000;
@@ -148,11 +149,20 @@ function wireChannel(channel: PresenceChannel, seat: PlayerId) {
 
   channel.bind("pusher:member_added", () => {
     clearDisconnectTimer();
-    useGameStore.getState().setOpponentConnected(true);
-    if (useGameStore.getState().onlineStatus === "paused") {
+    const store = useGameStore.getState();
+    store.setOpponentConnected(true);
+    const opponentName =
+      membersToPresence(channel).find((p) => p.seat !== seat)?.name ??
+      (seat === "a" ? store.playerNames.b : store.playerNames.a);
+
+    if (store.onlineStatus === "paused") {
+      notifyOpponentConnected("reconnected", opponentName);
       trigger(channel, buildStateMessage());
       useGameStore.getState().resumeOnline();
     } else {
+      if (store.onlineStatus === "lobby" && seat === "a") {
+        notifyOpponentConnected("joined", opponentName);
+      }
       tryStartFromMembers(channel);
     }
   });

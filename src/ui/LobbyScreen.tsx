@@ -1,7 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useGameStore } from "@/game/store";
+import { requestNotifyPermission } from "@/online/notify";
 import { leaveOnlineSession, shareUrlForRoom } from "@/online/session";
 
 export function LobbyScreen() {
@@ -10,6 +11,11 @@ export function LobbyScreen() {
   const localName = useGameStore((s) => s.localName);
   const onlineError = useGameStore((s) => s.onlineError);
   const [copied, setCopied] = useState(false);
+
+  useEffect(() => {
+    if (seat !== "a") return;
+    void requestNotifyPermission();
+  }, [seat]);
 
   if (!roomId) return null;
 

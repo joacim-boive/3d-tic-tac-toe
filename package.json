@@ -15,7 +15,8 @@
     "check:win": "npx tsx src/game/winCheck.selftest.ts",
     "check:pick": "npx tsx src/scene/pickCellAlongRay.selftest.ts",
     "check:ai": "npx tsx src/game/ai.selftest.ts",
-    "check:room": "npx tsx src/game/roomCode.selftest.ts"
+    "check:room": "npx tsx src/game/roomCode.selftest.ts",
+    "check:notify": "npx tsx src/online/notify.selftest.ts"
   },
   "dependencies": {
     "@react-three/drei": "^10.7.7",
