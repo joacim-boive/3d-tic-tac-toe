@@ -14,12 +14,15 @@
     "check": "tsgo --noEmit && oxlint && oxfmt --check",
     "check:win": "npx tsx src/game/winCheck.selftest.ts",
     "check:pick": "npx tsx src/scene/pickCellAlongRay.selftest.ts",
-    "check:ai": "npx tsx src/game/ai.selftest.ts"
+    "check:ai": "npx tsx src/game/ai.selftest.ts",
+    "check:room": "npx tsx src/game/roomCode.selftest.ts"
   },
   "dependencies": {
     "@react-three/drei": "^10.7.7",
     "@react-three/fiber": "^9.5.0",
     "next": "^15.5.4",
+    "pusher": "^5.3.4",
+    "pusher-js": "^8.6.0",
     "react": "^19.1.1",
     "react-dom": "^19.1.1",
     "three": "^0.180.0",

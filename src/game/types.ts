@@ -2,9 +2,15 @@ export type PlayerId = "a" | "b";
 
 export type GameStatus = "playing" | "won" | "draw";
 
-export type PlayMode = "hotseat" | "ai";
+export type PlayMode = "hotseat" | "ai" | "online";
 
 export type AiDifficulty = "easy" | "medium" | "hard";
+
+export type OnlineStatus = "idle" | "lobby" | "playing" | "paused" | "ended";
+
+export type PlayerNames = Record<PlayerId, string>;
+
+export type RematchVotes = Record<PlayerId, boolean | null>;
 
 export type CellCoord = {
   x: number;

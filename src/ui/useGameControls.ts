@@ -2,6 +2,7 @@
 
 import { useEffect } from "react";
 import { useGameStore } from "@/game/store";
+import { leaveOnlineSession } from "@/online/session";
 
 /** Keyboard + Shift aiming for the play session. */
 export function useGameControls() {
@@ -12,6 +13,7 @@ export function useGameControls() {
   const startGame = useGameStore((s) => s.startGame);
   const status = useGameStore((s) => s.status);
   const phase = useGameStore((s) => s.phase);
+  const playMode = useGameStore((s) => s.playMode);
 
   useEffect(() => {
     if (phase !== "playing") return;
@@ -68,11 +70,17 @@ export function useGameControls() {
           nudgeCursor(0, 0, 1);
           break;
         case "Escape":
-          returnToSetup();
+          if (playMode === "online") {
+            void leaveOnlineSession();
+          } else {
+            returnToSetup();
+          }
           break;
         case "r":
         case "R":
-          if (status === "won" || status === "draw") startGame();
+          if (playMode !== "online" && (status === "won" || status === "draw")) {
+            startGame();
+          }
           break;
         default:
           break;
@@ -94,5 +102,5 @@ export function useGameControls() {
       window.removeEventListener("blur", onBlur);
       setAiming(false);
     };
-  }, [phase, status, setAiming, nudgeCursor, placeAtCursor, returnToSetup, startGame]);
+  }, [phase, status, playMode, setAiming, nudgeCursor, placeAtCursor, returnToSetup, startGame]);
 }

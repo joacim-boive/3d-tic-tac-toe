@@ -9,7 +9,27 @@ Built with Next.js, React Three Fiber, and Zustand. Designed for feel-testing pl
 - **Orbit** — rotate and zoom the board
 - **Place** — tap/click an empty cell to mark
 - **Hotseat** — pass-and-play locally
-- **vs AI** — play against a simple random-move opponent
+- **vs AI** — Easy / Medium / Hard opponent in the browser
+- **Online** — create a room, share the code or `/play/CODE` link; both enter names; match auto-starts
+
+### Online setup
+
+1. Create a free [Pusher Channels](https://pusher.com/channels) app.
+2. Enable **client events** on the app (App Settings).
+3. Add env vars in `.env.local` (and Vercel):
+
+```bash
+PUSHER_APP_ID=...
+PUSHER_KEY=...
+PUSHER_SECRET=...
+PUSHER_CLUSTER=eu
+NEXT_PUBLIC_PUSHER_KEY=...   # same as PUSHER_KEY
+NEXT_PUBLIC_PUSHER_CLUSTER=eu
+```
+
+4. `npm run dev` — two browsers, Mode → Online, Create / Join (or open the shared `/play/CODE` link).
+
+Without these vars, auth returns 503 and Online create/join fails.
 
 ### Presets
 

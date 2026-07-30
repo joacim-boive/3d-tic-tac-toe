@@ -14,7 +14,7 @@ Add a simple two-player online mode: short shareable room codes (and links), pla
 - **Seats:** Host = `a` (Coral), joiner = `b` (Cyan). Colors stay; names are labels.
 - **Disconnect:** Pause (“waiting for …”); resume on rejoin same room (~60s window), else lobby.
 - **Rematch:** Dialog; both must accept → new board, same room/seats. Either declines → lobby.
-- **Transport:** Managed pub/sub (Ably or Pusher). Client-trusted authority for v1 (friends sharing a link).
+- **Transport:** Managed pub/sub via **Pusher** presence channels + client events (Ably hit Next/SWC bundling issues). Client-trusted authority for v1 (friends sharing a link).
 - **Out of scope:** Chat, spectators, ranked, anti-cheat, seat swap, PartyKit, create-on-miss join.
 
 ## Flow
@@ -43,18 +43,18 @@ Add a simple two-player online mode: short shareable room codes (and links), pla
 
 Channel: `room:{code}` (4–6 chars, no ambiguous `0/O/1/I`).
 
-| Event | Payload | Who |
-| ----- | ------- | --- |
-| `hello` | `{ seat, name, preset }` | Host create / guest join |
-| `ready` | `{ names, preset, seats }` | When both present → start |
-| `place` | `{ x, y, z, by }` | Current player |
-| `rematch` | `{ seat, accept }` | After game over |
-| `state` | `{ board, currentPlayer, names, preset }` | Reconnect catch-up |
-| Presence | join/leave | Provider API |
+| Event     | Payload                                   | Who                       |
+| --------- | ----------------------------------------- | ------------------------- |
+| `hello`   | `{ seat, name, preset }`                  | Host create / guest join  |
+| `ready`   | `{ names, preset, seats }`                | When both present → start |
+| `place`   | `{ x, y, z, by }`                         | Current player            |
+| `rematch` | `{ seat, accept }`                        | After game over           |
+| `state`   | `{ board, currentPlayer, names, preset }` | Reconnect catch-up        |
+| Presence  | join/leave                                | Provider API              |
 
 Ignore bad/duplicate/wrong-seat/occupied places. Full room → “Room full”. Unknown code → “Room not found”.
 
-**Auth:** Next API route issues short-lived subscribe/publish token; keys stay server-side.
+**Auth:** Next API route `POST /api/pusher-auth` authorizes `presence-room-*` channels; keys stay server-side (`PUSHER_*` + `NEXT_PUBLIC_PUSHER_KEY` / `CLUSTER`).
 
 ## Wiring (implement later)
 

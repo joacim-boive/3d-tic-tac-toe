@@ -1,17 +1,45 @@
 "use client";
 
+import { useEffect, useState, useTransition } from "react";
 import { PRESETS } from "@/game/presets";
-import { useGameStore } from "@/game/store";
+import { hydrateLocalNameFromStorage, useGameStore } from "@/game/store";
 import type { AiDifficulty, PlayMode, PresetId } from "@/game/types";
+import { createOnlineRoom, joinOnlineRoom } from "@/online/session";
 
 export function SetupScreen() {
   const presetId = useGameStore((s) => s.presetId);
   const playMode = useGameStore((s) => s.playMode);
   const aiDifficulty = useGameStore((s) => s.aiDifficulty);
+  const localName = useGameStore((s) => s.localName);
+  const onlineError = useGameStore((s) => s.onlineError);
   const setPresetId = useGameStore((s) => s.setPresetId);
   const setPlayMode = useGameStore((s) => s.setPlayMode);
   const setAiDifficulty = useGameStore((s) => s.setAiDifficulty);
+  const setLocalName = useGameStore((s) => s.setLocalName);
+  const setOnlineError = useGameStore((s) => s.setOnlineError);
   const startGame = useGameStore((s) => s.startGame);
+
+  const [joinCode, setJoinCode] = useState("");
+  const [pending, startTransition] = useTransition();
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    hydrateLocalNameFromStorage();
+  }, []);
+
+  const run = (fn: () => Promise<void>) => {
+    setBusy(true);
+    setOnlineError(null);
+    startTransition(async () => {
+      try {
+        await fn();
+      } catch (err) {
+        setOnlineError(err instanceof Error ? err.message : "Something went wrong");
+      } finally {
+        setBusy(false);
+      }
+    });
+  };
 
   return (
     <div className="setup">
@@ -22,8 +50,49 @@ export function SetupScreen() {
         <p className="setup__lede">Spin the cube. Place coral and cyan. First to the line wins.</p>
       </header>
 
+      <section className="setup__section" aria-label="Play mode">
+        <h2 className="setup__label">Mode</h2>
+        <div className="setup__modes setup__modes--three" role="group">
+          {(
+            [
+              { id: "hotseat", label: "Hotseat" },
+              { id: "ai", label: "vs AI" },
+              { id: "online", label: "Online" },
+            ] as const
+          ).map((mode) => {
+            const selected = playMode === mode.id;
+            return (
+              <button
+                key={mode.id}
+                type="button"
+                className={`mode-chip${selected ? " is-selected" : ""}`}
+                onClick={() => setPlayMode(mode.id as PlayMode)}
+                aria-pressed={selected}
+              >
+                {mode.label}
+              </button>
+            );
+          })}
+        </div>
+      </section>
+
+      {playMode === "online" ? (
+        <section className="setup__section" aria-label="Your name">
+          <h2 className="setup__label">Your name</h2>
+          <input
+            className="setup__input"
+            type="text"
+            maxLength={16}
+            value={localName}
+            onChange={(e) => setLocalName(e.target.value)}
+            placeholder="Name"
+            autoComplete="nickname"
+          />
+        </section>
+      ) : null}
+
       <section className="setup__section" aria-label="Board preset">
-        <h2 className="setup__label">Preset</h2>
+        <h2 className="setup__label">Preset{playMode === "online" ? " (host)" : ""}</h2>
         <div className="setup__presets">
           {PRESETS.map((preset) => {
             const selected = preset.id === presetId;
@@ -37,31 +106,6 @@ export function SetupScreen() {
               >
                 <span className="preset-card__name">{preset.label}</span>
                 <span className="preset-card__meta">{preset.description}</span>
-              </button>
-            );
-          })}
-        </div>
-      </section>
-
-      <section className="setup__section" aria-label="Play mode">
-        <h2 className="setup__label">Mode</h2>
-        <div className="setup__modes" role="group">
-          {(
-            [
-              { id: "hotseat", label: "Hotseat" },
-              { id: "ai", label: "vs AI" },
-            ] as const
-          ).map((mode) => {
-            const selected = playMode === mode.id;
-            return (
-              <button
-                key={mode.id}
-                type="button"
-                className={`mode-chip${selected ? " is-selected" : ""}`}
-                onClick={() => setPlayMode(mode.id as PlayMode)}
-                aria-pressed={selected}
-              >
-                {mode.label}
               </button>
             );
           })}
@@ -96,9 +140,55 @@ export function SetupScreen() {
         </section>
       ) : null}
 
-      <button type="button" className="setup__start" onClick={startGame}>
-        Start game
-      </button>
+      {playMode === "online" ? (
+        <>
+          <section className="setup__section" aria-label="Join with code">
+            <h2 className="setup__label">Join room</h2>
+            <input
+              className="setup__input"
+              type="text"
+              maxLength={8}
+              value={joinCode}
+              onChange={(e) => setJoinCode(e.target.value.toUpperCase())}
+              placeholder="Code"
+              autoCapitalize="characters"
+              autoCorrect="off"
+              spellCheck={false}
+            />
+          </section>
+          {onlineError ? <p className="setup__error">{onlineError}</p> : null}
+          <div className="setup__online-actions">
+            <button
+              type="button"
+              className="setup__start"
+              disabled={busy || pending}
+              onClick={() =>
+                run(async () => {
+                  await createOnlineRoom(localName, presetId);
+                })
+              }
+            >
+              Create room
+            </button>
+            <button
+              type="button"
+              className="setup__secondary"
+              disabled={busy || pending}
+              onClick={() =>
+                run(async () => {
+                  await joinOnlineRoom(joinCode, localName);
+                })
+              }
+            >
+              Join room
+            </button>
+          </div>
+        </>
+      ) : (
+        <button type="button" className="setup__start" onClick={startGame}>
+          Start game
+        </button>
+      )}
     </div>
   );
 }

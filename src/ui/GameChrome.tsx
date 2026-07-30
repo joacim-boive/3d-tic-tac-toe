@@ -3,7 +3,9 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { getPreset } from "@/game/presets";
 import { useGameStore } from "@/game/store";
-import { PLAYER_COLORS, PLAYER_LABELS } from "@/game/types";
+import { PLAYER_COLORS } from "@/game/types";
+import { leaveOnlineSession } from "@/online/session";
+import { RematchDialog } from "./RematchDialog";
 import { useGameControls } from "./useGameControls";
 
 type GameChromeProps = {
@@ -36,23 +38,44 @@ export function GameChrome({ children }: GameChromeProps) {
   const winner = useGameStore((s) => s.winner);
   const aiming = useGameStore((s) => s.aiming);
   const cursor = useGameStore((s) => s.cursor);
+  const seat = useGameStore((s) => s.seat);
+  const onlineStatus = useGameStore((s) => s.onlineStatus);
+  const playerNames = useGameStore((s) => s.playerNames);
   const startGame = useGameStore((s) => s.startGame);
   const returnToSetup = useGameStore((s) => s.returnToSetup);
   const placeAtCursor = useGameStore((s) => s.placeAtCursor);
+  const displayName = useGameStore((s) => s.displayName);
 
   const preset = getPreset(presetId);
   const turnColor = PLAYER_COLORS[currentPlayer];
+  const paused = playMode === "online" && onlineStatus === "paused";
+  const myTurn =
+    playMode !== "online" || (seat != null && currentPlayer === seat && onlineStatus === "playing");
 
   let statusText: string;
-  if (status === "won" && winner) {
-    statusText = `${PLAYER_LABELS[winner]} wins`;
+  if (paused) {
+    const other = seat === "a" ? "b" : "a";
+    const otherName = playerNames[other].trim() || displayName(other);
+    statusText = `Waiting for ${otherName} to reconnect…`;
+  } else if (status === "won" && winner) {
+    statusText = `${displayName(winner)} wins`;
   } else if (status === "draw") {
     statusText = "Draw";
   } else if (playMode === "ai" && currentPlayer === "b") {
     statusText = "Cyan is thinking…";
   } else {
-    statusText = `${PLAYER_LABELS[currentPlayer]} to place`;
+    statusText = `${displayName(currentPlayer)} to place`;
   }
+
+  const modeLabel = playMode === "ai" ? "vs AI" : playMode === "online" ? "Online" : "Hotseat";
+
+  const onMenu = () => {
+    if (playMode === "online") {
+      void leaveOnlineSession();
+    } else {
+      returnToSetup();
+    }
+  };
 
   return (
     <div className="game-shell">
@@ -60,24 +83,25 @@ export function GameChrome({ children }: GameChromeProps) {
         <div className="chrome__meta">
           <span className="chrome__brand">Voxel Toe</span>
           <span className="chrome__preset">{preset.label}</span>
-          <span className="chrome__mode">{playMode === "ai" ? "vs AI" : "Hotseat"}</span>
+          <span className="chrome__mode">{modeLabel}</span>
         </div>
 
         <div className="chrome__status" style={{ ["--turn" as string]: turnColor }}>
           <span className="chrome__dot" aria-hidden />
           <span>{statusText}</span>
-          {status === "playing" && (
+          {status === "playing" && !paused && (
             <span className="chrome__cell">
               {cursor.x},{cursor.y},{cursor.z}
             </span>
           )}
-          {aiming && <span className="chrome__aim">Aiming</span>}
+          {aiming && !paused && <span className="chrome__aim">Aiming</span>}
         </div>
 
         <div className="chrome__actions">
-          {(status === "won" || status === "draw") && (
+          {playMode !== "online" && (status === "won" || status === "draw") && (
             <button type="button" className="chrome__btn chrome__btn--accent" onClick={startGame}>
-              Rematch{!touchUi && (
+              Rematch
+              {!touchUi && (
                 <>
                   {" "}
                   <kbd>R</kbd>
@@ -85,13 +109,14 @@ export function GameChrome({ children }: GameChromeProps) {
               )}
             </button>
           )}
-          {status === "playing" && (
+          {status === "playing" && !paused && myTurn && (
             <button
               type="button"
               className="chrome__btn chrome__btn--accent"
               onClick={placeAtCursor}
             >
-              Place{!touchUi && (
+              Place
+              {!touchUi && (
                 <>
                   {" "}
                   <kbd>Space</kbd>
@@ -99,8 +124,9 @@ export function GameChrome({ children }: GameChromeProps) {
               )}
             </button>
           )}
-          <button type="button" className="chrome__btn" onClick={returnToSetup}>
-            Menu{!touchUi && (
+          <button type="button" className="chrome__btn" onClick={onMenu}>
+            Menu
+            {!touchUi && (
               <>
                 {" "}
                 <kbd>Esc</kbd>
@@ -111,6 +137,8 @@ export function GameChrome({ children }: GameChromeProps) {
       </header>
 
       <div className="game-viewport">{children}</div>
+
+      <RematchDialog />
 
       <footer className="chrome chrome--bottom">
         <ul className="chrome__hints">
