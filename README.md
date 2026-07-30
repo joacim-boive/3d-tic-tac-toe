@@ -45,7 +45,9 @@ npm run check:win  # win-detection self-check
 
 ## Deploy
 
-Hosted on [Vercel](https://vercel.com). Pushes to `main` deploy to production.
+Live at **[3d-tic-tac-toe-one.vercel.app](https://3d-tic-tac-toe-one.vercel.app)**.
+
+Pushes to `main` deploy to production once the GitHub repo is linked in the [Vercel project](https://vercel.com/joacim-boives-projects/3d-tic-tac-toe).
 
 ## License
 
