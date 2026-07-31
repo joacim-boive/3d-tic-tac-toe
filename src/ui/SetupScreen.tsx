@@ -146,31 +146,33 @@ export function SetupScreen() {
         </div>
       </section>
 
-      <section className="setup__section" aria-label="Power-ups">
-        <h2 className="setup__label">Power-ups</h2>
-        <div className="setup__modes setup__modes--two" role="group">
-          {(
-            [
-              { id: true, label: "On", meta: "Catch packages for bonuses" },
-              { id: false, label: "Off", meta: "Classic play only" },
-            ] as const
-          ).map((opt) => {
-            const selected = powerUpsEnabled === opt.id;
-            return (
-              <button
-                key={String(opt.id)}
-                type="button"
-                className={`mode-chip mode-chip--stack${selected ? " is-selected" : ""}`}
-                onClick={() => setPowerUpsEnabled(opt.id)}
-                aria-pressed={selected}
-              >
-                <span className="mode-chip__label">{opt.label}</span>
-                <span className="mode-chip__meta">{opt.meta}</span>
-              </button>
-            );
-          })}
-        </div>
-      </section>
+      {playMode !== "hotseat" ? (
+        <section className="setup__section" aria-label="Power-ups">
+          <h2 className="setup__label">Power-ups</h2>
+          <div className="setup__modes setup__modes--two" role="group">
+            {(
+              [
+                { id: true, label: "On", meta: "Catch packages for bonuses" },
+                { id: false, label: "Off", meta: "Classic play only" },
+              ] as const
+            ).map((opt) => {
+              const selected = powerUpsEnabled === opt.id;
+              return (
+                <button
+                  key={String(opt.id)}
+                  type="button"
+                  className={`mode-chip mode-chip--stack${selected ? " is-selected" : ""}`}
+                  onClick={() => setPowerUpsEnabled(opt.id)}
+                  aria-pressed={selected}
+                >
+                  <span className="mode-chip__label">{opt.label}</span>
+                  <span className="mode-chip__meta">{opt.meta}</span>
+                </button>
+              );
+            })}
+          </div>
+        </section>
+      ) : null}
 
       {playMode === "ai" ? (
         <section className="setup__section" aria-label="AI difficulty">

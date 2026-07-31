@@ -447,6 +447,7 @@ function maybeStartSwarm(
 ) {
   const state = get();
   if (state.status !== "playing") return;
+  if (state.playMode === "hotseat") return;
   if (state.swarmBusy || state.swarm) return;
   const seed = randomSeed();
   const rng = createPowerUpRng(seed);
@@ -650,7 +651,12 @@ export const useGameStore = create<GameState>((set, get) => ({
     persistSetupPrefs(get());
   },
   setPlayMode: (mode) => {
-    set({ playMode: mode });
+    // Hotseat is pass-and-play only — no power-ups.
+    if (mode === "hotseat") {
+      set({ playMode: mode, powerUpsEnabled: false });
+    } else {
+      set({ playMode: mode });
+    }
     persistSetupPrefs(get());
   },
   setPlacement: (placement) => {
@@ -662,7 +668,11 @@ export const useGameStore = create<GameState>((set, get) => ({
     persistSetupPrefs(get());
   },
   setPowerUpsEnabled: (enabled) => {
-    set({ powerUpsEnabled: enabled });
+    if (get().playMode === "hotseat") {
+      set({ powerUpsEnabled: false });
+    } else {
+      set({ powerUpsEnabled: enabled });
+    }
     persistSetupPrefs(get());
   },
   setLocalName: (name) => {
@@ -1094,8 +1104,11 @@ export const useGameStore = create<GameState>((set, get) => ({
 
   startGame: () => {
     clearAiTimer();
-    const dims = getPreset(get().presetId).dims;
-    const placement = get().placement;
+    const state = get();
+    const dims = getPreset(state.presetId).dims;
+    const placement = state.placement;
+    const hotseat = state.playMode === "hotseat";
+    const powerUpsEnabled = hotseat ? false : state.powerUpsEnabled;
     const startCursor =
       placement === "drop"
         ? snapDropCursor(centerCell(dims), createEmptyBoard(), dims)
@@ -1114,7 +1127,8 @@ export const useGameStore = create<GameState>((set, get) => ({
       aiming: false,
       fallingKey: null,
       dropBusy: false,
-      inventory: fullInventory(),
+      powerUpsEnabled,
+      inventory: powerUpsEnabled ? fullInventory() : emptyInventory(),
       bonusPlacesRemaining: 0,
       pendingSwarmEarner: null,
       swarm: null,
@@ -1134,6 +1148,8 @@ export const useGameStore = create<GameState>((set, get) => ({
     const state = get();
     const dims = getPreset(state.presetId).dims;
     const nextStarter = opponentOf(state.startingPlayer);
+    const hotseat = state.playMode === "hotseat";
+    const powerUpsEnabled = hotseat ? false : state.powerUpsEnabled;
     const startCursor =
       state.placement === "drop"
         ? snapDropCursor(centerCell(dims), createEmptyBoard(), dims)
@@ -1152,7 +1168,8 @@ export const useGameStore = create<GameState>((set, get) => ({
       aiming: false,
       fallingKey: null,
       dropBusy: false,
-      inventory: fullInventory(),
+      powerUpsEnabled,
+      inventory: powerUpsEnabled ? fullInventory() : emptyInventory(),
       bonusPlacesRemaining: 0,
       pendingSwarmEarner: null,
       swarm: null,

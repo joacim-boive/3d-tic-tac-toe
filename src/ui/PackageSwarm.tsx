@@ -1,13 +1,13 @@
 "use client";
 
-import { useEffect, useRef, useState, type CSSProperties, type PointerEvent } from "react";
+import { useEffect, useRef, type CSSProperties, type PointerEvent } from "react";
 import { MAX_PER_KIND, SWARM_DURATION_MS } from "@/game/powerUps";
 import { useGameStore } from "@/game/store";
-import { PLAYER_LABELS, type PlayerId } from "@/game/types";
+import type { PlayerId } from "@/game/types";
 
 /**
- * Competitive flyby: either seat can tap. Live + room → claim; live + full → deny.
- * Dud pops for everyone. Online sync removes packages for the opponent.
+ * Competitive flyby (vs AI / online): either seat can tap.
+ * Live + room → claim; live + full → deny. Hotseat has no power-ups.
  */
 export function PackageSwarm() {
   const swarm = useGameStore((s) => s.swarm);
@@ -19,13 +19,10 @@ export function PackageSwarm() {
   const catchSwarmPackage = useGameStore((s) => s.catchSwarmPackage);
   const endSwarm = useGameStore((s) => s.endSwarm);
   const ended = useRef(false);
-  /** Hotseat: who this device is tapping for. */
-  const [claimSeat, setClaimSeat] = useState<PlayerId>("a");
 
   useEffect(() => {
     ended.current = false;
     if (!swarm || !swarmBusy) return;
-    setClaimSeat(swarm.earner);
     const maxDelay = Math.max(...swarm.packages.map((p) => p.delayMs));
     const t = window.setTimeout(
       () => {
@@ -47,19 +44,13 @@ export function PackageSwarm() {
     }
   }, [swarm, swarmPopped]);
 
-  if (!swarm || !swarmBusy) return null;
+  if (!swarm || !swarmBusy || playMode === "hotseat") return null;
 
   const canCatch =
-    playMode === "hotseat" ||
-    playMode === "ai" ||
-    (playMode === "online" && seat != null);
+    playMode === "ai" || (playMode === "online" && seat != null);
 
   const catcher: PlayerId =
-    playMode === "online" && seat != null
-      ? seat
-      : playMode === "ai"
-        ? "a"
-        : claimSeat;
+    playMode === "online" && seat != null ? seat : "a";
 
   const catcherFull = !Object.values(inventory[catcher]).some((n) => n < MAX_PER_KIND);
 
@@ -77,36 +68,7 @@ export function PackageSwarm() {
   return (
     <div className="swarm" role="dialog" aria-label="Compete for a power-up package">
       <div className="swarm__hint">
-        {canCatch ? (
-          <>
-            <span>
-              {catcherFull ? "Tap to deny!" : "Tap to claim!"}
-              {playMode === "hotseat" ? (
-                <>
-                  {" "}
-                  as{" "}
-                  <span className="swarm__claim" role="group" aria-label="Claiming as">
-                    {(["a", "b"] as const).map((id) => (
-                      <button
-                        key={id}
-                        type="button"
-                        className={`swarm__claim-btn${claimSeat === id ? " is-selected" : ""}`}
-                        onPointerDown={(e) => {
-                          e.stopPropagation();
-                          setClaimSeat(id);
-                        }}
-                      >
-                        {PLAYER_LABELS[id]}
-                      </button>
-                    ))}
-                  </span>
-                </>
-              ) : null}
-            </span>
-          </>
-        ) : (
-          <span>Watching…</span>
-        )}
+        <span>{canCatch ? (catcherFull ? "Tap to deny!" : "Tap to claim!") : "Watching…"}</span>
       </div>
       {swarm.packages.map((pkg) => {
         const duration = SWARM_DURATION_MS * pkg.speed;

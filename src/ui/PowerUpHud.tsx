@@ -93,15 +93,14 @@ export function PowerUpHud() {
     return () => window.clearTimeout(t);
   }, [powerUpToast, clearPowerUpToast]);
 
-  if (!powerUpsEnabled) return null;
+  if (!powerUpsEnabled || playMode === "hotseat") return null;
 
   const myTurn =
     status === "playing" &&
     !swarmBusy &&
     !dropBusy &&
     !tipFalling &&
-    (playMode === "hotseat" ||
-      (playMode === "ai" && currentPlayer === "a") ||
+    ((playMode === "ai" && currentPlayer === "a") ||
       (playMode === "online" &&
         seat != null &&
         currentPlayer === seat &&
