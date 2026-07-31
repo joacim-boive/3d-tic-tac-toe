@@ -11,8 +11,8 @@ type BoardCollidersProps = {
 const WALL = 0.18;
 /** Match marker sphere radius used in PhysicsMarkers. */
 export const MARKER_RADIUS = 0.32;
-export const DROP_RESTITUTION = 0.42;
-export const DROP_FRICTION = 0.45;
+export const DROP_RESTITUTION = 0.55;
+export const DROP_FRICTION = 0.4;
 
 /**
  * Invisible box: floor + four walls, open top.

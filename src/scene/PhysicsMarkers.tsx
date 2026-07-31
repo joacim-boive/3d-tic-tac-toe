@@ -17,12 +17,12 @@ import {
 const WIN_COLOR = "#2dff6a";
 const WIN_SCALE = 1.15;
 /** Don't freeze until the piece has had time to fall + bounce. */
-const MIN_FALL_MS = 420;
-const SETTLE_SPEED = 0.35;
+const MIN_FALL_MS = 750;
+const SETTLE_SPEED = 0.4;
 const SETTLE_DIST = 0.4;
-const SETTLE_TIMEOUT_MS = 3200;
+const SETTLE_TIMEOUT_MS = 4000;
 /** Require N consecutive calm frames before snapping (avoids freezing at bounce apex). */
-const SETTLE_FRAMES = 4;
+const SETTLE_FRAMES = 6;
 
 type PhysicsMarkersProps = {
   dims: BoardDims;

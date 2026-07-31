@@ -76,7 +76,7 @@ function SceneContent() {
       <SelectionCursor dims={dims} />
 
       {dropMode ? (
-        <Physics gravity={[0, -22, 0]} colliders={false}>
+        <Physics gravity={[0, -14, 0]} colliders={false}>
           <BoardColliders dims={dims} />
           <PhysicsMarkers dims={dims} />
         </Physics>
