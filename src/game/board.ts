@@ -83,7 +83,10 @@ export function checkWin(
     });
     const line = [...backward.reverse(), last, ...forward];
     if (line.length >= need) {
-      return { winner: player, line: line.slice(0, need) };
+      // Window must include `last` (the completing mark), not just the front of the run.
+      const lastIdx = backward.length;
+      const start = Math.max(0, Math.min(lastIdx, line.length - need));
+      return { winner: player, line: line.slice(start, start + need) };
     }
   }
   return null;

@@ -1,5 +1,6 @@
 import type { PresenceChannel } from "pusher-js";
 import type { Board } from "@/game/board";
+import { resolvePresetId } from "@/game/presets";
 import { generateRoomCode, isValidRoomCode, normalizeRoomCode } from "@/game/roomCode";
 import { setLocalPlacePublisher, useGameStore } from "@/game/store";
 import type { PlayerId, PlayerNames, PlacementMode, PresetId } from "@/game/types";
@@ -58,6 +59,7 @@ function buildStateMessage(): StateMessage {
     status: s.status,
     winner: s.winner,
     winningLine: s.winningLine,
+    winningCell: s.winningCell,
   };
 }
 
@@ -72,6 +74,7 @@ function applyStateMessage(msg: StateMessage) {
     status: msg.status,
     winner: msg.winner,
     winningLine: msg.winningLine,
+    winningCell: msg.winningCell ?? null,
   });
 }
 
@@ -261,11 +264,12 @@ async function attachSession(
     }
 
     useGameStore.getState().beginOnlineLobby(code, seat, name);
-    if (preset) {
-      useGameStore.getState().setPresetId(preset);
-    }
-    if (placement) {
-      useGameStore.getState().setPlacement(placement);
+    // Apply host match options without writing over this client's saved setup prefs.
+    if (preset || placement) {
+      useGameStore.setState({
+        ...(preset ? { presetId: resolvePresetId(preset) } : {}),
+        ...(placement ? { placement } : {}),
+      });
     }
 
     wireChannel(channel, seat);

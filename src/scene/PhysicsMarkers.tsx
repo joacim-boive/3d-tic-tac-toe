@@ -17,6 +17,9 @@ import {
 
 const WIN_COLOR = "#2dff6a";
 const WIN_SCALE = 1.15;
+/** Match free-mode winning bob (world units / Hz). */
+const WIN_BOUNCE_AMP = 0.1;
+const WIN_BOUNCE_HZ = 1.6;
 /**
  * Satisfying heavy settle: one clear thud-bounce, then dead.
  * e still scales with impact so empty-column drops feel weightier.
@@ -39,6 +42,8 @@ type MarkerEntry = {
   coord: CellCoord;
   player: PlayerId;
   winning: boolean;
+  /** True only for the mark that completed the line. */
+  winningMove: boolean;
   falling: boolean;
 };
 
@@ -201,6 +206,7 @@ function SettledMarker({
   dims: BoardDims;
   spacing: number;
 }) {
+  const meshRef = useRef<Mesh>(null);
   const [tx, ty, tz] = cellToWorld(entry.coord, dims, spacing);
   const colorHex = entry.winning ? WIN_COLOR : PLAYER_COLORS[entry.player];
   const color = useMemo(() => new Color(colorHex), [colorHex]);
@@ -208,10 +214,16 @@ function SettledMarker({
   const visualR = MARKER_RADIUS * scale;
   const collidersR = physicsRadius(spacing) * scale;
 
+  useFrame(({ clock }) => {
+    if (!entry.winningMove || !meshRef.current) return;
+    const bob = Math.sin(clock.elapsedTime * WIN_BOUNCE_HZ * Math.PI * 2) * WIN_BOUNCE_AMP;
+    meshRef.current.position.y = bob;
+  });
+
   return (
     <RigidBody type="fixed" position={[tx, ty, tz]} colliders={false} ccd>
       <BallCollider args={[collidersR]} restitution={0} friction={DROP_FRICTION} density={1} />
-      <mesh castShadow={false}>
+      <mesh ref={meshRef} castShadow={false}>
         <sphereGeometry args={[visualR, 24, 18]} />
         <meshStandardMaterial
           color={color}
@@ -246,6 +258,7 @@ function MarkerBody({
 export function PhysicsMarkers({ dims, spacing = 1 }: PhysicsMarkersProps) {
   const board = useGameStore((s) => s.board);
   const winningLine = useGameStore((s) => s.winningLine);
+  const winningCell = useGameStore((s) => s.winningCell);
   const fallingKey = useGameStore((s) => s.fallingKey);
 
   const winSet = useMemo(() => {
@@ -253,6 +266,10 @@ export function PhysicsMarkers({ dims, spacing = 1 }: PhysicsMarkersProps) {
     for (const c of winningLine) set.add(cellKey(c.x, c.y, c.z));
     return set;
   }, [winningLine]);
+
+  const winningMoveKey = winningCell
+    ? cellKey(winningCell.x, winningCell.y, winningCell.z)
+    : null;
 
   const entries = useMemo(() => {
     const list: MarkerEntry[] = [];
@@ -262,11 +279,12 @@ export function PhysicsMarkers({ dims, spacing = 1 }: PhysicsMarkersProps) {
         coord: parseCellKey(key),
         player,
         winning: winSet.has(key),
+        winningMove: key === winningMoveKey,
         falling: key === fallingKey,
       });
     }
     return list;
-  }, [board, winSet, fallingKey]);
+  }, [board, winSet, winningMoveKey, fallingKey]);
 
   return (
     <>

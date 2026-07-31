@@ -10,6 +10,11 @@ import {
   type Board,
 } from "./board";
 import { getPreset, resolvePresetId } from "./presets";
+import {
+  readSetupPrefsFromStorage,
+  writeSetupPrefsToStorage,
+  type SetupPrefs,
+} from "./setupPrefs";
 import type {
   AiDifficulty,
   CellCoord,
@@ -47,6 +52,21 @@ function persistLocalName(name: string) {
   }
 }
 
+function persistSetupPrefs(state: {
+  presetId: PresetId;
+  playMode: PlayMode;
+  placement: PlacementMode;
+  aiDifficulty: AiDifficulty;
+}) {
+  const prefs: SetupPrefs = {
+    presetId: state.presetId,
+    playMode: state.playMode,
+    placement: state.placement,
+    aiDifficulty: state.aiDifficulty,
+  };
+  writeSetupPrefsToStorage(prefs);
+}
+
 type GamePhase = "setup" | "lobby" | "playing";
 
 type GameState = {
@@ -63,6 +83,8 @@ type GameState = {
   status: GameStatus;
   winner: PlayerId | null;
   winningLine: CellCoord[];
+  /** The mark that completed the line — only this ball bounces. */
+  winningCell: CellCoord | null;
   /** Aiming cursor — always set while a game is in progress. */
   cursor: CellCoord;
   /** True while Shift is held (aim mode; camera orbit paused). */
@@ -115,6 +137,7 @@ type GameState = {
     status: GameStatus;
     winner: PlayerId | null;
     winningLine: CellCoord[];
+    winningCell?: CellCoord | null;
   }) => void;
 };
 
@@ -205,6 +228,7 @@ function applyPlace(
       status: "won",
       winner: win.winner,
       winningLine: win.line,
+      winningCell: resolved,
       cursor: resolved,
       aiming: false,
       fallingKey: dropAnim ? key : null,
@@ -222,6 +246,7 @@ function applyPlace(
       status: "draw",
       winner: null,
       winningLine: [],
+      winningCell: null,
       cursor: resolved,
       aiming: false,
       fallingKey: dropAnim ? key : null,
@@ -240,6 +265,7 @@ function applyPlace(
     status: "playing",
     winner: null,
     winningLine: [],
+    winningCell: null,
     cursor: resolved,
     fallingKey: dropAnim ? key : null,
     dropBusy: dropAnim,
@@ -265,6 +291,7 @@ export const useGameStore = create<GameState>((set, get) => ({
   status: "playing",
   winner: null,
   winningLine: [],
+  winningCell: null,
   cursor: { x: 1, y: 1, z: 1 },
   aiming: false,
   fallingKey: null,
@@ -278,10 +305,22 @@ export const useGameStore = create<GameState>((set, get) => ({
   opponentConnected: false,
   onlineError: null,
 
-  setPresetId: (id) => set({ presetId: resolvePresetId(id) }),
-  setPlayMode: (mode) => set({ playMode: mode }),
-  setPlacement: (placement) => set({ placement }),
-  setAiDifficulty: (difficulty) => set({ aiDifficulty: difficulty }),
+  setPresetId: (id) => {
+    set({ presetId: resolvePresetId(id) });
+    persistSetupPrefs(get());
+  },
+  setPlayMode: (mode) => {
+    set({ playMode: mode });
+    persistSetupPrefs(get());
+  },
+  setPlacement: (placement) => {
+    set({ placement });
+    persistSetupPrefs(get());
+  },
+  setAiDifficulty: (difficulty) => {
+    set({ aiDifficulty: difficulty });
+    persistSetupPrefs(get());
+  },
   setLocalName: (name) => {
     const localName = name.slice(0, 16);
     persistLocalName(localName);
@@ -549,6 +588,7 @@ export const useGameStore = create<GameState>((set, get) => ({
       status: snap.status,
       winner: snap.winner,
       winningLine: snap.winningLine,
+      winningCell: snap.winningCell ?? null,
       cursor:
         placement === "drop"
           ? snapDropCursor(centerCell(dims), snap.board, dims)
@@ -602,7 +642,7 @@ export const useGameStore = create<GameState>((set, get) => ({
   },
 }));
 
-/** Call once on mount of screens that show the name field (avoids SSR mismatch). */
+/** Call once on mount of setup/join screens (avoids SSR mismatch). */
 export function hydrateLocalNameFromStorage() {
   if (typeof window === "undefined") return;
   try {
@@ -613,4 +653,12 @@ export function hydrateLocalNameFromStorage() {
   } catch {
     // ignore
   }
+}
+
+/** Restore last Mode / Placement / Preset / Difficulty from localStorage. */
+export function hydrateSetupFromStorage() {
+  if (typeof window === "undefined") return;
+  const prefs = readSetupPrefsFromStorage();
+  if (Object.keys(prefs).length === 0) return;
+  useGameStore.setState(prefs);
 }

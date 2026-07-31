@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useTransition } from "react";
 import { PRESETS } from "@/game/presets";
-import { hydrateLocalNameFromStorage, useGameStore } from "@/game/store";
+import { hydrateLocalNameFromStorage, hydrateSetupFromStorage, useGameStore } from "@/game/store";
 import type { AiDifficulty, PlacementMode, PlayMode, PresetId } from "@/game/types";
 import { createOnlineRoom, joinOnlineRoom } from "@/online/session";
 
@@ -27,6 +27,7 @@ export function SetupScreen() {
 
   useEffect(() => {
     hydrateLocalNameFromStorage();
+    hydrateSetupFromStorage();
   }, []);
 
   const run = (fn: () => Promise<void>) => {
