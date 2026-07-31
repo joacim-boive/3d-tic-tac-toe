@@ -20,8 +20,10 @@ export function useGameControls() {
   const tipFalling = useGameStore((s) => s.tipFalling);
   const tipLocked = powerUpMode === "tip" || tipFalling;
   const clearMode = powerUpMode === "clear-row";
-  const controlsLocked = swarmBusy || tipLocked;
+  // Tip: no keyboard play. Clear: only aim / cycle / confirm (not place).
+  const playLocked = swarmBusy || tipLocked;
   const confirmClearRow = useGameStore((s) => s.confirmClearRow);
+  const cancelPowerUpMode = useGameStore((s) => s.cancelPowerUpMode);
   const clearAxis = useGameStore((s) => s.clearAxis);
   const cursor = useGameStore((s) => s.cursor);
   const cycleClearAxis = useGameStore((s) => s.cycleClearAxis);
@@ -31,7 +33,8 @@ export function useGameControls() {
 
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key === "Shift") {
-        if (status === "playing" && !controlsLocked) setAiming(true);
+        // Aiming allowed in clear mode; blocked during tip / swarm.
+        if (status === "playing" && !playLocked) setAiming(true);
         return;
       }
 
@@ -42,7 +45,7 @@ export function useGameControls() {
         case " ":
         case "Enter":
           e.preventDefault();
-          if (status !== "playing" || controlsLocked) break;
+          if (status !== "playing" || playLocked) break;
           if (clearMode) {
             const fixed = clearFixedFromCursor(clearAxis, cursor);
             confirmClearRow(fixed.a, fixed.b);
@@ -51,7 +54,7 @@ export function useGameControls() {
           }
           break;
         case "Tab":
-          if (status === "playing" && clearMode && !controlsLocked) {
+          if (status === "playing" && clearMode && !playLocked) {
             e.preventDefault();
             cycleClearAxis();
           }
@@ -59,46 +62,52 @@ export function useGameControls() {
         case "ArrowLeft":
         case "a":
         case "A":
-          if (status !== "playing" || controlsLocked) break;
+          if (status !== "playing" || playLocked) break;
           e.preventDefault();
           nudgeCursor(-1, 0, 0);
           break;
         case "ArrowRight":
         case "d":
         case "D":
-          if (status !== "playing" || controlsLocked) break;
+          if (status !== "playing" || playLocked) break;
           e.preventDefault();
           nudgeCursor(1, 0, 0);
           break;
         case "ArrowUp":
         case "w":
         case "W":
-          if (status !== "playing" || controlsLocked) break;
+          if (status !== "playing" || playLocked) break;
           e.preventDefault();
           nudgeCursor(0, 1, 0);
           break;
         case "ArrowDown":
         case "s":
         case "S":
-          if (status !== "playing" || controlsLocked) break;
+          if (status !== "playing" || playLocked) break;
           e.preventDefault();
           nudgeCursor(0, -1, 0);
           break;
         case "q":
         case "Q":
         case "[":
-          if (status !== "playing" || controlsLocked) break;
+          if (status !== "playing" || playLocked) break;
           e.preventDefault();
           nudgeCursor(0, 0, -1);
           break;
         case "e":
         case "E":
         case "]":
-          if (status !== "playing" || controlsLocked) break;
+          if (status !== "playing" || playLocked) break;
           e.preventDefault();
           nudgeCursor(0, 0, 1);
           break;
         case "Escape":
+          // Power-up modes: Esc cancels (same as Cancel), not leave to menu.
+          if ((clearMode || powerUpMode === "tip") && !tipFalling) {
+            e.preventDefault();
+            cancelPowerUpMode();
+            break;
+          }
           if (playMode === "online") {
             void leaveOnlineSession();
           } else {
@@ -135,14 +144,17 @@ export function useGameControls() {
     phase,
     status,
     playMode,
-    controlsLocked,
+    playLocked,
     clearMode,
+    powerUpMode,
+    tipFalling,
     clearAxis,
     cursor,
     setAiming,
     nudgeCursor,
     placeAtCursor,
     confirmClearRow,
+    cancelPowerUpMode,
     cycleClearAxis,
     returnToSetup,
     rematch,

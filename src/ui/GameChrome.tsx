@@ -190,6 +190,9 @@ export function GameChrome({ children }: GameChromeProps) {
                 <li>
                   <kbd>Drop</kbd> when ready
                 </li>
+                <li>
+                  <kbd>Esc</kbd> cancel
+                </li>
               </>
             )
           ) : powerUpMode === "clear-row" ? (
@@ -215,6 +218,9 @@ export function GameChrome({ children }: GameChromeProps) {
                 </li>
                 <li>
                   <kbd>Clear</kbd> / <kbd>Space</kbd> confirm
+                </li>
+                <li>
+                  <kbd>Esc</kbd> cancel
                 </li>
               </>
             )

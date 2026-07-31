@@ -57,7 +57,9 @@ function SceneContent() {
   const reviewing = status === "won" || status === "draw";
   const dropMode = placement === "drop";
   const tipMode = powerUpMode === "tip";
-  const tipLocked = tipMode || tipFalling;
+  const clearMode = powerUpMode === "clear-row";
+  // Tip / Clear: kill orbit, pan, zoom — only the power-up gesture remains.
+  const powerLocked = tipMode || tipFalling || clearMode;
   // Drop mode: orbit around and over the top, never under the box.
   const maxPolar = reviewing ? Math.PI : dropMode ? MathUtils.DEG2RAD * 78 : Math.PI;
   const minPolar = reviewing ? 0 : dropMode ? MathUtils.DEG2RAD * 8 : 0;
@@ -73,14 +75,15 @@ function SceneContent() {
       <TipBoardFrame dims={dims} dropMode={dropMode} />
 
       {/*
-        Tip mode: OrbitControls fully off — only TipDragController tumbles the box.
-        Playing touch: one-finger aim; two-finger orbit.
+        Tip / Clear: OrbitControls fully off.
+        Tip → TipDragController; Clear → aim + tap-to-cycle axis.
+        Playing touch otherwise: one-finger aim; two-finger orbit.
       */}
       <OrbitControls
-        enablePan={!tipLocked && (!touchUi || reviewing)}
-        enableZoom={!tipLocked}
-        enableRotate={!tipLocked}
-        enabled={!tipLocked && (reviewing || !aiming)}
+        enablePan={!powerLocked && (!touchUi || reviewing)}
+        enableZoom={!powerLocked}
+        enableRotate={!powerLocked}
+        enabled={!powerLocked && (reviewing || !aiming)}
         enableDamping
         dampingFactor={0.08}
         minDistance={camDist * 0.35}
