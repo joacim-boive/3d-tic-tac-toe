@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect } from "react";
+import { clearFixedFromCursor } from "@/game/clearRow";
 import { useGameStore } from "@/game/store";
 import { leaveOnlineSession } from "@/online/session";
 
@@ -18,8 +19,12 @@ export function useGameControls() {
   const powerUpMode = useGameStore((s) => s.powerUpMode);
   const tipFalling = useGameStore((s) => s.tipFalling);
   const tipLocked = powerUpMode === "tip" || tipFalling;
-  const controlsLocked =
-    swarmBusy || tipLocked || powerUpMode === "clear-row";
+  const clearMode = powerUpMode === "clear-row";
+  const controlsLocked = swarmBusy || tipLocked;
+  const confirmClearRow = useGameStore((s) => s.confirmClearRow);
+  const clearAxis = useGameStore((s) => s.clearAxis);
+  const cursor = useGameStore((s) => s.cursor);
+  const cycleClearAxis = useGameStore((s) => s.cycleClearAxis);
 
   useEffect(() => {
     if (phase !== "playing") return;
@@ -37,8 +42,18 @@ export function useGameControls() {
         case " ":
         case "Enter":
           e.preventDefault();
-          if (status === "playing" && !controlsLocked) {
+          if (status !== "playing" || controlsLocked) break;
+          if (clearMode) {
+            const fixed = clearFixedFromCursor(clearAxis, cursor);
+            confirmClearRow(fixed.a, fixed.b);
+          } else {
             placeAtCursor();
+          }
+          break;
+        case "Tab":
+          if (status === "playing" && clearMode && !controlsLocked) {
+            e.preventDefault();
+            cycleClearAxis();
           }
           break;
         case "ArrowLeft":
@@ -121,10 +136,14 @@ export function useGameControls() {
     status,
     playMode,
     controlsLocked,
-    powerUpMode,
+    clearMode,
+    clearAxis,
+    cursor,
     setAiming,
     nudgeCursor,
     placeAtCursor,
+    confirmClearRow,
+    cycleClearAxis,
     returnToSetup,
     rematch,
   ]);

@@ -15,6 +15,7 @@ import {
 } from "@/game/tipBoard";
 import { PLAYER_COLORS, type BoardDims, type PlayerId } from "@/game/types";
 import { BoardColliders, DROP_GRAVITY, MARKER_RADIUS } from "./BoardColliders";
+import { ClearRowHighlight } from "./ClearRowHighlight";
 import { Grid } from "./Grid";
 import { Markers } from "./Markers";
 import { PhysicsMarkers } from "./PhysicsMarkers";
@@ -179,6 +180,7 @@ export function TipBoardFrame({ dims, dropMode }: TipBoardFrameProps) {
       <group ref={groupRef}>
         <Grid dims={dims} />
         {!tipMode && !tipFalling ? <SelectionCursor dims={dims} /> : null}
+        <ClearRowHighlight dims={dims} />
 
         {tipFalling ? (
           <TipFallPhysics

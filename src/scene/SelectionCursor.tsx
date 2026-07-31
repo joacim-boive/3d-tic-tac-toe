@@ -37,9 +37,12 @@ export function SelectionCursor({ dims, spacing = 1 }: SelectionCursorProps) {
   const placeAtCursor = useGameStore((s) => s.placeAtCursor);
   const placement = useGameStore((s) => s.placement);
   const dropBusy = useGameStore((s) => s.dropBusy);
+  const powerUpMode = useGameStore((s) => s.powerUpMode);
+  const cycleClearAxis = useGameStore((s) => s.cycleClearAxis);
 
   const [touchAiming, setTouchAiming] = useState(false);
   const showAim = aiming || touchAiming;
+  const clearMode = powerUpMode === "clear-row";
 
   const raycaster = useMemo(() => new Raycaster(), []);
   const ndc = useMemo(() => new Vector2(), []);
@@ -61,6 +64,10 @@ export function SelectionCursor({ dims, spacing = 1 }: SelectionCursorProps) {
   // touch ids (missed pointerup) and makes one-finger aim look hung.
   const dropBusyRef = useRef(dropBusy);
   dropBusyRef.current = dropBusy;
+  const clearModeRef = useRef(clearMode);
+  clearModeRef.current = clearMode;
+  const cycleClearAxisRef = useRef(cycleClearAxis);
+  cycleClearAxisRef.current = cycleClearAxis;
 
   const cellSize = spacing * 0.96;
   const edges = useMemo(() => {
@@ -221,10 +228,17 @@ export function SelectionCursor({ dims, spacing = 1 }: SelectionCursorProps) {
       pointersRef.current.delete(e.pointerId);
 
       if (pointersRef.current.size === 0) {
-        // Quick tap lifted before MULTI_WAIT_MS — still aim, never place.
+        // Quick tap lifted before MULTI_WAIT_MS — still aim (except clear mode: tap = cycle axis).
         const pendingAim = aimDelayRef.current !== null;
         clearAimDelay();
-        if (touch && active && !multi && !touchAim && pendingAim) {
+        if (
+          touch &&
+          active &&
+          !multi &&
+          !touchAim &&
+          pendingAim &&
+          !clearModeRef.current
+        ) {
           aimAt(pendingAimRef.current.x, pendingAimRef.current.y);
         }
         dragRef.current.active = false;
@@ -233,10 +247,13 @@ export function SelectionCursor({ dims, spacing = 1 }: SelectionCursorProps) {
         setTouchAiming(false);
       }
 
-      // Touch never auto-places — Place button commits after preview.
-      // Multi-touch orbit must not place even if pointerType is misreported.
+      // Clear mode: tap/click cycles axis (chips stay in sync). Else desktop click places.
       if (!active || moved || touchAim || multi) return;
       if (status !== "playing" || dropBusyRef.current) return;
+      if (clearModeRef.current) {
+        cycleClearAxisRef.current();
+        return;
+      }
       if (!touch) placeAtCursor();
     };
 
@@ -257,14 +274,14 @@ export function SelectionCursor({ dims, spacing = 1 }: SelectionCursorProps) {
 
   const occupied = board.has(cellKey(cursor.x, cursor.y, cursor.z));
   const [cx, cy, cz] = cellToWorld(cursor, dims, spacing);
-  const color = PLAYER_COLORS[currentPlayer];
+  const color = clearMode ? "#f0c14a" : PLAYER_COLORS[currentPlayer];
   // Drop mode: highlight the whole column shaft lightly, cursor at landing cell.
-  const columnH = placement === "drop" ? dims.y * spacing * 0.96 : cellSize;
-  const columnY = placement === "drop" ? -cy : 0;
+  const columnH = placement === "drop" && !clearMode ? dims.y * spacing * 0.96 : cellSize;
+  const columnY = placement === "drop" && !clearMode ? -cy : 0;
 
   return (
     <group position={[cx, cy, cz]}>
-      {placement === "drop" ? (
+      {placement === "drop" && !clearMode ? (
         <mesh position={[0, columnY, 0]}>
           <boxGeometry args={[cellSize * 0.92, columnH, cellSize * 0.92]} />
           <meshBasicMaterial
@@ -280,15 +297,15 @@ export function SelectionCursor({ dims, spacing = 1 }: SelectionCursorProps) {
         <meshBasicMaterial
           color={color}
           transparent
-          opacity={occupied || dropBusy ? 0.06 : 0.16}
+          opacity={occupied || dropBusy ? 0.06 : clearMode ? 0.12 : 0.16}
           depthWrite={false}
         />
       </mesh>
       <lineSegments geometry={edges}>
         <lineBasicMaterial color={color} transparent opacity={dropBusy ? 0.25 : 0.95} />
       </lineSegments>
-      {/* Hide landing ghost while a piece is falling — otherwise it looks like an instant place. */}
-      {!dropBusy ? (
+      {/* Hide landing ghost while clearing — the amber line is the preview. */}
+      {!dropBusy && !clearMode ? (
         <mesh>
           <sphereGeometry args={[0.28, 20, 16]} />
           <meshStandardMaterial

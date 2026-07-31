@@ -10,7 +10,7 @@ import {
   resolvePlaceCoord,
   type Board,
 } from "./board";
-import { clearAxisLine, repackDrop, type Axis } from "./clearRow";
+import { clearAxisLine, nextClearAxis, repackDrop, type Axis } from "./clearRow";
 import { getPreset, resolvePresetId } from "./presets";
 import {
   aiCatchRoll,
@@ -177,6 +177,7 @@ type GameState = {
   activatePowerUp: (kind: PowerUpId) => boolean;
   cancelPowerUpMode: () => void;
   setClearAxis: (axis: Axis) => void;
+  cycleClearAxis: () => void;
   confirmClearRow: (a: number, b: number) => boolean;
   /** Begin fall animation from the current tipped orientation. */
   confirmTip: () => boolean;
@@ -674,7 +675,7 @@ export const useGameStore = create<GameState>((set, get) => ({
   nudgeCursor: (dx, dy, dz) => {
     const state = get();
     if (state.status !== "playing" || state.swarmBusy) return;
-    if (state.tipFalling || state.powerUpMode === "tip" || state.powerUpMode === "clear-row") {
+    if (state.tipFalling || state.powerUpMode === "tip") {
       return;
     }
     if (state.playMode === "online" && state.onlineStatus !== "playing") return;
@@ -713,6 +714,12 @@ export const useGameStore = create<GameState>((set, get) => ({
   clearPowerUpToast: () => set({ powerUpToast: null }),
 
   setClearAxis: (axis) => set({ clearAxis: axis }),
+
+  cycleClearAxis: () => {
+    const state = get();
+    if (state.powerUpMode !== "clear-row") return;
+    set({ clearAxis: nextClearAxis(state.clearAxis) });
+  },
 
   activatePowerUp: (kind) => {
     const state = get();
@@ -766,7 +773,11 @@ export const useGameStore = create<GameState>((set, get) => ({
       return true;
     }
 
-    set({ powerUpMode: kind });
+    set({
+      powerUpMode: kind,
+      powerUpToast:
+        kind === "clear-row" ? "Aim a line · tap to switch axis · Clear" : null,
+    });
     return true;
   },
 

@@ -66,3 +66,20 @@ export function axisFixedLabels(axis: Axis): [string, string] {
   if (axis === "y") return ["x", "z"];
   return ["x", "y"];
 }
+
+/** Fixed coords for the clear line through `cursor` along `axis`. */
+export function clearFixedFromCursor(
+  axis: Axis,
+  cursor: CellCoord,
+): { a: number; b: number } {
+  if (axis === "x") return { a: cursor.y, b: cursor.z };
+  if (axis === "y") return { a: cursor.x, b: cursor.z };
+  return { a: cursor.x, b: cursor.y };
+}
+
+export const CLEAR_AXES: readonly Axis[] = ["x", "y", "z"] as const;
+
+export function nextClearAxis(axis: Axis): Axis {
+  const i = CLEAR_AXES.indexOf(axis);
+  return CLEAR_AXES[(i + 1) % CLEAR_AXES.length]!;
+}

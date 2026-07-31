@@ -2,7 +2,7 @@
  * Assert-based self-check for power-up helpers — run with `npm run check:powerups`.
  */
 import { cellKey, checkWinAny, createEmptyBoard } from "./board";
-import { axisLineCells, clearAxisLine, repackDrop } from "./clearRow";
+import { axisLineCells, clearAxisLine, clearFixedFromCursor, nextClearAxis, repackDrop } from "./clearRow";
 import {
   AI_CATCH_CHANCE,
   MAX_PER_KIND,
@@ -118,6 +118,25 @@ function testAiCatch() {
   assert(typeof yes() === "number", "rng works");
 }
 
+function testClearCursorAxis() {
+  const cursor = { x: 1, y: 2, z: 0 };
+  assert(
+    clearFixedFromCursor("x", cursor).a === 2 && clearFixedFromCursor("x", cursor).b === 0,
+    "x-axis fixes y,z",
+  );
+  assert(
+    clearFixedFromCursor("y", cursor).a === 1 && clearFixedFromCursor("y", cursor).b === 0,
+    "y-axis fixes x,z",
+  );
+  assert(
+    clearFixedFromCursor("z", cursor).a === 1 && clearFixedFromCursor("z", cursor).b === 2,
+    "z-axis fixes x,y",
+  );
+  assert(nextClearAxis("x") === "y", "cycle x→y");
+  assert(nextClearAxis("y") === "z", "cycle y→z");
+  assert(nextClearAxis("z") === "x", "cycle z→x");
+}
+
 function testClearAndRepack() {
   const dims: BoardDims = { x: 3, y: 3, z: 3 };
   let board = createEmptyBoard();
@@ -169,6 +188,7 @@ testSwarmGate();
 testPlanSwarmDeterministic();
 testPickKindRespectsCap();
 testAiCatch();
+testClearCursorAxis();
 testClearAndRepack();
 testTipCube();
 testTipCreatesWin();

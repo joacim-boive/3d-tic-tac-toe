@@ -10,7 +10,7 @@ import {
 import { useGameStore } from "@/game/store";
 import { canTipPreset, tipDownFromEuler } from "@/game/tipBoard";
 import { PLAYER_COLORS, PLAYER_LABELS, type PlayerId } from "@/game/types";
-import type { Axis } from "@/game/clearRow";
+import { clearFixedFromCursor, type Axis } from "@/game/clearRow";
 
 function InventoryRow({
   player,
@@ -139,7 +139,7 @@ export function PowerUpHud() {
 
       {powerUpMode === "clear-row" ? (
         <div className="powerups__mode">
-          <span>Clear row along</span>
+          <span>Aim · tap board or axis to switch · Clear</span>
           <div className="powerups__axis" role="group" aria-label="Axis">
             {(["x", "y", "z"] as const).map((axis) => (
               <button
@@ -157,12 +157,11 @@ export function PowerUpHud() {
             type="button"
             className="chrome__btn chrome__btn--accent"
             onClick={() => {
-              const a = clearAxis === "x" ? cursor.y : clearAxis === "y" ? cursor.x : cursor.x;
-              const b = clearAxis === "x" ? cursor.z : clearAxis === "y" ? cursor.z : cursor.y;
-              confirmClearRow(a, b);
+              const fixed = clearFixedFromCursor(clearAxis, cursor);
+              confirmClearRow(fixed.a, fixed.b);
             }}
           >
-            Clear at cursor
+            Clear
           </button>
           <button type="button" className="chrome__btn" onClick={cancelPowerUpMode}>
             Cancel

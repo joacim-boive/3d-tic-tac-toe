@@ -76,7 +76,7 @@ export function GameChrome({ children }: GameChromeProps) {
   } else if (tipFalling) {
     statusText = "Balls falling…";
   } else if (powerUpMode === "clear-row") {
-    statusText = "Clear row — pick axis & confirm";
+    statusText = "Clear — aim · tap to switch axis";
   } else if (powerUpMode === "tip") {
     statusText = "Drag to tip the box · then Drop";
   } else if (bonusPlacesRemaining > 0) {
@@ -189,6 +189,32 @@ export function GameChrome({ children }: GameChromeProps) {
                 </li>
                 <li>
                   <kbd>Drop</kbd> when ready
+                </li>
+              </>
+            )
+          ) : powerUpMode === "clear-row" ? (
+            touchUi ? (
+              <>
+                <li>
+                  <kbd>drag</kbd> aim
+                </li>
+                <li>
+                  <kbd>tap</kbd> switch axis
+                </li>
+                <li>
+                  <kbd>Clear</kbd> confirm
+                </li>
+              </>
+            ) : (
+              <>
+                <li>
+                  <kbd>Shift</kbd> aim
+                </li>
+                <li>
+                  <kbd>click</kbd> / <kbd>Tab</kbd> switch axis
+                </li>
+                <li>
+                  <kbd>Clear</kbd> / <kbd>Space</kbd> confirm
                 </li>
               </>
             )
