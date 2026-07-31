@@ -57,6 +57,10 @@ export function SelectionCursor({ dims, spacing = 1 }: SelectionCursorProps) {
   const pointersRef = useRef(new Set<number>());
   const aimDelayRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pendingAimRef = useRef({ x: 0, y: 0 });
+  // Keep place-lock out of the listener effect deps — rebinding mid-drop orphans
+  // touch ids (missed pointerup) and makes one-finger aim look hung.
+  const dropBusyRef = useRef(dropBusy);
+  dropBusyRef.current = dropBusy;
 
   const cellSize = spacing * 0.96;
   const edges = useMemo(() => {
@@ -124,6 +128,20 @@ export function SelectionCursor({ dims, spacing = 1 }: SelectionCursorProps) {
       aimDelayRef.current = null;
     };
 
+    const resetGestureState = () => {
+      clearAimDelay();
+      pointersRef.current.clear();
+      dragRef.current = {
+        active: false,
+        moved: false,
+        touchAim: false,
+        multi: false,
+        x: 0,
+        y: 0,
+      };
+      setTouchAiming(false);
+    };
+
     const beginTouchAim = () => {
       if (dragRef.current.multi || pointersRef.current.size !== 1) return;
       dragRef.current.touchAim = true;
@@ -132,6 +150,12 @@ export function SelectionCursor({ dims, spacing = 1 }: SelectionCursorProps) {
     };
 
     const onDown = (e: PointerEvent) => {
+      // Recover from missed pointerup/cancel (listener rebind mid-gesture, Safari quirks).
+      // Primary contact starting fresh while orphans linger would otherwise look like multi-touch.
+      if (e.isPrimary && pointersRef.current.size > 0 && !pointersRef.current.has(e.pointerId)) {
+        resetGestureState();
+      }
+
       pointersRef.current.add(e.pointerId);
       const touch = isTouchPointer(e.pointerType);
       const count = pointersRef.current.size;
@@ -212,7 +236,7 @@ export function SelectionCursor({ dims, spacing = 1 }: SelectionCursorProps) {
       // Touch never auto-places — Place button commits after preview.
       // Multi-touch orbit must not place even if pointerType is misreported.
       if (!active || moved || touchAim || multi) return;
-      if (status !== "playing" || dropBusy) return;
+      if (status !== "playing" || dropBusyRef.current) return;
       if (!touch) placeAtCursor();
     };
 
@@ -221,26 +245,13 @@ export function SelectionCursor({ dims, spacing = 1 }: SelectionCursorProps) {
     el.addEventListener("pointerup", onUp);
     el.addEventListener("pointercancel", onUp);
     return () => {
-      clearAimDelay();
+      resetGestureState();
       el.removeEventListener("pointerdown", onDown);
       el.removeEventListener("pointermove", onMove);
       el.removeEventListener("pointerup", onUp);
       el.removeEventListener("pointercancel", onUp);
     };
-  }, [
-    gl,
-    camera,
-    dims,
-    spacing,
-    placeAtCursor,
-    setCursor,
-    status,
-    dropBusy,
-    raycaster,
-    ndc,
-    point,
-    center,
-  ]);
+  }, [gl, camera, dims, spacing, placeAtCursor, setCursor, status, raycaster, ndc, point, center]);
 
   if (status !== "playing") return null;
 

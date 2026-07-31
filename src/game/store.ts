@@ -10,11 +10,7 @@ import {
   type Board,
 } from "./board";
 import { getPreset, resolvePresetId } from "./presets";
-import {
-  readSetupPrefsFromStorage,
-  writeSetupPrefsToStorage,
-  type SetupPrefs,
-} from "./setupPrefs";
+import { readSetupPrefsFromStorage, writeSetupPrefsToStorage, type SetupPrefs } from "./setupPrefs";
 import type {
   AiDifficulty,
   CellCoord,
@@ -168,7 +164,11 @@ function clampCursor(coord: CellCoord, dims: { x: number; y: number; z: number }
 }
 
 /** Snap cursor Y to the drop landing (or top cell if the column is full). */
-function snapDropCursor(coord: CellCoord, board: Board, dims: { x: number; y: number; z: number }): CellCoord {
+function snapDropCursor(
+  coord: CellCoord,
+  board: Board,
+  dims: { x: number; y: number; z: number },
+): CellCoord {
   const clamped = clampCursor(coord, dims);
   const land = dropLanding(board, dims, clamped.x, clamped.z);
   if (land) return land;
@@ -182,7 +182,11 @@ function scheduleAiMove(get: () => GameState, set: (partial: Partial<GameState>)
     const state = get();
     if (state.status !== "playing" || state.playMode !== "ai") return;
     if (state.currentPlayer !== AI_PLAYER) return;
-    if (state.dropBusy) return;
+    // Drop still settling — retry rather than silently skipping the AI turn.
+    if (state.dropBusy) {
+      scheduleAiMove(get, set);
+      return;
+    }
 
     const preset = getPreset(state.presetId);
     const move = pickAiMove(
