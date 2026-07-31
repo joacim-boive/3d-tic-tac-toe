@@ -46,11 +46,11 @@ function testSwarmGate() {
   assert(
     !shouldAttemptSwarm({
       powerUpsEnabled: true,
-      occupiedCount: 5,
+      occupiedCount: SWARM_MIN_PLY - 1,
       earnerCounts: counts,
       rng: rngYes,
     }),
-    "before ply 6 → no",
+    "before min ply → no",
   );
   assert(
     shouldAttemptSwarm({
@@ -59,7 +59,7 @@ function testSwarmGate() {
       earnerCounts: counts,
       rng: rngYes,
     }),
-    "ply 6 + low rng → yes",
+    "at min ply + low rng → yes",
   );
   assert(
     !shouldAttemptSwarm({

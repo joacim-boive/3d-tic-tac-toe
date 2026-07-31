@@ -19,6 +19,7 @@ import {
   cloneInventory,
   createPowerUpRng,
   emptyInventory,
+  fullInventory,
   pickRandomKind,
   planSwarm,
   randomSeed,
@@ -105,6 +106,8 @@ type GameState = {
   powerUpMode: PowerUpMode;
   clearAxis: Axis;
   powerUpToast: string | null;
+  /** Precomputed AI catch outcome while watch-only swarm plays. */
+  swarmAiResult: { caught: boolean; kind?: PowerUpId } | null;
   board: Board;
   occupiedCount: number;
   currentPlayer: PlayerId;
@@ -433,28 +436,23 @@ function maybeStartSwarm(
 
   const plan = planSwarm(seed, earner, createPowerUpRng(seed ^ 0x9e3779b9));
 
-  // AI earner: luck only — no skill UI
+  // AI earner: show the flyby as watch-only, resolve luck when it ends
   if (state.playMode === "ai" && earner === AI_PLAYER) {
     const catchRng = createPowerUpRng(seed ^ 0x85ebca6b);
-    if (aiCatchRoll(catchRng)) {
-      const kind = pickRandomKind(state.inventory.b, catchRng);
-      if (kind) {
-        const next = awardPowerUp(state.inventory.b, kind);
-        if (next) {
-          const inv = cloneInventory(state.inventory);
-          inv.b = next;
-          const label =
-            kind === "extra-turn" ? "Extra turn" : kind === "clear-row" ? "Clear row" : "Tip field";
-          set({ inventory: inv, powerUpToast: `Cyan caught ${label}!` });
-          return;
-        }
-      }
+    const caught = aiCatchRoll(catchRng);
+    let kind: PowerUpId | undefined;
+    if (caught) {
+      kind = pickRandomKind(state.inventory.b, catchRng) ?? undefined;
     }
-    set({ powerUpToast: "Cyan missed the packages" });
+    set({
+      swarm: { ...plan, watchOnly: true },
+      swarmBusy: true,
+      swarmAiResult: { caught: Boolean(caught && kind), kind },
+    });
     return;
   }
 
-  set({ swarm: plan, swarmBusy: true });
+  set({ swarm: plan, swarmBusy: true, swarmAiResult: null });
   if (state.playMode === "online") {
     localSwarmPublisher?.(plan);
   }
@@ -588,6 +586,7 @@ export const useGameStore = create<GameState>((set, get) => ({
   powerUpMode: null,
   clearAxis: "x",
   powerUpToast: null,
+  swarmAiResult: null,
   board: createEmptyBoard(),
   occupiedCount: 0,
   currentPlayer: "a",
@@ -842,18 +841,54 @@ export const useGameStore = create<GameState>((set, get) => ({
     const state = get();
     if (!state.swarmBusy && !state.swarm) return;
     const plan = state.swarm;
+    const aiResult = state.swarmAiResult;
+
+    if (aiResult) {
+      if (aiResult.caught && aiResult.kind) {
+        const next = awardPowerUp(state.inventory.b, aiResult.kind);
+        if (next) {
+          const inv = cloneInventory(state.inventory);
+          inv.b = next;
+          const label =
+            aiResult.kind === "extra-turn"
+              ? "Extra turn"
+              : aiResult.kind === "clear-row"
+                ? "Clear row"
+                : "Tip field";
+          set({
+            inventory: inv,
+            swarm: null,
+            swarmBusy: false,
+            swarmAiResult: null,
+            powerUpToast: `Cyan caught ${label}!`,
+          });
+          afterSwarm(get, set);
+          return;
+        }
+      }
+      set({
+        swarm: null,
+        swarmBusy: false,
+        swarmAiResult: null,
+        powerUpToast: "Cyan missed the packages",
+      });
+      afterSwarm(get, set);
+      return;
+    }
+
     if (plan) {
       const who = get().displayName(plan.earner);
       set({
         swarm: null,
         swarmBusy: false,
+        swarmAiResult: null,
         powerUpToast: state.powerUpToast ?? `${who} missed the packages`,
       });
       if (state.playMode === "online" && state.seat === plan.earner) {
         localSwarmResultPublisher?.(plan.earner, false);
       }
     } else {
-      set({ swarmBusy: false });
+      set({ swarmBusy: false, swarmAiResult: null });
     }
     afterSwarm(get, set);
   },
@@ -911,13 +946,14 @@ export const useGameStore = create<GameState>((set, get) => ({
       aiming: false,
       fallingKey: null,
       dropBusy: false,
-      inventory: emptyInventory(),
+      inventory: fullInventory(),
       bonusPlacesRemaining: 0,
       pendingSwarmEarner: null,
       swarm: null,
       swarmBusy: false,
       powerUpMode: null,
       powerUpToast: null,
+      swarmAiResult: null,
     });
   },
 
@@ -944,13 +980,14 @@ export const useGameStore = create<GameState>((set, get) => ({
       aiming: false,
       fallingKey: null,
       dropBusy: false,
-      inventory: emptyInventory(),
+      inventory: fullInventory(),
       bonusPlacesRemaining: 0,
       pendingSwarmEarner: null,
       swarm: null,
       swarmBusy: false,
       powerUpMode: null,
       powerUpToast: null,
+      swarmAiResult: null,
     });
     if (state.playMode === "ai" && nextStarter === AI_PLAYER) {
       scheduleAiMove(get, set);
@@ -979,6 +1016,7 @@ export const useGameStore = create<GameState>((set, get) => ({
       swarmBusy: false,
       powerUpMode: null,
       powerUpToast: null,
+      swarmAiResult: null,
       roomId: null,
       seat: null,
       onlineStatus: "idle",
@@ -1032,13 +1070,14 @@ export const useGameStore = create<GameState>((set, get) => ({
       aiming: false,
       fallingKey: null,
       dropBusy: false,
-      inventory: emptyInventory(),
+      inventory: fullInventory(),
       bonusPlacesRemaining: 0,
       pendingSwarmEarner: null,
       swarm: null,
       swarmBusy: false,
       powerUpMode: null,
       powerUpToast: null,
+      swarmAiResult: null,
       onlineStatus: "playing",
       opponentConnected: true,
       rematchVotes: { ...EMPTY_VOTES },
@@ -1089,13 +1128,14 @@ export const useGameStore = create<GameState>((set, get) => ({
       aiming: false,
       fallingKey: null,
       dropBusy: false,
-      inventory: emptyInventory(),
+      inventory: fullInventory(),
       bonusPlacesRemaining: 0,
       pendingSwarmEarner: null,
       swarm: null,
       swarmBusy: false,
       powerUpMode: null,
       powerUpToast: null,
+      swarmAiResult: null,
       onlineStatus: "playing",
       rematchVotes: { ...EMPTY_VOTES },
     });
@@ -1127,6 +1167,7 @@ export const useGameStore = create<GameState>((set, get) => ({
       swarmBusy: false,
       powerUpMode: null,
       powerUpToast: null,
+      swarmAiResult: null,
       roomId: null,
       seat: null,
       onlineStatus: "idle",
@@ -1161,6 +1202,7 @@ export const useGameStore = create<GameState>((set, get) => ({
       pendingSwarmEarner: null,
       swarm: null,
       swarmBusy: false,
+      swarmAiResult: null,
       powerUpMode: null,
       cursor:
         placement === "drop"

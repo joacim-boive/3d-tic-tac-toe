@@ -540,7 +540,29 @@ button {
 
 /* —— Power-ups —— */
 
+.powerups__toast {
+  position: absolute;
+  left: 0.85rem;
+  right: 0.85rem;
+  bottom: calc(100% + 0.45rem);
+  z-index: 20;
+  margin: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.4rem 0.55rem;
+  border-radius: 8px;
+  background: rgba(10, 16, 22, 0.92);
+  border: 1px solid rgba(62, 207, 200, 0.35);
+  color: var(--ink);
+  font-size: 0.88rem;
+  pointer-events: auto;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+}
+
 .powerups {
+  position: relative;
   flex-shrink: 0;
   z-index: 15;
   display: flex;
@@ -641,19 +663,6 @@ button {
   padding: 0.35rem 0.75rem;
 }
 
-.powerups__toast {
-  margin: 0;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.5rem;
-  padding: 0.4rem 0.55rem;
-  border-radius: 8px;
-  background: rgba(62, 207, 200, 0.12);
-  color: var(--ink);
-  font-size: 0.88rem;
-}
-
 .powerups__toast-dismiss {
   font-size: 1.1rem;
   line-height: 1;
@@ -691,14 +700,14 @@ button {
   position: absolute;
   left: 0;
   top: 0;
-  width: 52px;
-  height: 52px;
+  width: 64px;
+  height: 64px;
   margin: 0;
   padding: 0;
   border: none;
   background: transparent;
   animation: swarm-fly var(--dur) linear var(--delay) both;
-  transform: translate(-50%, -50%);
+  will-change: left, top;
 }
 
 .swarm__box {
@@ -728,10 +737,12 @@ button {
   from {
     left: var(--x0);
     top: var(--y0);
+    transform: translate(-50%, -50%) rotate(-8deg) scale(1);
   }
   to {
     left: var(--x1);
     top: var(--y1);
+    transform: translate(-50%, -50%) rotate(12deg) scale(1);
   }
 }
 

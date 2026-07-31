@@ -36,10 +36,12 @@ export function PackageSwarm() {
 
   if (!swarm || !swarmBusy) return null;
 
+  const watchOnly = Boolean(swarm.watchOnly);
   const canCatch =
-    playMode === "hotseat" ||
-    playMode === "ai" ||
-    (playMode === "online" && seat === swarm.earner);
+    !watchOnly &&
+    (playMode === "hotseat" ||
+      (playMode === "ai" && swarm.earner === "a") ||
+      (playMode === "online" && seat === swarm.earner));
 
   const onTap = (index: number) => {
     if (!canCatch || ended.current) return;
@@ -55,7 +57,9 @@ export function PackageSwarm() {
 
   return (
     <div className="swarm" role="dialog" aria-label="Catch a power-up package">
-      <p className="swarm__hint">{canCatch ? "Tap the live package!" : "Watching…"}</p>
+      <p className="swarm__hint">
+        {watchOnly ? "Cyan is catching…" : canCatch ? "Tap a package!" : "Watching…"}
+      </p>
       {swarm.packages.map((pkg) => {
         const duration = SWARM_DURATION_MS * pkg.speed;
         const state = popped[pkg.id];
