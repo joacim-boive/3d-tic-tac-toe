@@ -665,7 +665,8 @@ export const useGameStore = create<GameState>((set, get) => ({
     const state = get();
     if (state.swarmBusy || state.tipFalling || state.powerUpMode === "tip") return;
     const dims = getPreset(state.presetId).dims;
-    if (state.placement === "drop") {
+    // Clear mode: free 3D aim (no drop snap) so any axis line can be targeted.
+    if (state.placement === "drop" && state.powerUpMode !== "clear-row") {
       set({ cursor: snapDropCursor(coord, state.board, dims) });
       return;
     }
@@ -680,7 +681,7 @@ export const useGameStore = create<GameState>((set, get) => ({
     }
     if (state.playMode === "online" && state.onlineStatus !== "playing") return;
     const dims = getPreset(state.presetId).dims;
-    if (state.placement === "drop") {
+    if (state.placement === "drop" && state.powerUpMode !== "clear-row") {
       set({
         cursor: snapDropCursor(
           {

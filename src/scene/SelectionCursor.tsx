@@ -272,16 +272,20 @@ export function SelectionCursor({ dims, spacing = 1 }: SelectionCursorProps) {
 
   if (status !== "playing") return null;
 
+  // Clear mode: no place-style cell border — the red line spheres are the only preview.
+  // Gesture listeners above still handle aim + tap-to-cycle.
+  if (clearMode) return null;
+
   const occupied = board.has(cellKey(cursor.x, cursor.y, cursor.z));
   const [cx, cy, cz] = cellToWorld(cursor, dims, spacing);
-  const color = clearMode ? "#f0c14a" : PLAYER_COLORS[currentPlayer];
+  const color = PLAYER_COLORS[currentPlayer];
   // Drop mode: highlight the whole column shaft lightly, cursor at landing cell.
-  const columnH = placement === "drop" && !clearMode ? dims.y * spacing * 0.96 : cellSize;
-  const columnY = placement === "drop" && !clearMode ? -cy : 0;
+  const columnH = placement === "drop" ? dims.y * spacing * 0.96 : cellSize;
+  const columnY = placement === "drop" ? -cy : 0;
 
   return (
     <group position={[cx, cy, cz]}>
-      {placement === "drop" && !clearMode ? (
+      {placement === "drop" ? (
         <mesh position={[0, columnY, 0]}>
           <boxGeometry args={[cellSize * 0.92, columnH, cellSize * 0.92]} />
           <meshBasicMaterial
@@ -297,15 +301,14 @@ export function SelectionCursor({ dims, spacing = 1 }: SelectionCursorProps) {
         <meshBasicMaterial
           color={color}
           transparent
-          opacity={occupied || dropBusy ? 0.06 : clearMode ? 0.12 : 0.16}
+          opacity={occupied || dropBusy ? 0.06 : 0.16}
           depthWrite={false}
         />
       </mesh>
       <lineSegments geometry={edges}>
         <lineBasicMaterial color={color} transparent opacity={dropBusy ? 0.25 : 0.95} />
       </lineSegments>
-      {/* Hide landing ghost while clearing — the amber line is the preview. */}
-      {!dropBusy && !clearMode ? (
+      {!dropBusy ? (
         <mesh>
           <sphereGeometry args={[0.28, 20, 16]} />
           <meshStandardMaterial
