@@ -1,11 +1,12 @@
 "use client";
 
-import { useEffect, useRef, useState, type CSSProperties } from "react";
+import { useEffect, useRef, useState, type CSSProperties, type PointerEvent } from "react";
 import { SWARM_DURATION_MS } from "@/game/powerUps";
 import { useGameStore } from "@/game/store";
 
 /**
  * 2D overlay: three packages streak across; tap the live one to earn a power-up.
+ * Uses pointerdown (not click) so moving targets still register on touch.
  */
 export function PackageSwarm() {
   const swarm = useGameStore((s) => s.swarm);
@@ -43,7 +44,9 @@ export function PackageSwarm() {
       (playMode === "ai" && swarm.earner === "a") ||
       (playMode === "online" && seat === swarm.earner));
 
-  const onTap = (index: number) => {
+  const onTap = (index: number, e: PointerEvent<HTMLButtonElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
     if (!canCatch || ended.current) return;
     if (popped[index]) return;
     if (index === swarm.liveIndex) {
@@ -78,8 +81,11 @@ export function PackageSwarm() {
                 ["--delay" as string]: `${pkg.delayMs}ms`,
               } as CSSProperties
             }
-            onClick={() => onTap(pkg.id)}
-            disabled={!canCatch || !!state}
+            onPointerDown={(e) => onTap(pkg.id, e)}
+            // Avoid HTML disabled while catchable — some mobile browsers drop
+            // pointer events on disabled controls mid-animation.
+            aria-disabled={!canCatch || !!state}
+            tabIndex={canCatch && !state ? 0 : -1}
             aria-label={`Package ${pkg.id + 1}`}
           >
             <span className="swarm__box" aria-hidden />

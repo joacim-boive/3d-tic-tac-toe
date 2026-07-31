@@ -20,6 +20,7 @@ import {
   createPowerUpRng,
   emptyInventory,
   fullInventory,
+  hasInventoryRoom,
   pickRandomKind,
   planSwarm,
   randomSeed,
@@ -439,6 +440,8 @@ function maybeStartSwarm(
   const state = get();
   if (state.status !== "playing") return;
   if (state.swarmBusy || state.swarm) return;
+  // No flyby when the earner has no inventory room (full stacks of every kind).
+  if (!hasInventoryRoom(state.inventory[earner])) return;
   const seed = randomSeed();
   const rng = createPowerUpRng(seed);
   if (

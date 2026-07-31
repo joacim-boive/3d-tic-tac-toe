@@ -57,8 +57,9 @@ function SceneContent() {
   const reviewing = status === "won" || status === "draw";
   const dropMode = placement === "drop";
   const tipMode = powerUpMode === "tip";
-  // Tip only: kill orbit/pan/zoom (drag tips the box). Clear keeps normal navigation.
-  const tipLocked = tipMode || tipFalling;
+  const swarmBusy = useGameStore((s) => s.swarmBusy);
+  // Tip: drag tips the box. Swarm: overlay owns all pointers.
+  const camLocked = tipMode || tipFalling || swarmBusy;
   // Drop mode: orbit around and over the top, never under the box.
   const maxPolar = reviewing ? Math.PI : dropMode ? MathUtils.DEG2RAD * 78 : Math.PI;
   const minPolar = reviewing ? 0 : dropMode ? MathUtils.DEG2RAD * 8 : 0;
@@ -74,14 +75,14 @@ function SceneContent() {
       <TipBoardFrame dims={dims} dropMode={dropMode} />
 
       {/*
-        Tip: OrbitControls fully off — TipDragController tumbles the box.
-        Clear / normal play: one-finger aim; two-finger orbit (touch).
+        Tip / package swarm: OrbitControls off.
+        Otherwise: one-finger aim; two-finger orbit (touch).
       */}
       <OrbitControls
-        enablePan={!tipLocked && (!touchUi || reviewing)}
-        enableZoom={!tipLocked}
-        enableRotate={!tipLocked}
-        enabled={!tipLocked && (reviewing || !aiming)}
+        enablePan={!camLocked && (!touchUi || reviewing)}
+        enableZoom={!camLocked}
+        enableRotate={!camLocked}
+        enabled={!camLocked && (reviewing || !aiming)}
         enableDamping
         dampingFactor={0.08}
         minDistance={camDist * 0.35}

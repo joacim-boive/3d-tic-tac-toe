@@ -37,6 +37,7 @@ export function SelectionCursor({ dims, spacing = 1 }: SelectionCursorProps) {
   const placeAtCursor = useGameStore((s) => s.placeAtCursor);
   const placement = useGameStore((s) => s.placement);
   const dropBusy = useGameStore((s) => s.dropBusy);
+  const swarmBusy = useGameStore((s) => s.swarmBusy);
   const powerUpMode = useGameStore((s) => s.powerUpMode);
   const cycleClearAxis = useGameStore((s) => s.cycleClearAxis);
 
@@ -64,6 +65,8 @@ export function SelectionCursor({ dims, spacing = 1 }: SelectionCursorProps) {
   // touch ids (missed pointerup) and makes one-finger aim look hung.
   const dropBusyRef = useRef(dropBusy);
   dropBusyRef.current = dropBusy;
+  const swarmBusyRef = useRef(swarmBusy);
+  swarmBusyRef.current = swarmBusy;
   const clearModeRef = useRef(clearMode);
   clearModeRef.current = clearMode;
   const cycleClearAxisRef = useRef(cycleClearAxis);
@@ -79,7 +82,7 @@ export function SelectionCursor({ dims, spacing = 1 }: SelectionCursorProps) {
 
   // Desktop Shift-aim: follow pointer each frame (orbit paused via store.aiming).
   useFrame((state) => {
-    if (!aiming || status !== "playing") return;
+    if (!aiming || status !== "playing" || swarmBusy) return;
 
     ndc.copy(state.pointer);
     raycaster.setFromCamera(ndc, camera);
@@ -157,6 +160,7 @@ export function SelectionCursor({ dims, spacing = 1 }: SelectionCursorProps) {
     };
 
     const onDown = (e: PointerEvent) => {
+      if (swarmBusyRef.current) return;
       // Recover from missed pointerup/cancel (listener rebind mid-gesture, Safari quirks).
       // Primary contact starting fresh while orphans linger would otherwise look like multi-touch.
       if (e.isPrimary && pointersRef.current.size > 0 && !pointersRef.current.has(e.pointerId)) {

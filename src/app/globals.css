@@ -673,11 +673,13 @@ button {
 /* Package swarm overlay */
 
 .swarm {
-  pointer-events: none;
+  /* Capture all pointers so OrbitControls / aim can't steal near-misses. */
+  pointer-events: auto;
   position: absolute;
   inset: 0;
   z-index: 30;
   overflow: hidden;
+  touch-action: none;
 }
 
 .swarm__hint {
@@ -689,10 +691,10 @@ button {
   margin: 0;
   padding: 0.35rem 0.75rem;
   border-radius: 999px;
-  background: rgba(10, 16, 22, 0.82);
-  border: 1px solid var(--line);
+  background: rgba(14, 20, 27, 0.72);
+  color: #f4f0e8;
   font-size: 0.85rem;
-  white-space: nowrap;
+  z-index: 1;
 }
 
 .swarm__pkg {
@@ -700,25 +702,36 @@ button {
   position: absolute;
   left: 0;
   top: 0;
-  width: 64px;
-  height: 64px;
+  /* Generous hit target; visual box is smaller and centered. */
+  width: 96px;
+  height: 96px;
   margin: 0;
   padding: 0;
   border: none;
   background: transparent;
+  display: grid;
+  place-items: center;
   animation: swarm-fly var(--dur) linear var(--delay) both;
-  will-change: left, top;
+  will-change: left, top, transform;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+  cursor: pointer;
+}
+
+.swarm__pkg:disabled {
+  cursor: default;
 }
 
 .swarm__box {
   display: block;
-  width: 100%;
-  height: 100%;
+  width: 56px;
+  height: 56px;
   border-radius: 10px;
   background:
     linear-gradient(145deg, rgba(255, 214, 120, 0.95), rgba(232, 140, 60, 0.9));
   border: 2px solid rgba(255, 255, 255, 0.35);
   box-shadow: 0 6px 16px rgba(0, 0, 0, 0.35);
+  pointer-events: none;
 }
 
 .swarm__pkg.is-dud .swarm__box {

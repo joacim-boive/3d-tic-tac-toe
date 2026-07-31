@@ -23,7 +23,7 @@ export const SWARM_CHANCE = 0.55;
 /** AI catch success rate (≈ one of three packages live). */
 export const AI_CATCH_CHANCE = 1 / 3;
 /** How long packages stay on screen (ms). */
-export const SWARM_DURATION_MS = 2200;
+export const SWARM_DURATION_MS = 2800;
 
 export type PowerUpCounts = Record<PowerUpId, number>;
 
