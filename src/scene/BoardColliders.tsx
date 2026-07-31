@@ -9,26 +9,19 @@ type BoardCollidersProps = {
 };
 
 const WALL = 0.18;
-/** Visual mesh radius (slightly smaller than the physics ball for clarity). */
 export const MARKER_RADIUS = 0.32;
-/**
- * Physics ball radius — nearly half a cell so stacked pieces actually collide.
- * (Visual radius stays smaller; contact is what drives bounce.)
- */
+
 export function physicsRadius(spacing = 1): number {
   return spacing * 0.48;
 }
+
 export const DROP_FRICTION = 0.55;
 /**
- * Strong gravity — heavy markers (bowling-ball feel), snappy fall.
- * Still accelerates over height so longer drops hit harder.
+ * Heavy pull with a readable arc — accelerates over the fall so taller
+ * drops hit harder (and get a slightly bigger settle bounce).
  */
-export const DROP_GRAVITY: [number, number, number] = [0, -28, 0];
+export const DROP_GRAVITY: [number, number, number] = [0, -24, 0];
 
-/**
- * Invisible box: floor + four walls, open top.
- * Floor aligns to bottom-cell centers minus physics radius.
- */
 export function BoardColliders({ dims, spacing = 1 }: BoardCollidersProps) {
   const w = dims.x * spacing;
   const h = dims.y * spacing;
@@ -76,7 +69,7 @@ export function BoardColliders({ dims, spacing = 1 }: BoardCollidersProps) {
   );
 }
 
-/** Spawn just above the board — enough height to accelerate, not a sky drop. */
+/** High enough to read the fall, low enough to stay snappy (~1s). */
 export function dropSpawnY(dims: BoardDims, spacing = 1): number {
-  return (dims.y * spacing) / 2 + spacing * 1.75;
+  return (dims.y * spacing) / 2 + spacing * 2.15;
 }
