@@ -179,7 +179,7 @@ export function PowerUpHud() {
                 ? "Tipped — balls will fall to the new floor"
                 : tipDirty
                   ? "Tip again or Done"
-                  : "Drag to tip — swipe up tips the bottom toward you"}
+                  : "Spin on the bottom · swipe up/down to flip"}
           </span>
           {!tipFalling ? (
             <>

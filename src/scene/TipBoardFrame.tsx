@@ -17,6 +17,7 @@ import { cellToWorld } from "@/game/board";
 import { useGameStore } from "@/game/store";
 import {
   eulerForTipDown,
+  snapTipEuler,
   tipDownFromEuler,
   tipRemap,
   type TipEuler,
@@ -52,42 +53,41 @@ function eulerToQuat(e: TipEuler): Quaternion {
 }
 
 /**
- * Map a screen swipe to a 90° tip relative to the camera.
- * Swipe up → bottom face tips toward the camera.
- * Swipe right → bottom face tips toward camera-right.
+ * Tip controls (two gestures only):
+ * - Horizontal: spin on the bottom (yaw about world up) — pick which face is forward
+ * - Vertical: flip forward/back about camera-right — swipe up tips bottom toward you
+ * No tipping onto the left/right side faces.
  */
 function tipEulerFromSwipe(current: TipEuler, camera: Camera, dx: number, dy: number): TipEuler {
+  if (Math.abs(dx) > Math.abs(dy)) {
+    const snapped = snapTipEuler(current);
+    // Swipe right → near face moves right (positive yaw about world up).
+    return snapTipEuler({
+      ...snapped,
+      y: snapped.y + (dx > 0 ? HALF_PI : -HALF_PI),
+    });
+  }
+
   const towardCam = new Vector3(camera.position.x, 0, camera.position.z);
   if (towardCam.lengthSq() < 1e-6) towardCam.set(0, 0, 1);
   else towardCam.normalize();
   const camRight = new Vector3(towardCam.z, 0, -towardCam.x);
 
-  const axis = new Vector3();
-  let angle = HALF_PI;
-  if (Math.abs(dx) > Math.abs(dy)) {
-    // Horizontal: tip about the view axis (into the scene).
-    axis.copy(towardCam);
-    // Swipe right → bottom moves right (toward camRight).
-    angle = (dx > 0 ? 1 : -1) * HALF_PI;
-  } else {
-    // Vertical: tip about camera-right.
-    axis.copy(camRight);
-    // Screen y grows downward; swipe up (dy < 0) → bottom toward camera.
-    angle = (dy < 0 ? -1 : 1) * HALF_PI;
-  }
-
   const q = eulerToQuat(current);
-  const tryAngle = (a: number): TipEuler => {
-    const delta = new Quaternion().setFromAxisAngle(axis, a);
+  // Screen y grows downward; swipe up (dy < 0) → bottom toward camera.
+  const angle = (dy < 0 ? -1 : 1) * HALF_PI;
+
+  const applyFlip = (a: number): TipEuler => {
+    const delta = new Quaternion().setFromAxisAngle(camRight, a);
     const next = delta.multiply(q.clone());
     const e = new Euler().setFromQuaternion(next, "XYZ");
     return eulerForTipDown(tipDownFromEuler({ x: e.x, y: e.y, z: e.z }));
   };
 
   const curDown = tipDownFromEuler(current);
-  let next = tryAngle(angle);
+  let next = applyFlip(angle);
   if (tipDownFromEuler(next) === curDown) {
-    next = tryAngle(-angle);
+    next = applyFlip(-angle);
   }
   return next;
 }

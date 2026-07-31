@@ -78,7 +78,7 @@ export function GameChrome({ children }: GameChromeProps) {
   } else if (powerUpMode === "clear-row") {
     statusText = "Clear — aim · tap to switch axis";
   } else if (powerUpMode === "tip") {
-    statusText = "Tip — swipe up tips bottom toward you";
+    statusText = "Tip — spin on bottom · flip forward/back";
   } else if (bonusPlacesRemaining > 0) {
     statusText = `${displayName(currentPlayer)} — extra place`;
   } else if (playMode === "ai" && currentPlayer === "b") {
@@ -185,13 +185,13 @@ export function GameChrome({ children }: GameChromeProps) {
             ) : (
               <>
                 <li>
-                  <kbd>swipe up</kbd> bottom toward you
+                  <kbd>left/right</kbd> spin on bottom
+                </li>
+                <li>
+                  <kbd>up/down</kbd> flip
                 </li>
                 <li>
                   <kbd>Done</kbd> when finished
-                </li>
-                <li>
-                  <kbd>Esc</kbd> cancel
                 </li>
               </>
             )
