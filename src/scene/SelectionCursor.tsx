@@ -152,11 +152,7 @@ export function SelectionCursor({ dims, spacing = 1 }: SelectionCursorProps) {
     const onDown = (e: PointerEvent) => {
       // Recover from missed pointerup/cancel (listener rebind mid-gesture, Safari quirks).
       // Primary contact starting fresh while orphans linger would otherwise look like multi-touch.
-      if (
-        e.isPrimary &&
-        pointersRef.current.size > 0 &&
-        !pointersRef.current.has(e.pointerId)
-      ) {
+      if (e.isPrimary && pointersRef.current.size > 0 && !pointersRef.current.has(e.pointerId)) {
         resetGestureState();
       }
 
@@ -255,19 +251,7 @@ export function SelectionCursor({ dims, spacing = 1 }: SelectionCursorProps) {
       el.removeEventListener("pointerup", onUp);
       el.removeEventListener("pointercancel", onUp);
     };
-  }, [
-    gl,
-    camera,
-    dims,
-    spacing,
-    placeAtCursor,
-    setCursor,
-    status,
-    raycaster,
-    ndc,
-    point,
-    center,
-  ]);
+  }, [gl, camera, dims, spacing, placeAtCursor, setCursor, status, raycaster, ndc, point, center]);
 
   if (status !== "playing") return null;
 
