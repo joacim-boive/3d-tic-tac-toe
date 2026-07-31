@@ -107,25 +107,32 @@ function MarkerBody({
     const now = performance.now();
 
     /*
-     * Impact-scaled bounce, applied after the physics step so Rapier's
-     * contact solver can't immediately overwrite the rebound.
-     * Trigger when falling through the landing plane at the target cell.
+     * Rapier resolves contacts before useFrame, often killing vy on impact.
+     * Use the previous frame's downward speed as the true impact velocity so
+     * rebound scales with how hard/fast the piece hit (longer fall → bigger bounce).
      */
+    const impact = -prevVy.current;
+    const hitLandingPlane = p.y <= ty + 0.1;
+    const velocityKilled = prevVy.current < -IMPACT_MIN && v.y > prevVy.current * 0.4;
+
     if (
-      v.y < -IMPACT_MIN &&
-      p.y <= ty + 0.04 &&
+      hitLandingPlane &&
+      velocityKilled &&
+      impact >= IMPACT_MIN &&
       bounceCount.current < MAX_BOUNCES &&
       now - lastBounceAt.current >= BOUNCE_COOLDOWN_MS
     ) {
-      const impact = -v.y;
       const e = BOUNCE_E * Math.pow(BOUNCE_DECAY, bounceCount.current);
       bounceCount.current += 1;
       lastBounceAt.current = now;
       sawBounce.current = true;
       body.setTranslation({ x: tx, y: ty, z: tz }, true);
       body.setLinvel({ x: v.x * 0.08, y: impact * e, z: v.z * 0.08 }, true);
+      prevVy.current = impact * e;
       return;
     }
+
+    prevVy.current = v.y;
 
     if (v.y > 0.35) sawBounce.current = true;
     if (!sawBounce.current) return;
