@@ -662,7 +662,7 @@ export const useGameStore = create<GameState>((set, get) => ({
   setAiming: (aiming) => set({ aiming }),
   setCursor: (coord) => {
     const state = get();
-    if (state.swarmBusy) return;
+    if (state.swarmBusy || state.tipFalling || state.powerUpMode === "tip") return;
     const dims = getPreset(state.presetId).dims;
     if (state.placement === "drop") {
       set({ cursor: snapDropCursor(coord, state.board, dims) });
@@ -674,6 +674,9 @@ export const useGameStore = create<GameState>((set, get) => ({
   nudgeCursor: (dx, dy, dz) => {
     const state = get();
     if (state.status !== "playing" || state.swarmBusy) return;
+    if (state.tipFalling || state.powerUpMode === "tip" || state.powerUpMode === "clear-row") {
+      return;
+    }
     if (state.playMode === "online" && state.onlineStatus !== "playing") return;
     const dims = getPreset(state.presetId).dims;
     if (state.placement === "drop") {
@@ -757,6 +760,7 @@ export const useGameStore = create<GameState>((set, get) => ({
         tipEuler: { ...IDENTITY_TIP_EULER },
         tipTargetEuler: { ...IDENTITY_TIP_EULER },
         tipFalling: false,
+        aiming: false,
         powerUpToast: "Drag to tip the box, then Drop",
       });
       return true;

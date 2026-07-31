@@ -57,10 +57,10 @@ function SceneContent() {
   const reviewing = status === "won" || status === "draw";
   const dropMode = placement === "drop";
   const tipMode = powerUpMode === "tip";
+  const tipLocked = tipMode || tipFalling;
   // Drop mode: orbit around and over the top, never under the box.
-  // Tip mode: free polar so you can see the box tumble onto a side.
-  const maxPolar = tipMode || reviewing ? Math.PI : dropMode ? MathUtils.DEG2RAD * 78 : Math.PI;
-  const minPolar = tipMode || reviewing ? 0 : dropMode ? MathUtils.DEG2RAD * 8 : 0;
+  const maxPolar = reviewing ? Math.PI : dropMode ? MathUtils.DEG2RAD * 78 : Math.PI;
+  const minPolar = reviewing ? 0 : dropMode ? MathUtils.DEG2RAD * 8 : 0;
 
   return (
     <>
@@ -73,14 +73,14 @@ function SceneContent() {
       <TipBoardFrame dims={dims} dropMode={dropMode} />
 
       {/*
-        Tip mode: camera orbit off so drag tumbles the box (TipDragController).
-        Zoom still allowed. Playing touch: one-finger aim; two-finger orbit.
+        Tip mode: OrbitControls fully off — only TipDragController tumbles the box.
+        Playing touch: one-finger aim; two-finger orbit.
       */}
       <OrbitControls
-        enablePan={!touchUi || reviewing}
-        enableZoom
-        enableRotate={!tipMode && !tipFalling}
-        enabled={(reviewing || !aiming) && !tipFalling}
+        enablePan={!tipLocked && (!touchUi || reviewing)}
+        enableZoom={!tipLocked}
+        enableRotate={!tipLocked}
+        enabled={!tipLocked && (reviewing || !aiming)}
         enableDamping
         dampingFactor={0.08}
         minDistance={camDist * 0.35}
@@ -89,11 +89,9 @@ function SceneContent() {
         maxPolarAngle={maxPolar}
         target={[0, 0, 0]}
         touches={
-          tipMode
-            ? { ONE: TOUCH.PAN, TWO: TOUCH.DOLLY_PAN }
-            : reviewing
-              ? { ONE: TOUCH.ROTATE, TWO: TOUCH.DOLLY_PAN }
-              : { ONE: TOUCH.PAN, TWO: TOUCH.DOLLY_ROTATE }
+          reviewing
+            ? { ONE: TOUCH.ROTATE, TWO: TOUCH.DOLLY_PAN }
+            : { ONE: TOUCH.PAN, TWO: TOUCH.DOLLY_ROTATE }
         }
         makeDefault
       />

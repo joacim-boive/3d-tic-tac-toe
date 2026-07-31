@@ -16,13 +16,17 @@ export function useGameControls() {
   const playMode = useGameStore((s) => s.playMode);
   const swarmBusy = useGameStore((s) => s.swarmBusy);
   const powerUpMode = useGameStore((s) => s.powerUpMode);
+  const tipFalling = useGameStore((s) => s.tipFalling);
+  const tipLocked = powerUpMode === "tip" || tipFalling;
+  const controlsLocked =
+    swarmBusy || tipLocked || powerUpMode === "clear-row";
 
   useEffect(() => {
     if (phase !== "playing") return;
 
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key === "Shift") {
-        if (status === "playing") setAiming(true);
+        if (status === "playing" && !controlsLocked) setAiming(true);
         return;
       }
 
@@ -33,49 +37,49 @@ export function useGameControls() {
         case " ":
         case "Enter":
           e.preventDefault();
-          if (status === "playing" && !swarmBusy && powerUpMode !== "clear-row" && powerUpMode !== "tip") {
+          if (status === "playing" && !controlsLocked) {
             placeAtCursor();
           }
           break;
         case "ArrowLeft":
         case "a":
         case "A":
-          if (status !== "playing" || swarmBusy) break;
+          if (status !== "playing" || controlsLocked) break;
           e.preventDefault();
           nudgeCursor(-1, 0, 0);
           break;
         case "ArrowRight":
         case "d":
         case "D":
-          if (status !== "playing" || swarmBusy) break;
+          if (status !== "playing" || controlsLocked) break;
           e.preventDefault();
           nudgeCursor(1, 0, 0);
           break;
         case "ArrowUp":
         case "w":
         case "W":
-          if (status !== "playing" || swarmBusy) break;
+          if (status !== "playing" || controlsLocked) break;
           e.preventDefault();
           nudgeCursor(0, 1, 0);
           break;
         case "ArrowDown":
         case "s":
         case "S":
-          if (status !== "playing" || swarmBusy) break;
+          if (status !== "playing" || controlsLocked) break;
           e.preventDefault();
           nudgeCursor(0, -1, 0);
           break;
         case "q":
         case "Q":
         case "[":
-          if (status !== "playing" || swarmBusy) break;
+          if (status !== "playing" || controlsLocked) break;
           e.preventDefault();
           nudgeCursor(0, 0, -1);
           break;
         case "e":
         case "E":
         case "]":
-          if (status !== "playing" || swarmBusy) break;
+          if (status !== "playing" || controlsLocked) break;
           e.preventDefault();
           nudgeCursor(0, 0, 1);
           break;
@@ -116,7 +120,7 @@ export function useGameControls() {
     phase,
     status,
     playMode,
-    swarmBusy,
+    controlsLocked,
     powerUpMode,
     setAiming,
     nudgeCursor,

@@ -130,7 +130,7 @@ export function TipBoardFrame({ dims, dropMode }: TipBoardFrameProps) {
 
       <group ref={groupRef}>
         <Grid dims={dims} />
-        {!tipFalling ? <SelectionCursor dims={dims} /> : null}
+        {!tipMode && !tipFalling ? <SelectionCursor dims={dims} /> : null}
 
         {tipFalling ? (
           <TipFallMarkers
