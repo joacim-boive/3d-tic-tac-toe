@@ -11,8 +11,17 @@ type BoardCollidersProps = {
 const WALL = 0.18;
 /** Match marker sphere radius used in PhysicsMarkers. */
 export const MARKER_RADIUS = 0.32;
-export const DROP_RESTITUTION = 0.55;
-export const DROP_FRICTION = 0.4;
+/**
+ * Newton restitution: rebound speed ≈ e × impact speed.
+ * Higher falls (empty columns) hit harder → visibly bigger bounces.
+ */
+/**
+ * Floor/wall material restitution (kept low — drop bounce is impact-scaled in PhysicsMarkers).
+ */
+export const DROP_RESTITUTION = 0.05;
+export const DROP_FRICTION = 0.35;
+/** World gravity for drop mode — pieces accelerate over the fall distance. */
+export const DROP_GRAVITY: [number, number, number] = [0, -20, 0];
 
 /**
  * Invisible box: floor + four walls, open top.
@@ -36,40 +45,43 @@ export function BoardColliders({ dims, spacing = 1 }: BoardCollidersProps) {
       <CuboidCollider
         args={[halfW + WALL, WALL / 2, halfD + WALL]}
         position={[0, floorCenterY, 0]}
-        restitution={DROP_RESTITUTION}
+        restitution={0.05}
         friction={DROP_FRICTION}
       />
       {/* +X / −X walls */}
       <CuboidCollider
         args={[WALL / 2, halfH + WALL, halfD + WALL]}
         position={[halfW + WALL / 2, 0, 0]}
-        restitution={0.08}
+        restitution={0.1}
         friction={DROP_FRICTION}
       />
       <CuboidCollider
         args={[WALL / 2, halfH + WALL, halfD + WALL]}
         position={[-halfW - WALL / 2, 0, 0]}
-        restitution={0.08}
+        restitution={0.1}
         friction={DROP_FRICTION}
       />
       {/* +Z / −Z walls */}
       <CuboidCollider
         args={[halfW + WALL, halfH + WALL, WALL / 2]}
         position={[0, 0, halfD + WALL / 2]}
-        restitution={0.08}
+        restitution={0.1}
         friction={DROP_FRICTION}
       />
       <CuboidCollider
         args={[halfW + WALL, halfH + WALL, WALL / 2]}
         position={[0, 0, -halfD - WALL / 2]}
-        restitution={0.08}
+        restitution={0.1}
         friction={DROP_FRICTION}
       />
     </RigidBody>
   );
 }
 
-/** World Y above the board where new drops spawn. */
+/**
+ * Spawn high above the board so gravity has room to accelerate.
+ * Longer falls (toward empty bottom cells) reach higher impact speed → bigger bounce.
+ */
 export function dropSpawnY(dims: BoardDims, spacing = 1): number {
-  return (dims.y * spacing) / 2 + spacing * 1.35;
+  return (dims.y * spacing) / 2 + spacing * 3.25;
 }

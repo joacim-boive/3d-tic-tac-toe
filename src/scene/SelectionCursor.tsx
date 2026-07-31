@@ -274,20 +274,23 @@ export function SelectionCursor({ dims, spacing = 1 }: SelectionCursorProps) {
         />
       </mesh>
       <lineSegments geometry={edges}>
-        <lineBasicMaterial color={color} transparent opacity={dropBusy ? 0.4 : 0.95} />
+        <lineBasicMaterial color={color} transparent opacity={dropBusy ? 0.25 : 0.95} />
       </lineSegments>
-      <mesh>
-        <sphereGeometry args={[0.28, 20, 16]} />
-        <meshStandardMaterial
-          color={color}
-          transparent
-          opacity={occupied || dropBusy ? 0.2 : showAim ? 0.85 : 0.55}
-          emissive={color}
-          emissiveIntensity={showAim && !dropBusy ? 0.45 : 0.2}
-          depthWrite={false}
-          roughness={0.3}
-        />
-      </mesh>
+      {/* Hide landing ghost while a piece is falling — otherwise it looks like an instant place. */}
+      {!dropBusy ? (
+        <mesh>
+          <sphereGeometry args={[0.28, 20, 16]} />
+          <meshStandardMaterial
+            color={color}
+            transparent
+            opacity={occupied ? 0.2 : showAim ? 0.85 : 0.55}
+            emissive={color}
+            emissiveIntensity={showAim ? 0.45 : 0.2}
+            depthWrite={false}
+            roughness={0.3}
+          />
+        </mesh>
+      ) : null}
     </group>
   );
 }

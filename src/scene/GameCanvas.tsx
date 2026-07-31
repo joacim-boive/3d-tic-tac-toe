@@ -7,7 +7,7 @@ import { Suspense, useEffect, useState } from "react";
 import { MathUtils, TOUCH } from "three";
 import { getPreset } from "@/game/presets";
 import { useGameStore } from "@/game/store";
-import { BoardColliders } from "./BoardColliders";
+import { BoardColliders, DROP_GRAVITY } from "./BoardColliders";
 import { Grid } from "./Grid";
 import { Markers } from "./Markers";
 import { PhysicsMarkers } from "./PhysicsMarkers";
@@ -76,7 +76,7 @@ function SceneContent() {
       <SelectionCursor dims={dims} />
 
       {dropMode ? (
-        <Physics gravity={[0, -14, 0]} colliders={false}>
+        <Physics gravity={DROP_GRAVITY} colliders={false}>
           <BoardColliders dims={dims} />
           <PhysicsMarkers dims={dims} />
         </Physics>
