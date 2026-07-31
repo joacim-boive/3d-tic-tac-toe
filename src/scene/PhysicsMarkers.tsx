@@ -16,9 +16,13 @@ import {
 
 const WIN_COLOR = "#2dff6a";
 const WIN_SCALE = 1.15;
-const SETTLE_SPEED = 0.22;
-const SETTLE_DIST = 0.55;
-const SETTLE_TIMEOUT_MS = 2800;
+/** Don't freeze until the piece has had time to fall + bounce. */
+const MIN_FALL_MS = 420;
+const SETTLE_SPEED = 0.35;
+const SETTLE_DIST = 0.4;
+const SETTLE_TIMEOUT_MS = 3200;
+/** Require N consecutive calm frames before snapping (avoids freezing at bounce apex). */
+const SETTLE_FRAMES = 4;
 
 type PhysicsMarkersProps = {
   dims: BoardDims;
@@ -45,6 +49,8 @@ function MarkerBody({
   const finishDrop = useGameStore((s) => s.finishDrop);
   const bodyRef = useRef<RapierRigidBody>(null);
   const settledRef = useRef(!entry.falling);
+  const bornAt = useRef(performance.now());
+  const calmFrames = useRef(0);
   const spawnY = dropSpawnY(dims, spacing);
   const [tx, ty, tz] = cellToWorld(entry.coord, dims, spacing);
   const colorHex = entry.winning ? WIN_COLOR : PLAYER_COLORS[entry.player];
@@ -67,21 +73,31 @@ function MarkerBody({
 
   useEffect(() => {
     if (!entry.falling) return;
+    bornAt.current = performance.now();
+    calmFrames.current = 0;
     const t = window.setTimeout(snapAndFinish, SETTLE_TIMEOUT_MS);
     return () => window.clearTimeout(t);
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- settle once per falling mount
+    // Settle once per falling mount; snapAndFinish closes over latest tx/ty/tz.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [entry.falling]);
 
   useFrame(() => {
     if (!entry.falling || settledRef.current) return;
     const body = bodyRef.current;
     if (!body) return;
+    if (performance.now() - bornAt.current < MIN_FALL_MS) return;
+
     const v = body.linvel();
     const p = body.translation();
     const speed = Math.hypot(v.x, v.y, v.z);
     const dist = Math.hypot(p.x - tx, p.y - ty, p.z - tz);
-    if (speed < SETTLE_SPEED && dist < SETTLE_DIST && p.y <= ty + 0.45) {
-      snapAndFinish();
+    const nearRest = speed < SETTLE_SPEED && dist < SETTLE_DIST && p.y <= ty + 0.35;
+
+    if (nearRest) {
+      calmFrames.current += 1;
+      if (calmFrames.current >= SETTLE_FRAMES) snapAndFinish();
+    } else {
+      calmFrames.current = 0;
     }
   });
 
@@ -93,15 +109,15 @@ function MarkerBody({
       type={entry.falling ? "dynamic" : "fixed"}
       position={position}
       colliders={false}
-      linearDamping={0.15}
-      angularDamping={0.4}
+      linearDamping={0.08}
+      angularDamping={0.35}
       ccd
     >
       <BallCollider
         args={[radius]}
         restitution={DROP_RESTITUTION}
         friction={DROP_FRICTION}
-        density={1}
+        density={1.2}
       />
       <mesh castShadow={false}>
         <sphereGeometry args={[radius, 20, 16]} />
