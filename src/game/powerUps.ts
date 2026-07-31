@@ -44,11 +44,12 @@ export type SwarmPackagePlan = {
 export type SwarmPlan = {
   seed: number;
   liveIndex: 0 | 1 | 2;
+  /** Player whose place triggered the flyby (flavor only — either seat may claim). */
   earner: PlayerId;
   packages: SwarmPackagePlan[];
-  /** Human watches only (AI earner) — no tap catch. */
-  watchOnly?: boolean;
 };
+
+export type SwarmTapOutcome = "dud" | "claim" | "deny";
 
 export type Rng = () => number;
 
@@ -112,12 +113,12 @@ export function pickRandomKind(counts: PowerUpCounts, rng: Rng): PowerUpId | nul
 export function shouldAttemptSwarm(opts: {
   powerUpsEnabled: boolean;
   occupiedCount: number;
-  earnerCounts: PowerUpCounts;
+  /** @deprecated Ignored — flybys run even when inventories are full (deny/sabotage). */
+  earnerCounts?: PowerUpCounts;
   rng: Rng;
 }): boolean {
   if (!opts.powerUpsEnabled) return false;
   if (opts.occupiedCount < SWARM_MIN_PLY) return false;
-  if (!hasInventoryRoom(opts.earnerCounts)) return false;
   return opts.rng() < SWARM_CHANCE;
 }
 

@@ -1,27 +1,31 @@
 "use client";
 
 import { useEffect, useRef, useState, type CSSProperties, type PointerEvent } from "react";
-import { SWARM_DURATION_MS } from "@/game/powerUps";
+import { MAX_PER_KIND, SWARM_DURATION_MS } from "@/game/powerUps";
 import { useGameStore } from "@/game/store";
+import { PLAYER_LABELS, type PlayerId } from "@/game/types";
 
 /**
- * 2D overlay: three packages streak across; tap the live one to earn a power-up.
- * Uses pointerdown (not click) so moving targets still register on touch.
+ * Competitive flyby: either seat can tap. Live + room → claim; live + full → deny.
+ * Dud pops for everyone. Online sync removes packages for the opponent.
  */
 export function PackageSwarm() {
   const swarm = useGameStore((s) => s.swarm);
   const swarmBusy = useGameStore((s) => s.swarmBusy);
+  const swarmPopped = useGameStore((s) => s.swarmPopped);
   const seat = useGameStore((s) => s.seat);
   const playMode = useGameStore((s) => s.playMode);
+  const inventory = useGameStore((s) => s.inventory);
   const catchSwarmPackage = useGameStore((s) => s.catchSwarmPackage);
   const endSwarm = useGameStore((s) => s.endSwarm);
-  const [popped, setPopped] = useState<Record<number, "dud" | "live">>({});
   const ended = useRef(false);
+  /** Hotseat: who this device is tapping for. */
+  const [claimSeat, setClaimSeat] = useState<PlayerId>("a");
 
   useEffect(() => {
     ended.current = false;
-    setPopped({});
     if (!swarm || !swarmBusy) return;
+    setClaimSeat(swarm.earner);
     const maxDelay = Math.max(...swarm.packages.map((p) => p.delayMs));
     const t = window.setTimeout(
       () => {
@@ -35,37 +39,78 @@ export function PackageSwarm() {
     return () => window.clearTimeout(t);
   }, [swarm, swarmBusy, endSwarm]);
 
+  useEffect(() => {
+    if (!swarm) return;
+    const live = swarmPopped[swarm.liveIndex];
+    if (live === "claim" || live === "deny") {
+      ended.current = true;
+    }
+  }, [swarm, swarmPopped]);
+
   if (!swarm || !swarmBusy) return null;
 
-  const watchOnly = Boolean(swarm.watchOnly);
   const canCatch =
-    !watchOnly &&
-    (playMode === "hotseat" ||
-      (playMode === "ai" && swarm.earner === "a") ||
-      (playMode === "online" && seat === swarm.earner));
+    playMode === "hotseat" ||
+    playMode === "ai" ||
+    (playMode === "online" && seat != null);
+
+  const catcher: PlayerId =
+    playMode === "online" && seat != null
+      ? seat
+      : playMode === "ai"
+        ? "a"
+        : claimSeat;
+
+  const catcherFull = !Object.values(inventory[catcher]).some((n) => n < MAX_PER_KIND);
 
   const onTap = (index: number, e: PointerEvent<HTMLButtonElement>) => {
     e.preventDefault();
     e.stopPropagation();
     if (!canCatch || ended.current) return;
-    if (popped[index]) return;
+    if (swarmPopped[index]) return;
     if (index === swarm.liveIndex) {
-      setPopped((p) => ({ ...p, [index]: "live" }));
       ended.current = true;
-      window.setTimeout(() => catchSwarmPackage(index), 180);
-    } else {
-      setPopped((p) => ({ ...p, [index]: "dud" }));
     }
+    catchSwarmPackage(index, catcher);
   };
 
   return (
-    <div className="swarm" role="dialog" aria-label="Catch a power-up package">
-      <p className="swarm__hint">
-        {watchOnly ? "Cyan is catching…" : canCatch ? "Tap a package!" : "Watching…"}
-      </p>
+    <div className="swarm" role="dialog" aria-label="Compete for a power-up package">
+      <div className="swarm__hint">
+        {canCatch ? (
+          <>
+            <span>
+              {catcherFull ? "Tap to deny!" : "Tap to claim!"}
+              {playMode === "hotseat" ? (
+                <>
+                  {" "}
+                  as{" "}
+                  <span className="swarm__claim" role="group" aria-label="Claiming as">
+                    {(["a", "b"] as const).map((id) => (
+                      <button
+                        key={id}
+                        type="button"
+                        className={`swarm__claim-btn${claimSeat === id ? " is-selected" : ""}`}
+                        onPointerDown={(e) => {
+                          e.stopPropagation();
+                          setClaimSeat(id);
+                        }}
+                      >
+                        {PLAYER_LABELS[id]}
+                      </button>
+                    ))}
+                  </span>
+                </>
+              ) : null}
+            </span>
+          </>
+        ) : (
+          <span>Watching…</span>
+        )}
+      </div>
       {swarm.packages.map((pkg) => {
         const duration = SWARM_DURATION_MS * pkg.speed;
-        const state = popped[pkg.id];
+        const state = swarmPopped[pkg.id];
         return (
           <button
             key={pkg.id}
@@ -82,8 +127,6 @@ export function PackageSwarm() {
               } as CSSProperties
             }
             onPointerDown={(e) => onTap(pkg.id, e)}
-            // Avoid HTML disabled while catchable — some mobile browsers drop
-            // pointer events on disabled controls mid-animation.
             aria-disabled={!canCatch || !!state}
             tabIndex={canCatch && !state ? 0 : -1}
             aria-label={`Package ${pkg.id + 1}`}

@@ -695,6 +695,35 @@ button {
   color: #f4f0e8;
   font-size: 0.85rem;
   z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  white-space: nowrap;
+}
+
+.swarm__claim {
+  pointer-events: auto;
+  display: inline-flex;
+  gap: 0.25rem;
+  margin-left: 0.15rem;
+  vertical-align: middle;
+}
+
+.swarm__claim-btn {
+  pointer-events: auto;
+  margin: 0;
+  padding: 0.15rem 0.45rem;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  background: transparent;
+  color: #f4f0e8;
+  font-size: 0.75rem;
+  cursor: pointer;
+}
+
+.swarm__claim-btn.is-selected {
+  background: rgba(232, 140, 60, 0.85);
+  border-color: transparent;
 }
 
 .swarm__pkg {
@@ -740,10 +769,18 @@ button {
   transform: scale(0.7);
 }
 
-.swarm__pkg.is-live .swarm__box {
+.swarm__pkg.is-live .swarm__box,
+.swarm__pkg.is-claim .swarm__box {
   background: linear-gradient(145deg, var(--cyan), #2a9b96);
   transform: scale(1.15);
   box-shadow: 0 0 18px rgba(62, 207, 200, 0.55);
+}
+
+.swarm__pkg.is-deny .swarm__box {
+  background: linear-gradient(145deg, #ff5a5a, #c42828);
+  transform: scale(0.85);
+  opacity: 0.7;
+  box-shadow: 0 0 18px rgba(255, 60, 60, 0.45);
 }
 
 @keyframes swarm-fly {

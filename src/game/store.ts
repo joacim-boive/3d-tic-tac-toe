@@ -29,6 +29,7 @@ import {
   type PowerUpId,
   type PowerUpInventory,
   type SwarmPlan,
+  type SwarmTapOutcome,
 } from "./powerUps";
 import { readSetupPrefsFromStorage, writeSetupPrefsToStorage, type SetupPrefs } from "./setupPrefs";
 import {
@@ -111,10 +112,12 @@ type GameState = {
   pendingSwarmEarner: PlayerId | null;
   swarm: SwarmPlan | null;
   swarmBusy: boolean;
+  /** Local + remote pops during a competitive flyby. */
+  swarmPopped: Record<number, SwarmTapOutcome>;
   powerUpMode: PowerUpMode;
   clearAxis: Axis;
   powerUpToast: string | null;
-  /** Precomputed AI catch outcome while watch-only swarm plays. */
+  /** Precomputed AI catch attempt if the human never taps the live package. */
   swarmAiResult: { caught: boolean; kind?: PowerUpId } | null;
   /** Current snapped tip orientation (tip mode). */
   tipEuler: TipEuler;
@@ -185,11 +188,16 @@ type GameState = {
   setTipTargetEuler: (euler: TipEuler) => void;
   commitTipEuler: (euler: TipEuler) => void;
   finishTipFall: () => void;
-  catchSwarmPackage: (index: number) => void;
+  catchSwarmPackage: (index: number, by: PlayerId) => void;
   endSwarm: () => void;
   clearPowerUpToast: () => void;
   applyRemoteSwarm: (plan: SwarmPlan) => void;
-  applyRemoteSwarmResult: (earner: PlayerId, caught: boolean, kind?: PowerUpId) => void;
+  applyRemoteSwarmResult: (
+    by: PlayerId,
+    index: number,
+    outcome: SwarmTapOutcome,
+    kind?: PowerUpId,
+  ) => void;
   hydrateFromSnapshot: (snap: {
     board: Board;
     occupiedCount: number;
@@ -213,7 +221,7 @@ let aiTimer: ReturnType<typeof setTimeout> | null = null;
 let localPlacePublisher: ((coord: CellCoord, by: PlayerId) => void) | null = null;
 let localSwarmPublisher: ((plan: SwarmPlan) => void) | null = null;
 let localSwarmResultPublisher:
-  | ((earner: PlayerId, caught: boolean, kind?: PowerUpId) => void)
+  | ((by: PlayerId, index: number, outcome: SwarmTapOutcome, kind?: PowerUpId) => void)
   | null = null;
 let localStateSyncPublisher: (() => void) | null = null;
 
@@ -228,7 +236,7 @@ export function setLocalSwarmPublisher(fn: ((plan: SwarmPlan) => void) | null): 
 }
 
 export function setLocalSwarmResultPublisher(
-  fn: ((earner: PlayerId, caught: boolean, kind?: PowerUpId) => void) | null,
+  fn: ((by: PlayerId, index: number, outcome: SwarmTapOutcome, kind?: PowerUpId) => void) | null,
 ): void {
   localSwarmResultPublisher = fn;
 }
@@ -440,15 +448,12 @@ function maybeStartSwarm(
   const state = get();
   if (state.status !== "playing") return;
   if (state.swarmBusy || state.swarm) return;
-  // No flyby when the earner has no inventory room (full stacks of every kind).
-  if (!hasInventoryRoom(state.inventory[earner])) return;
   const seed = randomSeed();
   const rng = createPowerUpRng(seed);
   if (
     !shouldAttemptSwarm({
       powerUpsEnabled: state.powerUpsEnabled,
       occupiedCount: state.occupiedCount,
-      earnerCounts: state.inventory[earner],
       rng,
     })
   ) {
@@ -457,23 +462,24 @@ function maybeStartSwarm(
 
   const plan = planSwarm(seed, earner, createPowerUpRng(seed ^ 0x9e3779b9));
 
-  // AI earner: show the flyby as watch-only, resolve luck when it ends
-  if (state.playMode === "ai" && earner === AI_PLAYER) {
+  // vs AI: human may claim or deny; if they never hit the live pack, AI rolls luck on timeout.
+  let swarmAiResult: GameState["swarmAiResult"] = null;
+  if (state.playMode === "ai") {
     const catchRng = createPowerUpRng(seed ^ 0x85ebca6b);
     const caught = aiCatchRoll(catchRng);
     let kind: PowerUpId | undefined;
     if (caught) {
       kind = pickRandomKind(state.inventory.b, catchRng) ?? undefined;
     }
-    set({
-      swarm: { ...plan, watchOnly: true },
-      swarmBusy: true,
-      swarmAiResult: { caught: Boolean(caught && kind), kind },
-    });
-    return;
+    swarmAiResult = { caught: Boolean(caught && kind), kind };
   }
 
-  set({ swarm: plan, swarmBusy: true, swarmAiResult: null });
+  set({
+    swarm: plan,
+    swarmBusy: true,
+    swarmPopped: {},
+    swarmAiResult,
+  });
   if (state.playMode === "online") {
     localSwarmPublisher?.(plan);
   }
@@ -604,6 +610,7 @@ export const useGameStore = create<GameState>((set, get) => ({
   pendingSwarmEarner: null,
   swarm: null,
   swarmBusy: false,
+  swarmPopped: {},
   powerUpMode: null,
   clearAxis: "x",
   powerUpToast: null,
@@ -895,43 +902,76 @@ export const useGameStore = create<GameState>((set, get) => ({
     finishPowerUpBoard(get, set, board, by, spent, `${label} tipped the field`);
   },
 
-  catchSwarmPackage: (index) => {
+  catchSwarmPackage: (index, by) => {
     const state = get();
     if (!state.swarm || !state.swarmBusy) return;
     const plan = state.swarm;
-    if (state.playMode === "online" && state.seat !== plan.earner) return;
-    if (state.playMode === "hotseat" || state.playMode === "ai") {
-      // earner must be current human interaction — hotseat: anyone on that seat's device
-    }
+    if (state.swarmPopped[index]) return;
+    if (state.playMode === "online" && state.seat !== by) return;
+    if (state.playMode === "ai" && by !== HUMAN) return;
+
+    // Dud — pop for everyone, swarm continues.
     if (index !== plan.liveIndex) {
-      // dud — keep swarm going
+      const swarmPopped = { ...state.swarmPopped, [index]: "dud" as const };
+      set({ swarmPopped });
+      if (state.playMode === "online") {
+        localSwarmResultPublisher?.(by, index, "dud");
+      }
       return;
     }
-    const kind = pickRandomKind(state.inventory[plan.earner], createPowerUpRng(plan.seed ^ 0xdeadbeef));
-    if (!kind) {
-      set({ swarm: null, swarmBusy: false, powerUpToast: "Inventory full" });
+
+    // Live package — race over. Claim if catcher has room, else deny/sabotage.
+    const kind = pickRandomKind(state.inventory[by], createPowerUpRng(plan.seed ^ 0xdeadbeef));
+    if (!kind || !hasInventoryRoom(state.inventory[by])) {
+      const swarmPopped = { ...state.swarmPopped, [index]: "deny" as const };
+      const who = get().displayName(by);
+      set({
+        swarm: null,
+        swarmBusy: false,
+        swarmPopped,
+        swarmAiResult: null,
+        powerUpToast: `${who} denied the package!`,
+      });
+      if (state.playMode === "online") {
+        localSwarmResultPublisher?.(by, index, "deny");
+      }
       afterSwarm(get, set);
       return;
     }
-    const next = awardPowerUp(state.inventory[plan.earner], kind);
+
+    const next = awardPowerUp(state.inventory[by], kind);
     if (!next) {
-      set({ swarm: null, swarmBusy: false });
+      const swarmPopped = { ...state.swarmPopped, [index]: "deny" as const };
+      set({
+        swarm: null,
+        swarmBusy: false,
+        swarmPopped,
+        swarmAiResult: null,
+        powerUpToast: `${get().displayName(by)} denied the package!`,
+      });
+      if (state.playMode === "online") {
+        localSwarmResultPublisher?.(by, index, "deny");
+      }
       afterSwarm(get, set);
       return;
     }
+
     const inv = cloneInventory(state.inventory);
-    inv[plan.earner] = next;
+    inv[by] = next;
     const label =
       kind === "extra-turn" ? "Extra turn" : kind === "clear-row" ? "Clear row" : "Tip field";
-    const who = get().displayName(plan.earner);
+    const who = get().displayName(by);
+    const swarmPopped = { ...state.swarmPopped, [index]: "claim" as const };
     set({
       inventory: inv,
       swarm: null,
       swarmBusy: false,
+      swarmPopped,
+      swarmAiResult: null,
       powerUpToast: `${who} caught ${label}!`,
     });
-    if (get().playMode === "online") {
-      localSwarmResultPublisher?.(plan.earner, true, kind);
+    if (state.playMode === "online") {
+      localSwarmResultPublisher?.(by, index, "claim", kind);
     }
     afterSwarm(get, set);
   },
@@ -941,8 +981,17 @@ export const useGameStore = create<GameState>((set, get) => ({
     if (!state.swarmBusy && !state.swarm) return;
     const plan = state.swarm;
     const aiResult = state.swarmAiResult;
+    const livePopped = plan ? state.swarmPopped[plan.liveIndex] : undefined;
 
-    if (aiResult) {
+    // Live already claimed/denied — just clear.
+    if (livePopped === "claim" || livePopped === "deny") {
+      set({ swarm: null, swarmBusy: false, swarmAiResult: null, swarmPopped: {} });
+      afterSwarm(get, set);
+      return;
+    }
+
+    // vs AI: if human never hit the live pack, AI may luck-claim on timeout.
+    if (state.playMode === "ai" && aiResult) {
       if (aiResult.caught && aiResult.kind) {
         const next = awardPowerUp(state.inventory.b, aiResult.kind);
         if (next) {
@@ -958,6 +1007,7 @@ export const useGameStore = create<GameState>((set, get) => ({
             inventory: inv,
             swarm: null,
             swarmBusy: false,
+            swarmPopped: {},
             swarmAiResult: null,
             powerUpToast: `Cyan caught ${label}!`,
           });
@@ -968,48 +1018,65 @@ export const useGameStore = create<GameState>((set, get) => ({
       set({
         swarm: null,
         swarmBusy: false,
+        swarmPopped: {},
         swarmAiResult: null,
-        powerUpToast: "Cyan missed the packages",
+        powerUpToast: "Nobody caught a package",
       });
       afterSwarm(get, set);
       return;
     }
 
-    if (plan) {
-      const who = get().displayName(plan.earner);
-      set({
-        swarm: null,
-        swarmBusy: false,
-        swarmAiResult: null,
-        powerUpToast: state.powerUpToast ?? `${who} missed the packages`,
-      });
-      if (state.playMode === "online" && state.seat === plan.earner) {
-        localSwarmResultPublisher?.(plan.earner, false);
-      }
-    } else {
-      set({ swarmBusy: false, swarmAiResult: null });
-    }
+    set({
+      swarm: null,
+      swarmBusy: false,
+      swarmPopped: {},
+      swarmAiResult: null,
+      powerUpToast: state.powerUpToast ?? "Nobody caught a package",
+    });
     afterSwarm(get, set);
   },
 
   applyRemoteSwarm: (plan) => {
-    set({ swarm: plan, swarmBusy: true });
+    set({ swarm: plan, swarmBusy: true, swarmPopped: {}, swarmAiResult: null });
   },
 
-  applyRemoteSwarmResult: (earner, caught, kind) => {
-    if (caught && kind) {
-      const state = get();
-      const next = awardPowerUp(state.inventory[earner], kind);
+  applyRemoteSwarmResult: (by, index, outcome, kind) => {
+    const state = get();
+    if (!state.swarmBusy && !state.swarm) return;
+    if (state.swarmPopped[index]) return;
+
+    if (outcome === "dud") {
+      set({ swarmPopped: { ...state.swarmPopped, [index]: "dud" } });
+      return;
+    }
+
+    if (outcome === "deny") {
+      set({
+        swarm: null,
+        swarmBusy: false,
+        swarmPopped: { ...state.swarmPopped, [index]: "deny" },
+        swarmAiResult: null,
+        powerUpToast: `${get().displayName(by)} denied the package!`,
+      });
+      afterSwarm(get, set);
+      return;
+    }
+
+    // claim
+    if (kind) {
+      const next = awardPowerUp(state.inventory[by], kind);
       if (next) {
         const inv = cloneInventory(state.inventory);
-        inv[earner] = next;
+        inv[by] = next;
         const label =
           kind === "extra-turn" ? "Extra turn" : kind === "clear-row" ? "Clear row" : "Tip field";
         set({
           inventory: inv,
           swarm: null,
           swarmBusy: false,
-          powerUpToast: `${get().displayName(earner)} caught ${label}!`,
+          swarmPopped: { ...state.swarmPopped, [index]: "claim" },
+          swarmAiResult: null,
+          powerUpToast: `${get().displayName(by)} caught ${label}!`,
         });
         afterSwarm(get, set);
         return;
@@ -1018,7 +1085,9 @@ export const useGameStore = create<GameState>((set, get) => ({
     set({
       swarm: null,
       swarmBusy: false,
-      powerUpToast: `${get().displayName(earner)} missed the packages`,
+      swarmPopped: { ...state.swarmPopped, [index]: "deny" },
+      swarmAiResult: null,
+      powerUpToast: `${get().displayName(by)} denied the package!`,
     });
     afterSwarm(get, set);
   },
@@ -1050,6 +1119,7 @@ export const useGameStore = create<GameState>((set, get) => ({
       pendingSwarmEarner: null,
       swarm: null,
       swarmBusy: false,
+      swarmPopped: {},
       powerUpMode: null,
       powerUpToast: null,
       swarmAiResult: null,
@@ -1087,6 +1157,7 @@ export const useGameStore = create<GameState>((set, get) => ({
       pendingSwarmEarner: null,
       swarm: null,
       swarmBusy: false,
+      swarmPopped: {},
       powerUpMode: null,
       powerUpToast: null,
       swarmAiResult: null,
@@ -1119,6 +1190,7 @@ export const useGameStore = create<GameState>((set, get) => ({
       pendingSwarmEarner: null,
       swarm: null,
       swarmBusy: false,
+      swarmPopped: {},
       powerUpMode: null,
       powerUpToast: null,
       swarmAiResult: null,
@@ -1183,6 +1255,7 @@ export const useGameStore = create<GameState>((set, get) => ({
       pendingSwarmEarner: null,
       swarm: null,
       swarmBusy: false,
+      swarmPopped: {},
       powerUpMode: null,
       powerUpToast: null,
       swarmAiResult: null,
@@ -1244,6 +1317,7 @@ export const useGameStore = create<GameState>((set, get) => ({
       pendingSwarmEarner: null,
       swarm: null,
       swarmBusy: false,
+      swarmPopped: {},
       powerUpMode: null,
       powerUpToast: null,
       swarmAiResult: null,
@@ -1279,6 +1353,7 @@ export const useGameStore = create<GameState>((set, get) => ({
       pendingSwarmEarner: null,
       swarm: null,
       swarmBusy: false,
+      swarmPopped: {},
       powerUpMode: null,
       powerUpToast: null,
       swarmAiResult: null,
@@ -1319,6 +1394,7 @@ export const useGameStore = create<GameState>((set, get) => ({
       pendingSwarmEarner: null,
       swarm: null,
       swarmBusy: false,
+      swarmPopped: {},
       swarmAiResult: null,
       powerUpMode: null,
       cursor:

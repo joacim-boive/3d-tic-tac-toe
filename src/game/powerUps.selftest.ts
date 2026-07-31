@@ -77,13 +77,13 @@ function testSwarmGate() {
   } as const;
   assert(!hasInventoryRoom(full), "full inventory");
   assert(
-    !shouldAttemptSwarm({
+    shouldAttemptSwarm({
       powerUpsEnabled: true,
       occupiedCount: 10,
       earnerCounts: full,
       rng: rngYes,
     }),
-    "full → skip swarm",
+    "full inventory still allows competitive flyby",
   );
   assert(SWARM_CHANCE > 0 && SWARM_CHANCE < 1, "swarm chance sane");
   assert(AI_CATCH_CHANCE > 0, "ai catch chance");

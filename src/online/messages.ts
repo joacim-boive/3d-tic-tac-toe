@@ -49,8 +49,10 @@ export type PackageSwarmMessage = {
 
 export type PackageResultMessage = {
   type: "package-result";
-  earner: PlayerId;
-  caught: boolean;
+  /** Who tapped. */
+  by: PlayerId;
+  index: number;
+  outcome: "dud" | "claim" | "deny";
   kind?: PowerUpId;
 };
 

@@ -137,8 +137,8 @@ function onMessage(raw: RoomMessage) {
       break;
     }
     case "package-result": {
-      if (store.seat === raw.earner) break;
-      store.applyRemoteSwarmResult(raw.earner, raw.caught, raw.kind);
+      if (store.seat === raw.by) break;
+      store.applyRemoteSwarmResult(raw.by, raw.index, raw.outcome, raw.kind);
       break;
     }
     case "rematch": {
@@ -233,8 +233,8 @@ function wireChannel(channel: PresenceChannel, seat: PlayerId) {
       packages: plan.packages,
     });
   });
-  setLocalSwarmResultPublisher((earner, caught, kind) => {
-    trigger(channel, { type: "package-result", earner, caught, kind });
+  setLocalSwarmResultPublisher((by, index, outcome, kind) => {
+    trigger(channel, { type: "package-result", by, index, outcome, kind });
   });
   setLocalStateSyncPublisher(() => {
     trigger(channel, buildStateMessage());
