@@ -3,17 +3,7 @@
 import { Physics } from "@react-three/rapier";
 import { useFrame, useThree } from "@react-three/fiber";
 import { useEffect, useMemo, useRef } from "react";
-import {
-  Color,
-  DynamicDrawUsage,
-  Euler,
-  Group,
-  InstancedMesh,
-  Object3D,
-  Quaternion,
-  SphereGeometry,
-  Vector3,
-} from "three";
+import { Color, Euler, Group, Quaternion, Vector3, type Mesh, type MeshStandardMaterial } from "three";
 import { cellToWorld } from "@/game/board";
 import { useGameStore } from "@/game/store";
 import {
@@ -24,15 +14,22 @@ import {
   type TipRemapEntry,
 } from "@/game/tipBoard";
 import { PLAYER_COLORS, type BoardDims, type PlayerId } from "@/game/types";
-import { BoardColliders, DROP_GRAVITY } from "./BoardColliders";
+import { BoardColliders, DROP_GRAVITY, MARKER_RADIUS } from "./BoardColliders";
 import { Grid } from "./Grid";
 import { Markers } from "./Markers";
 import { PhysicsMarkers } from "./PhysicsMarkers";
 import { SelectionCursor } from "./SelectionCursor";
 
 const TIP_ANIM_SPEED = 12;
-const FALL_DURATION = 0.95;
 const DRAG_THRESHOLD = 44;
+/** Stagger window so balls don't all release at once. */
+const STAGGER_MAX_MS = 520;
+const BOUNCE_E = 0.28;
+const MAX_BOUNCES = 1;
+const SQUASH = 0.72;
+const STRETCH = 1.14;
+const IMPACT_FLASH = 0.7;
+const SETTLE_PAD_MS = 80;
 
 type TipBoardFrameProps = {
   dims: BoardDims;
@@ -45,6 +42,56 @@ function eulerToQuat(e: TipEuler): Quaternion {
 
 function easeOutCubic(t: number): number {
   return 1 - (1 - t) ** 3;
+}
+
+type DropPhase = { t0: number; y0: number; v0: number };
+
+type DropPlan = {
+  phases: DropPhase[];
+  totalDuration: number;
+  fallEnd: number;
+  impactSpeed: number;
+};
+
+function buildDropPhases(spawnY: number, landY: number, g: number): DropPlan {
+  const grav = Math.abs(g);
+  const phases: DropPhase[] = [];
+  let tCursor = 0;
+  const height = Math.max(0.05, spawnY - landY);
+
+  const fallT = Math.sqrt((2 * height) / grav);
+  phases.push({ t0: 0, y0: spawnY, v0: 0 });
+  tCursor += fallT;
+  const fallEnd = tCursor;
+  const impactSpeed = grav * fallT;
+
+  const up = impactSpeed * BOUNCE_E;
+  if (up >= 0.55 && MAX_BOUNCES > 0) {
+    phases.push({ t0: tCursor, y0: landY, v0: up });
+    tCursor += (2 * up) / grav;
+  }
+  tCursor += 0.06;
+  return {
+    phases,
+    totalDuration: Math.min(tCursor, 1.35),
+    fallEnd,
+    impactSpeed,
+  };
+}
+
+function sampleDropY(phases: DropPhase[], landY: number, g: number, t: number): number {
+  let phase = phases[0]!;
+  for (let i = phases.length - 1; i >= 0; i--) {
+    if (t >= phases[i]!.t0) {
+      phase = phases[i]!;
+      break;
+    }
+  }
+  const localT = t - phase.t0;
+  if (phase.v0 === 0) {
+    return Math.max(landY, phase.y0 + 0.5 * g * localT * localT);
+  }
+  return Math.max(landY, landY + phase.v0 * localT + 0.5 * g * localT * localT);
 }
 
 /**
@@ -64,8 +111,6 @@ export function TipBoardFrame({ dims, dropMode }: TipBoardFrameProps) {
   const tipMode = powerUpMode === "tip";
   const displayQuat = useRef(new Quaternion());
   const targetQuat = useRef(new Quaternion());
-  const fallT = useRef(0);
-  const fallDone = useRef(false);
 
   const fallEntries = useMemo(() => {
     if (!tipFalling) return [] as TipRemapEntry[];
@@ -80,24 +125,27 @@ export function TipBoardFrame({ dims, dropMode }: TipBoardFrameProps) {
     });
   }, [fallEntries, tipEuler, dims]);
 
+  /** Stable per-entry release delays for this fall. */
+  const releaseDelays = useMemo(() => {
+    if (!tipFalling || fallEntries.length === 0) return [] as number[];
+    // Seed from board size so remounts don't reshuffle mid-fall.
+    let seed = (fallEntries.length * 2654435761) >>> 0;
+    return fallEntries.map((_, i) => {
+      seed = (seed * 1664525 + 1013904223 + i * 97) >>> 0;
+      return ((seed % 1000) / 1000) * STAGGER_MAX_MS;
+    });
+  }, [tipFalling, fallEntries]);
+
   useFrame((_, dt) => {
     const g = groupRef.current;
     if (!g) return;
 
     if (tipFalling) {
-      // Hold board upright during fall — markers fly in world space from tipped poses
       displayQuat.current.identity();
       g.quaternion.identity();
-      fallT.current = Math.min(1, fallT.current + dt / FALL_DURATION);
-      if (fallT.current >= 1 && !fallDone.current) {
-        fallDone.current = true;
-        finishTipFall();
-      }
       return;
     }
 
-    fallT.current = 0;
-    fallDone.current = false;
     targetQuat.current.copy(eulerToQuat(tipTargetEuler));
     displayQuat.current.slerp(targetQuat.current, 1 - Math.exp(-TIP_ANIM_SPEED * dt));
     g.quaternion.copy(displayQuat.current);
@@ -133,11 +181,12 @@ export function TipBoardFrame({ dims, dropMode }: TipBoardFrameProps) {
         {!tipMode && !tipFalling ? <SelectionCursor dims={dims} /> : null}
 
         {tipFalling ? (
-          <TipFallMarkers
+          <TipFallPhysics
             dims={dims}
             entries={fallEntries}
             starts={fallStarts}
-            fallTRef={fallT}
+            delaysMs={releaseDelays}
+            onAllSettled={finishTipFall}
           />
         ) : dropMode ? (
           <Physics gravity={DROP_GRAVITY} colliders={false}>
@@ -214,97 +263,176 @@ function TipDragController({
   return null;
 }
 
-const tempObj = new Object3D();
-
-function TipFallMarkers({
+function TipFallPhysics({
   dims,
   entries,
   starts,
-  fallTRef,
+  delaysMs,
+  onAllSettled,
 }: {
   dims: BoardDims;
   entries: TipRemapEntry[];
   starts: Vector3[];
-  fallTRef: React.MutableRefObject<number>;
+  delaysMs: number[];
+  onAllSettled: () => void;
 }) {
-  const geometry = useMemo(() => new SphereGeometry(0.32, 16, 12), []);
-  const meshA = useRef<InstancedMesh>(null);
-  const meshB = useRef<InstancedMesh>(null);
-  const colorA = useMemo(() => new Color(PLAYER_COLORS.a), []);
-  const colorB = useMemo(() => new Color(PLAYER_COLORS.b), []);
+  const settled = useRef(0);
+  const done = useRef(false);
+  const total = entries.length;
 
-  useFrame(() => {
-    const t = easeOutCubic(fallTRef.current);
-    paintPlayer(meshA.current, "a", entries, starts, dims, t);
-    paintPlayer(meshB.current, "b", entries, starts, dims, t);
-  });
+  useEffect(() => {
+    settled.current = 0;
+    done.current = false;
+    if (total === 0) {
+      onAllSettled();
+    }
+  }, [total, onAllSettled]);
+
+  const onOneSettled = () => {
+    settled.current += 1;
+    if (!done.current && settled.current >= total) {
+      done.current = true;
+      window.setTimeout(onAllSettled, SETTLE_PAD_MS);
+    }
+  };
+
+  // Safety: never hang the match if a ball fails to report settle
+  useEffect(() => {
+    const maxDelay = delaysMs.length ? Math.max(...delaysMs) : 0;
+    const t = window.setTimeout(
+      () => {
+        if (!done.current) {
+          done.current = true;
+          onAllSettled();
+        }
+      },
+      maxDelay + 2200,
+    );
+    return () => window.clearTimeout(t);
+  }, [delaysMs, onAllSettled]);
 
   return (
     <>
-      <FallMesh meshRef={meshA} geometry={geometry} color={colorA} count={entries.length} />
-      <FallMesh meshRef={meshB} geometry={geometry} color={colorB} count={entries.length} />
+      {entries.map((entry, i) => (
+        <TipFallingBall
+          key={entry.key}
+          player={entry.player}
+          start={starts[i]!}
+          end={cellToWorld(entry.to, dims)}
+          delayMs={delaysMs[i] ?? 0}
+          onSettled={onOneSettled}
+        />
+      ))}
     </>
   );
 }
 
-function FallMesh({
-  meshRef,
-  geometry,
-  color,
-  count,
+function TipFallingBall({
+  player,
+  start,
+  end,
+  delayMs,
+  onSettled,
 }: {
-  meshRef: React.RefObject<InstancedMesh | null>;
-  geometry: SphereGeometry;
-  color: Color;
-  count: number;
+  player: PlayerId;
+  start: Vector3;
+  end: [number, number, number];
+  delayMs: number;
+  onSettled: () => void;
 }) {
+  const meshRef = useRef<Mesh>(null);
+  const finished = useRef(false);
+  const released = useRef(false);
+  const fallStartedAt = useRef(0);
+  const bornAt = useRef(performance.now());
+  const [ex, ey, ez] = end;
+  const g = DROP_GRAVITY[1];
+  // If start is below land (rare after tip), lift slightly so gravity still reads
+  const spawnY = Math.max(start.y, ey + 0.15);
+  const plan = useMemo(() => buildDropPhases(spawnY, ey, g), [spawnY, ey, g]);
+  const color = useMemo(() => new Color(PLAYER_COLORS[player]), [player]);
+  const baseEmissive = 0.28;
+  const startX = start.x;
+  const startZ = start.z;
+
+  useEffect(() => {
+    finished.current = false;
+    released.current = false;
+    bornAt.current = performance.now();
+    if (meshRef.current) {
+      meshRef.current.position.set(start.x, start.y, start.z);
+      meshRef.current.scale.set(1, 1, 1);
+      meshRef.current.visible = true;
+    }
+  }, [start.x, start.y, start.z]);
+
+  useFrame(() => {
+    if (finished.current || !meshRef.current) return;
+    const mesh = meshRef.current;
+    const mat = mesh.material as MeshStandardMaterial;
+    const now = performance.now();
+
+    if (!released.current) {
+      if (now - bornAt.current < delayMs) {
+        mesh.position.set(start.x, start.y, start.z);
+        return;
+      }
+      released.current = true;
+      fallStartedAt.current = now;
+      // Begin fall from current pose; if we lifted spawnY, hop up first frame
+      mesh.position.set(startX, spawnY, startZ);
+    }
+
+    const t = (now - fallStartedAt.current) / 1000;
+    if (t >= plan.totalDuration) {
+      finished.current = true;
+      mesh.position.set(ex, ey, ez);
+      mesh.scale.set(1, 1, 1);
+      mat.emissiveIntensity = baseEmissive;
+      onSettled();
+      return;
+    }
+
+    const y = sampleDropY(plan.phases, ey, g, t);
+    // Blend xz toward landing during the main fall, lock after first bounce
+    const xzT = plan.fallEnd > 0 ? Math.min(1, t / plan.fallEnd) : 1;
+    const xzEase = easeOutCubic(xzT);
+    const x = startX + (ex - startX) * xzEase;
+    const z = startZ + (ez - startZ) * xzEase;
+    mesh.position.set(x, y, z);
+
+    const impactBoost = Math.min(1.35, 0.75 + plan.impactSpeed / 22);
+    if (t < plan.fallEnd) {
+      const fallProgress = plan.fallEnd > 0 ? t / plan.fallEnd : 1;
+      const stretch = 1 + (STRETCH - 1) * fallProgress * fallProgress;
+      mesh.scale.set(1 / Math.sqrt(stretch), stretch, 1 / Math.sqrt(stretch));
+      mat.emissiveIntensity = baseEmissive;
+    } else {
+      const sinceHit = t - plan.fallEnd;
+      const u = Math.min(1, sinceHit / 0.22);
+      const e = easeOutCubic(u);
+      const squashY = SQUASH + (1.06 - SQUASH) * e;
+      const squashXZ = 1 / Math.sqrt(squashY);
+      const yScale = 1 + (squashY - 1) * impactBoost;
+      const xzScale = 1 + (squashXZ - 1) * impactBoost;
+      mesh.scale.set(xzScale, yScale, xzScale);
+      mat.emissiveIntensity = baseEmissive + IMPACT_FLASH * (1 - e) * impactBoost;
+    }
+  });
+
   return (
-    <instancedMesh
-      ref={meshRef}
-      args={[geometry, undefined, Math.max(1, count)]}
-      frustumCulled={false}
-    >
+    <mesh ref={meshRef} position={[start.x, start.y, start.z]} castShadow={false}>
+      <sphereGeometry args={[MARKER_RADIUS, 24, 18]} />
       <meshStandardMaterial
         color={color}
         transparent
-        opacity={0.92}
-        roughness={0.28}
-        metalness={0.2}
+        opacity={0.94}
+        roughness={0.26}
+        metalness={0.22}
         emissive={color}
-        emissiveIntensity={0.28}
+        emissiveIntensity={baseEmissive}
         depthWrite={false}
       />
-    </instancedMesh>
+    </mesh>
   );
-}
-
-function paintPlayer(
-  mesh: InstancedMesh | null,
-  player: PlayerId,
-  entries: TipRemapEntry[],
-  starts: Vector3[],
-  dims: BoardDims,
-  t: number,
-) {
-  if (!mesh) return;
-  mesh.instanceMatrix.setUsage(DynamicDrawUsage);
-  let i = 0;
-  for (let idx = 0; idx < entries.length; idx++) {
-    const e = entries[idx]!;
-    if (e.player !== player) continue;
-    const start = starts[idx]!;
-    const [ex, ey, ez] = cellToWorld(e.to, dims);
-    // Arc: dip below the lerp for a gravity read
-    const x = start.x + (ex - start.x) * t;
-    const z = start.z + (ez - start.z) * t;
-    const yLin = start.y + (ey - start.y) * t;
-    const y = yLin - Math.sin(t * Math.PI) * Math.max(0.4, Math.abs(start.y - ey) * 0.25);
-    tempObj.position.set(x, y, z);
-    tempObj.scale.setScalar(1);
-    tempObj.updateMatrix();
-    mesh.setMatrixAt(i, tempObj.matrix);
-    i++;
-  }
-  mesh.count = i;
-  mesh.instanceMatrix.needsUpdate = true;
 }
