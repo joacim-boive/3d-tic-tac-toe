@@ -2,12 +2,15 @@
 
 import { OrbitControls } from "@react-three/drei";
 import { Canvas, useThree } from "@react-three/fiber";
+import { Physics } from "@react-three/rapier";
 import { Suspense, useEffect, useState } from "react";
-import { TOUCH } from "three";
+import { MathUtils, TOUCH } from "three";
 import { getPreset } from "@/game/presets";
 import { useGameStore } from "@/game/store";
+import { BoardColliders } from "./BoardColliders";
 import { Grid } from "./Grid";
 import { Markers } from "./Markers";
+import { PhysicsMarkers } from "./PhysicsMarkers";
 import { SelectionCursor } from "./SelectionCursor";
 
 function camDistance(dims: { x: number; y: number; z: number }): number {
@@ -48,6 +51,7 @@ function BlockNativeGestures() {
 
 function SceneContent() {
   const presetId = useGameStore((s) => s.presetId);
+  const placement = useGameStore((s) => s.placement);
   const aiming = useGameStore((s) => s.aiming);
   const status = useGameStore((s) => s.status);
   const touchUi = useCoarsePointer();
@@ -55,6 +59,10 @@ function SceneContent() {
   const camDist = camDistance(dims);
   // Match over: free orbit/zoom to review the line; aim gestures off.
   const reviewing = status === "won" || status === "draw";
+  const dropMode = placement === "drop";
+  // Drop mode: orbit around and over the top, never under the box.
+  const maxPolar = dropMode ? MathUtils.DEG2RAD * 78 : Math.PI;
+  const minPolar = dropMode ? MathUtils.DEG2RAD * 8 : 0;
 
   return (
     <>
@@ -65,8 +73,16 @@ function SceneContent() {
       <directionalLight position={[-dims.x, -dims.y * 0.4, -dims.z]} intensity={0.35} />
 
       <Grid dims={dims} />
-      <Markers dims={dims} />
       <SelectionCursor dims={dims} />
+
+      {dropMode ? (
+        <Physics gravity={[0, -22, 0]} colliders={false}>
+          <BoardColliders dims={dims} />
+          <PhysicsMarkers dims={dims} />
+        </Physics>
+      ) : (
+        <Markers dims={dims} />
+      )}
 
       {/*
         Playing (touch): one-finger reserved for aiming (PAN + enablePan false = no-op);
@@ -82,6 +98,8 @@ function SceneContent() {
         dampingFactor={0.08}
         minDistance={camDist * 0.35}
         maxDistance={camDist * 2.4}
+        minPolarAngle={minPolar}
+        maxPolarAngle={maxPolar}
         target={[0, 0, 0]}
         touches={
           reviewing

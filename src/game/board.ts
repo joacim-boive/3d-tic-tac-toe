@@ -105,6 +105,48 @@ export function listEmptyCells(board: Board, dims: BoardDims): CellCoord[] {
   return empty;
 }
 
+/**
+ * Lowest empty cell in column (x, z) for drop/gravity placement.
+ * Y is up — pieces stack from y = 0 upward. Null if the column is full.
+ */
+export function dropLanding(board: Board, dims: BoardDims, x: number, z: number): CellCoord | null {
+  if (x < 0 || z < 0 || x >= dims.x || z >= dims.z) return null;
+  for (let y = 0; y < dims.y; y++) {
+    if (!board.has(cellKey(x, y, z))) return { x, y, z };
+  }
+  return null;
+}
+
+/** One legal drop landing per non-full column. */
+export function listDropLandings(board: Board, dims: BoardDims): CellCoord[] {
+  const landings: CellCoord[] = [];
+  for (let x = 0; x < dims.x; x++) {
+    for (let z = 0; z < dims.z; z++) {
+      const cell = dropLanding(board, dims, x, z);
+      if (cell) landings.push(cell);
+    }
+  }
+  return landings;
+}
+
+/**
+ * Resolve a requested place into a legal cell.
+ * Drop mode uses only (x, z) and returns the gravity landing.
+ */
+export function resolvePlaceCoord(
+  board: Board,
+  dims: BoardDims,
+  coord: CellCoord,
+  placement: "free" | "drop",
+): CellCoord | null {
+  if (placement === "drop") {
+    return dropLanding(board, dims, coord.x, coord.z);
+  }
+  if (!inBounds(dims, coord.x, coord.y, coord.z)) return null;
+  if (board.has(cellKey(coord.x, coord.y, coord.z))) return null;
+  return coord;
+}
+
 /** Rejection sampling until density is high, then linear scan. */
 export function randomEmptyCell(
   board: Board,

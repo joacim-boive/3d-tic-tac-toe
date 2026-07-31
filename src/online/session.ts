@@ -2,7 +2,7 @@ import type { PresenceChannel } from "pusher-js";
 import type { Board } from "@/game/board";
 import { generateRoomCode, isValidRoomCode, normalizeRoomCode } from "@/game/roomCode";
 import { setLocalPlacePublisher, useGameStore } from "@/game/store";
-import type { PlayerId, PlayerNames, PresetId } from "@/game/types";
+import type { PlayerId, PlayerNames, PlacementMode, PresetId } from "@/game/types";
 import type { PresenceData, RoomMessage, StateMessage } from "./messages";
 import { notifyOpponentConnected } from "./notify";
 import { disconnectPusher, getPusherClient } from "./pusherClient";
@@ -53,6 +53,7 @@ function buildStateMessage(): StateMessage {
     currentPlayer: s.currentPlayer,
     names: s.playerNames,
     preset: s.presetId,
+    placement: s.placement,
     occupiedCount: s.occupiedCount,
     status: s.status,
     winner: s.winner,
@@ -67,6 +68,7 @@ function applyStateMessage(msg: StateMessage) {
     currentPlayer: msg.currentPlayer,
     names: msg.names,
     presetId: msg.preset,
+    placement: msg.placement,
     status: msg.status,
     winner: msg.winner,
     winningLine: msg.winningLine,
@@ -90,12 +92,13 @@ function tryStartFromMembers(channel: PresenceChannel) {
   const host = bySeat.get("a")!;
   const guest = bySeat.get("b")!;
   const preset = host.preset ?? useGameStore.getState().presetId;
+  const placement = host.placement ?? useGameStore.getState().placement ?? "free";
   const names: PlayerNames = { a: host.name, b: guest.name };
 
   const state = useGameStore.getState();
   if (state.onlineStatus === "lobby") {
-    trigger(channel, { type: "ready", names, preset });
-    state.startOnlineGame(names, preset);
+    trigger(channel, { type: "ready", names, preset, placement });
+    state.startOnlineGame(names, preset, placement);
   }
 }
 
@@ -105,7 +108,7 @@ function onMessage(raw: RoomMessage) {
   switch (raw.type) {
     case "ready": {
       if (store.onlineStatus === "lobby") {
-        store.startOnlineGame(raw.names, raw.preset);
+        store.startOnlineGame(raw.names, raw.preset, raw.placement ?? "free");
       }
       break;
     }
@@ -223,6 +226,7 @@ async function attachSession(
   seat: PlayerId,
   name: string,
   preset?: PresetId,
+  placement?: PlacementMode,
 ): Promise<void> {
   await leaveOnlineSession();
 
@@ -232,6 +236,7 @@ async function attachSession(
     seat,
     name,
     preset,
+    placement,
   });
 
   const channelName = presenceChannelName(code);
@@ -259,6 +264,9 @@ async function attachSession(
     if (preset) {
       useGameStore.getState().setPresetId(preset);
     }
+    if (placement) {
+      useGameStore.getState().setPlacement(placement);
+    }
 
     wireChannel(channel, seat);
 
@@ -282,11 +290,15 @@ async function attachSession(
   }
 }
 
-export async function createOnlineRoom(name: string, preset: PresetId): Promise<string> {
+export async function createOnlineRoom(
+  name: string,
+  preset: PresetId,
+  placement: PlacementMode,
+): Promise<string> {
   const trimmed = name.trim();
   if (!trimmed) throw new Error("Enter your name");
   const code = generateRoomCode();
-  await attachSession(code, "a", trimmed, preset);
+  await attachSession(code, "a", trimmed, preset, placement);
   return code;
 }
 

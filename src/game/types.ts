@@ -4,6 +4,9 @@ export type GameStatus = "playing" | "won" | "draw";
 
 export type PlayMode = "hotseat" | "ai" | "online";
 
+/** Free = place any empty cell. Drop = Connect-4 style; pieces fall along −Y. */
+export type PlacementMode = "free" | "drop";
+
 export type AiDifficulty = "easy" | "medium" | "hard";
 
 export type OnlineStatus = "idle" | "lobby" | "playing" | "paused" | "ended";

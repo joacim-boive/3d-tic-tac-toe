@@ -3,11 +3,12 @@ import {
   checkWin,
   isDraw,
   LINE_DIRECTIONS,
+  listDropLandings,
   listEmptyCells,
   randomEmptyCell,
   type Board,
 } from "./board";
-import type { AiDifficulty, BoardDims, CellCoord, PlayerId } from "./types";
+import type { AiDifficulty, BoardDims, CellCoord, PlacementMode, PlayerId } from "./types";
 import { cellCount, winLength } from "./types";
 
 const EASY_RANDOM_RATE = 0.7;
@@ -26,6 +27,10 @@ function opponentOf(player: PlayerId): PlayerId {
 function pickRandom<T>(items: T[]): T | null {
   if (items.length === 0) return null;
   return items[Math.floor(Math.random() * items.length)] ?? null;
+}
+
+function legalEmpties(board: Board, dims: BoardDims, placement: PlacementMode): CellCoord[] {
+  return placement === "drop" ? listDropLandings(board, dims) : listEmptyCells(board, dims);
 }
 
 /** First empty cell that wins for `player` if played now. */
@@ -62,12 +67,13 @@ function findThreatMove(
   dims: BoardDims,
   aiPlayer: PlayerId,
   empties: CellCoord[],
+  placement: PlacementMode,
 ): CellCoord | null {
   const threats: CellCoord[] = [];
   for (const cell of empties) {
     const key = cellKey(cell.x, cell.y, cell.z);
     board.set(key, aiPlayer);
-    const followUps = empties.filter((c) => c.x !== cell.x || c.y !== cell.y || c.z !== cell.z);
+    const followUps = legalEmpties(board, dims, placement);
     const threatens = findWinningMove(board, dims, aiPlayer, followUps) !== null;
     board.delete(key);
     if (threatens) threats.push(cell);
@@ -134,12 +140,13 @@ function minimax(
   alpha: number,
   beta: number,
   deadline: number,
+  placement: PlacementMode,
 ): SearchResult {
   if (performance.now() >= deadline) {
     return { score: 0, move: null, aborted: true };
   }
 
-  const empties = orderEmpties(listEmptyCells(board, dims), dims);
+  const empties = orderEmpties(legalEmpties(board, dims, placement), dims);
   if (empties.length === 0 || isDraw(occupiedCount, dims)) {
     return { score: 0, move: null, aborted: false };
   }
@@ -175,6 +182,7 @@ function minimax(
         alpha,
         beta,
         deadline,
+        placement,
       );
     }
 
@@ -208,6 +216,7 @@ function hardMove(
   aiPlayer: PlayerId,
   empties: CellCoord[],
   occupiedCount: number,
+  placement: PlacementMode,
 ): CellCoord | null {
   const tactical = tacticalMove(board, dims, aiPlayer, empties);
   if (tactical) return tactical;
@@ -233,6 +242,7 @@ function hardMove(
       -Infinity,
       Infinity,
       deadline,
+      placement,
     );
     if (result.aborted) break;
     if (result.move) best = result.move;
@@ -245,10 +255,11 @@ function mediumMove(
   dims: BoardDims,
   aiPlayer: PlayerId,
   empties: CellCoord[],
+  placement: PlacementMode,
 ): CellCoord | null {
   const tactical = tacticalMove(board, dims, aiPlayer, empties);
   if (tactical) return tactical;
-  const threat = findThreatMove(board, dims, aiPlayer, empties);
+  const threat = findThreatMove(board, dims, aiPlayer, empties, placement);
   if (threat) return threat;
   return pickRandom(empties);
 }
@@ -259,8 +270,10 @@ function easyMove(
   aiPlayer: PlayerId,
   empties: CellCoord[],
   occupiedCount: number,
+  placement: PlacementMode,
 ): CellCoord | null {
   if (Math.random() < EASY_RANDOM_RATE) {
+    if (placement === "drop") return pickRandom(empties);
     return randomEmptyCell(board, dims, occupiedCount) ?? pickRandom(empties);
   }
   return tacticalMove(board, dims, aiPlayer, empties) ?? pickRandom(empties);
@@ -272,16 +285,17 @@ export function pickAiMove(
   difficulty: AiDifficulty,
   aiPlayer: PlayerId,
   occupiedCount: number,
+  placement: PlacementMode = "free",
 ): CellCoord | null {
-  const empties = listEmptyCells(board, dims);
+  const empties = legalEmpties(board, dims, placement);
   if (empties.length === 0) return null;
 
   switch (difficulty) {
     case "easy":
-      return easyMove(board, dims, aiPlayer, empties, occupiedCount);
+      return easyMove(board, dims, aiPlayer, empties, occupiedCount, placement);
     case "medium":
-      return mediumMove(board, dims, aiPlayer, empties);
+      return mediumMove(board, dims, aiPlayer, empties, placement);
     case "hard":
-      return hardMove(board, dims, aiPlayer, empties, occupiedCount);
+      return hardMove(board, dims, aiPlayer, empties, occupiedCount, placement);
   }
 }

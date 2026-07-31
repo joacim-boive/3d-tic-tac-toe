@@ -16,11 +16,13 @@
     "check:pick": "npx tsx src/scene/pickCellAlongRay.selftest.ts",
     "check:ai": "npx tsx src/game/ai.selftest.ts",
     "check:room": "npx tsx src/game/roomCode.selftest.ts",
-    "check:notify": "npx tsx src/online/notify.selftest.ts"
+    "check:notify": "npx tsx src/online/notify.selftest.ts",
+    "check:drop": "npx tsx src/game/drop.selftest.ts"
   },
   "dependencies": {
     "@react-three/drei": "^10.7.7",
     "@react-three/fiber": "^9.5.0",
+    "@react-three/rapier": "^2.2.0",
     "next": "^15.5.4",
     "pusher": "^5.3.4",
     "pusher-js": "^8.6.0",

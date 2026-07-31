@@ -3,17 +3,19 @@
 import { useEffect, useState, useTransition } from "react";
 import { PRESETS } from "@/game/presets";
 import { hydrateLocalNameFromStorage, useGameStore } from "@/game/store";
-import type { AiDifficulty, PlayMode, PresetId } from "@/game/types";
+import type { AiDifficulty, PlacementMode, PlayMode, PresetId } from "@/game/types";
 import { createOnlineRoom, joinOnlineRoom } from "@/online/session";
 
 export function SetupScreen() {
   const presetId = useGameStore((s) => s.presetId);
   const playMode = useGameStore((s) => s.playMode);
+  const placement = useGameStore((s) => s.placement);
   const aiDifficulty = useGameStore((s) => s.aiDifficulty);
   const localName = useGameStore((s) => s.localName);
   const onlineError = useGameStore((s) => s.onlineError);
   const setPresetId = useGameStore((s) => s.setPresetId);
   const setPlayMode = useGameStore((s) => s.setPlayMode);
+  const setPlacement = useGameStore((s) => s.setPlacement);
   const setAiDifficulty = useGameStore((s) => s.setAiDifficulty);
   const setLocalName = useGameStore((s) => s.setLocalName);
   const setOnlineError = useGameStore((s) => s.setOnlineError);
@@ -47,7 +49,9 @@ export function SetupScreen() {
       <header className="setup__header">
         <p className="setup__brand">Voxel Toe</p>
         <h1 className="setup__title">3D Tic-Tac-Toe</h1>
-        <p className="setup__lede">Spin the cube. Place coral and cyan. First to the line wins.</p>
+        <p className="setup__lede">
+          Spin the cube. Drop or place coral and cyan. First to the line wins.
+        </p>
       </header>
 
       <section className="setup__section" aria-label="Play mode">
@@ -90,6 +94,32 @@ export function SetupScreen() {
           />
         </section>
       ) : null}
+
+      <section className="setup__section" aria-label="Placement">
+        <h2 className="setup__label">Placement{playMode === "online" ? " (host)" : ""}</h2>
+        <div className="setup__modes setup__modes--two" role="group">
+          {(
+            [
+              { id: "free", label: "Free", meta: "Place any empty cell" },
+              { id: "drop", label: "Drop", meta: "Gravity · stack from the bottom" },
+            ] as const
+          ).map((opt) => {
+            const selected = placement === opt.id;
+            return (
+              <button
+                key={opt.id}
+                type="button"
+                className={`mode-chip mode-chip--stack${selected ? " is-selected" : ""}`}
+                onClick={() => setPlacement(opt.id as PlacementMode)}
+                aria-pressed={selected}
+              >
+                <span className="mode-chip__label">{opt.label}</span>
+                <span className="mode-chip__meta">{opt.meta}</span>
+              </button>
+            );
+          })}
+        </div>
+      </section>
 
       <section className="setup__section" aria-label="Board preset">
         <h2 className="setup__label">Preset{playMode === "online" ? " (host)" : ""}</h2>
@@ -164,7 +194,7 @@ export function SetupScreen() {
               disabled={busy || pending}
               onClick={() =>
                 run(async () => {
-                  await createOnlineRoom(localName, presetId);
+                  await createOnlineRoom(localName, presetId, placement);
                 })
               }
             >
