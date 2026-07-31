@@ -58,6 +58,7 @@ function buildStateMessage(): StateMessage {
     status: s.status,
     winner: s.winner,
     winningLine: s.winningLine,
+    winningCell: s.winningCell,
   };
 }
 
@@ -72,6 +73,7 @@ function applyStateMessage(msg: StateMessage) {
     status: msg.status,
     winner: msg.winner,
     winningLine: msg.winningLine,
+    winningCell: msg.winningCell ?? null,
   });
 }
 

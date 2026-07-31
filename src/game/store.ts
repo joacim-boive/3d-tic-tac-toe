@@ -63,6 +63,8 @@ type GameState = {
   status: GameStatus;
   winner: PlayerId | null;
   winningLine: CellCoord[];
+  /** The mark that completed the line — only this ball bounces. */
+  winningCell: CellCoord | null;
   /** Aiming cursor — always set while a game is in progress. */
   cursor: CellCoord;
   /** True while Shift is held (aim mode; camera orbit paused). */
@@ -115,6 +117,7 @@ type GameState = {
     status: GameStatus;
     winner: PlayerId | null;
     winningLine: CellCoord[];
+    winningCell?: CellCoord | null;
   }) => void;
 };
 
@@ -205,6 +208,7 @@ function applyPlace(
       status: "won",
       winner: win.winner,
       winningLine: win.line,
+      winningCell: resolved,
       cursor: resolved,
       aiming: false,
       fallingKey: dropAnim ? key : null,
@@ -222,6 +226,7 @@ function applyPlace(
       status: "draw",
       winner: null,
       winningLine: [],
+      winningCell: null,
       cursor: resolved,
       aiming: false,
       fallingKey: dropAnim ? key : null,
@@ -240,6 +245,7 @@ function applyPlace(
     status: "playing",
     winner: null,
     winningLine: [],
+    winningCell: null,
     cursor: resolved,
     fallingKey: dropAnim ? key : null,
     dropBusy: dropAnim,
@@ -265,6 +271,7 @@ export const useGameStore = create<GameState>((set, get) => ({
   status: "playing",
   winner: null,
   winningLine: [],
+  winningCell: null,
   cursor: { x: 1, y: 1, z: 1 },
   aiming: false,
   fallingKey: null,
@@ -549,6 +556,7 @@ export const useGameStore = create<GameState>((set, get) => ({
       status: snap.status,
       winner: snap.winner,
       winningLine: snap.winningLine,
+      winningCell: snap.winningCell ?? null,
       cursor:
         placement === "drop"
           ? snapDropCursor(centerCell(dims), snap.board, dims)

@@ -11,14 +11,18 @@ const MAX_INSTANCES = 20 * 20 * 20;
 const temp = new Object3D();
 const WIN_COLOR = "#2dff6a";
 const WIN_SCALE = 1.15;
-/** Subtle continuous bob so the winning line stays readable after the board settles. */
-const WIN_BOUNCE_AMP = 0.1;
-const WIN_BOUNCE_HZ = 1.6;
+/** Bob only the deciding mark so the winning move stays obvious. */
+const WIN_BOUNCE_AMP = 0.12;
+const WIN_BOUNCE_HZ = 1.8;
 
 type MarkersProps = {
   dims: BoardDims;
   spacing?: number;
 };
+
+function sameCell(a: CellCoord, b: CellCoord): boolean {
+  return a.x === b.x && a.y === b.y && a.z === b.z;
+}
 
 function PlayerMarkers({
   player,
@@ -77,21 +81,27 @@ function WinningMarkers({
   dims,
   spacing,
   winningLine,
+  winningCell,
 }: {
   dims: BoardDims;
   spacing: number;
   winningLine: CellCoord[];
+  winningCell: CellCoord | null;
 }) {
   const meshRef = useRef<InstancedMesh>(null);
   const geometry = useMemo(() => new SphereGeometry(0.32, 16, 12), []);
   const color = useMemo(() => new Color(WIN_COLOR), []);
   const basesRef = useRef<Array<[number, number, number]>>([]);
+  const bounceIndexRef = useRef(-1);
 
   useLayoutEffect(() => {
     const mesh = meshRef.current;
     if (!mesh) return;
     mesh.instanceMatrix.setUsage(DynamicDrawUsage);
     basesRef.current = winningLine.map((c) => cellToWorld(c, dims, spacing));
+    bounceIndexRef.current = winningCell
+      ? winningLine.findIndex((c) => sameCell(c, winningCell))
+      : -1;
 
     for (let i = 0; i < basesRef.current.length; i++) {
       const [x, y, z] = basesRef.current[i]!;
@@ -102,22 +112,19 @@ function WinningMarkers({
     }
     mesh.count = winningLine.length;
     mesh.instanceMatrix.needsUpdate = true;
-  }, [winningLine, dims, spacing]);
+  }, [winningLine, winningCell, dims, spacing]);
 
   useFrame(({ clock }) => {
     const mesh = meshRef.current;
     const bases = basesRef.current;
-    if (!mesh || bases.length === 0) return;
-    const t = clock.elapsedTime;
-    for (let i = 0; i < bases.length; i++) {
-      const [x, y, z] = bases[i]!;
-      // Slight phase stagger so the line reads as a connected set, not one blob.
-      const bob = Math.sin((t * WIN_BOUNCE_HZ + i * 0.35) * Math.PI * 2) * WIN_BOUNCE_AMP;
-      temp.position.set(x, y + bob, z);
-      temp.scale.setScalar(WIN_SCALE);
-      temp.updateMatrix();
-      mesh.setMatrixAt(i, temp.matrix);
-    }
+    const bounceIndex = bounceIndexRef.current;
+    if (!mesh || bounceIndex < 0 || !bases[bounceIndex]) return;
+    const [x, y, z] = bases[bounceIndex]!;
+    const bob = Math.sin(clock.elapsedTime * WIN_BOUNCE_HZ * Math.PI * 2) * WIN_BOUNCE_AMP;
+    temp.position.set(x, y + bob, z);
+    temp.scale.setScalar(WIN_SCALE);
+    temp.updateMatrix();
+    mesh.setMatrixAt(bounceIndex, temp.matrix);
     mesh.instanceMatrix.needsUpdate = true;
   });
 
@@ -142,6 +149,7 @@ function WinningMarkers({
 
 export function Markers({ dims, spacing = 1 }: MarkersProps) {
   const winningLine = useGameStore((s) => s.winningLine);
+  const winningCell = useGameStore((s) => s.winningCell);
 
   const winSet = useMemo(() => {
     const set = new Set<string>();
@@ -155,7 +163,12 @@ export function Markers({ dims, spacing = 1 }: MarkersProps) {
     <>
       <PlayerMarkers player="a" dims={dims} spacing={spacing} winSet={winSet} />
       <PlayerMarkers player="b" dims={dims} spacing={spacing} winSet={winSet} />
-      <WinningMarkers dims={dims} spacing={spacing} winningLine={winningLine} />
+      <WinningMarkers
+        dims={dims}
+        spacing={spacing}
+        winningLine={winningLine}
+        winningCell={winningCell}
+      />
     </>
   );
 }

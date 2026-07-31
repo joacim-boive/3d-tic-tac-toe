@@ -49,6 +49,8 @@ export type StateMessage = {
   status: "playing" | "won" | "draw";
   winner: PlayerId | null;
   winningLine: CellCoord[];
+  /** Cell that completed the win (optional for older clients). */
+  winningCell?: CellCoord | null;
 };
 
 export type RoomMessage =
