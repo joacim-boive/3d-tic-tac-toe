@@ -21,7 +21,7 @@ const WIN_SCALE = 1.15;
  * Satisfying heavy settle: one clear thud-bounce, then dead.
  * e still scales with impact so empty-column drops feel weightier.
  */
-const BOUNCE_E = 0.28;
+const BOUNCE_E = 0.24;
 const MAX_BOUNCES = 1;
 const MAX_DROP_DURATION = 1;
 /** Squash on impact (scaleY / scaleXZ). */
@@ -75,7 +75,7 @@ function buildDropPhases(spawnY: number, landY: number, g: number): DropPlan {
   }
 
   // Brief settle breath so the stick reads as intentional.
-  tCursor += 0.08;
+  tCursor += 0.06;
   return {
     phases,
     totalDuration: Math.min(tCursor, MAX_DROP_DURATION),

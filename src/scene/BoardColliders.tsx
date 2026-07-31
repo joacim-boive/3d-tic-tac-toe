@@ -20,7 +20,7 @@ export const DROP_FRICTION = 0.55;
  * Heavy pull with a readable arc — accelerates over the fall so taller
  * drops hit harder (and get a slightly bigger settle bounce).
  */
-export const DROP_GRAVITY: [number, number, number] = [0, -24, 0];
+export const DROP_GRAVITY: [number, number, number] = [0, -26, 0];
 
 export function BoardColliders({ dims, spacing = 1 }: BoardCollidersProps) {
   const w = dims.x * spacing;
