@@ -33,16 +33,19 @@ Getting a power-up is its own little skill-and-luck beat — not a free starting
 **Fantasy:** three identical packages streak across the playfield in random directions. Fast enough that grabbing all three is unrealistic. **Only one package is live**; the other two are duds. Catch the live one → you bank a random power-up. Miss everything (or only hit duds) → nothing.
 
 ```text
-place / turn resolves
+place resolves (match still playing)
         │
         ▼
-  package flyby (optional window)
-        │
-   catch live? ──yes──► roll PowerUpId → inventory[player][id]++
-        │
-        no
-        ▼
-  continue (opponent’s turn / next place)
+  occupiedCount >= 6  &&  swarmChance roll  &&  earner has room?
+        │ no                         │ yes
+        ▼                            ▼
+  continue              package flyby (3 pkgs, 1 live)
+                                 │
+                          catch live? ──yes──► hidden roll kind (under cap) → count++
+                                 │
+                                 no
+                                 ▼
+                           continue
 ```
 
 #### When does the flyby happen?
