@@ -202,6 +202,9 @@ export function GameChrome({ children }: GameChromeProps) {
                   <kbd>drag</kbd> aim
                 </li>
                 <li>
+                  <kbd>2 fingers</kbd> orbit
+                </li>
+                <li>
                   <kbd>tap</kbd> switch axis
                 </li>
                 <li>
@@ -210,6 +213,9 @@ export function GameChrome({ children }: GameChromeProps) {
               </>
             ) : (
               <>
+                <li>
+                  <kbd>drag</kbd> orbit
+                </li>
                 <li>
                   <kbd>Shift</kbd> aim
                 </li>
