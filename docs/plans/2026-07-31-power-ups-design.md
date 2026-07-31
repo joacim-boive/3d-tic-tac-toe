@@ -47,15 +47,15 @@ place / turn resolves
 
 #### When does the flyby happen?
 
-**Proposal:** after every successful place that leaves the match still `playing` (and after Drop settle if needed). That ties reward to tempo: more places ⇒ more chances, without pausing before the first move.
+**Decided:** **random**, and **never before turn 6**.
 
-Alternatives:
+- Count **plies** (successful places) in the match. `occupiedCount` after the place works as the clock.
+- While `occupiedCount < 6`: no swarm.
+- From place 6 onward: after each successful place that leaves the match still `playing` (and after Drop settle if needed), roll `swarmChance` (tunable; start ~0.35). On success → fire the package flyby for the earner.
+- No swarm after Clear/Tip alone — only after a place, so the mini-game stays tied to the core verb.
+- Skip the roll entirely if the earner already holds **max stacks of every kind** (nowhere to put a reward).
 
-- Only every Nth place / every other turn (less noisy, less snowball)
-- At the **start** of your turn (catch then decide whether to spend)
-- Only when the board crosses density thresholds
-
-Open: should a flyby also fire after Clear/Tip (no place)? **Proposal: no** — only after a place, so the mini-game stays tied to the core verb.
+Extra turn’s second place also increments `occupiedCount` and may roll a swarm after place 1 and/or 2 of the double — **proposal: roll once after the whole extra-turn resolves** (after the turn finally flips), so a double place doesn’t get two catch windows.
 
 #### Who may catch?
 
@@ -84,17 +84,17 @@ Seed trajectories + `liveIndex` from a match RNG so online peers share one movie
 
 #### What’s inside the live package?
 
-**Proposal:** on a successful live catch, roll uniformly among enabled power-up kinds (`extra-turn` | `clear-row` | `tip`). Identity is hidden until catch (or shown in the reveal burst).
+**Decided:** **hidden random kind.** Packages are identical in flight (no silhouette tell). On a successful live catch, roll uniformly among kinds the earner can still hold (`count < MAX_PER_KIND`). Reveal the kind only in the catch burst / toast.
 
-Alternatives: weighted toward Extra early / Tip late; or packages are typed (different silhouettes) — more readable, less mystery.
+No typed package looks in v1.
 
 #### Stacking / caps
 
-**Proposal:** inventories are **counts**, not booleans — you can hold multiples of the same kind.
+**Decided:** inventories are **counts**, with a hard cap of **2 per kind per player** (`MAX_PER_KIND = 2`).
 
-Soft cap per kind (e.g. max 2) so a lucky streak doesn’t hoard the match. Open: hard cap vs none for v1.
-
-Rematch: inventories reset to empty; flybys resume from scratch.
+- Award only if the rolled kind is under cap; roll among under-cap kinds only.
+- HUD shows `0`–`2`; spend decrements; catch increments.
+- Rematch: inventories reset to empty; ply clock and flybys restart.
 
 #### AI catch (luck, not skill)
 
@@ -103,8 +103,9 @@ When the AI is the earner:
 **Proposal:** skip the visual skill check (or play a short autopilot flyby for the human to watch). Roll once:
 
 - `catchChance` ≈ 1/3 (same spirit as “one of three is live,” without requiring frame-perfect AI)
-- On success → same uniform power-up roll → AI inventory++
+- On success → same hidden uniform roll among under-cap kinds → AI inventory++
 - On miss → nothing
+- If AI is already at max of every kind → skip swarm (same as human)
 
 Optionally animate the AI “grabbing” a random package so the human sees the outcome. AI **uses** banked power-ups with simple heuristics later (Phase 4); until then it may catch-and-hold or catch-and-spend randomly.
 
@@ -378,7 +379,7 @@ Desync risk is high if animation-driven; **logic commit is mandatory**.
 
 - Types: `PowerUpId`, `PowerUpInventory` (`Record<PlayerId, Record<PowerUpId, number>>`), setup toggle `powerUps: boolean`.
 - Dual inventory HUD (both players, counts; actionable only for current seat).
-- Package swarm overlay: 3 paths from seed, 1 live index, tap hit-test, reveal, award roll.
+- Package swarm overlay: gated by `occupiedCount >= 6` + `swarmChance` roll; 3 paths from seed, 1 live index, tap hit-test, reveal, award among under-cap kinds (`MAX_PER_KIND = 2`).
 - Gate place-input during swarm; fire swarm after successful place (post-`finishDrop` when needed).
 - AI earner: Bernoulli catch + uniform kind (optional watch animation).
 - Online: `package-swarm` / `package-result` + inventory on `state`.
@@ -416,19 +417,19 @@ Desync risk is high if animation-driven; **logic commit is mandatory**.
 
 ## Cross-cutting open questions
 
-1. **Flyby cadence:** after every place (proposal) vs every Nth place / start of turn?
-2. **Who catches:** earner only (proposal) vs both players race?
-3. **Live package contents:** uniform random kind (proposal) vs weighted / typed silhouettes?
-4. **Inventory caps:** max stacks per kind?
-5. **Turn cost:** Clear/Tip consume the whole turn (proposal) vs allow place after?
-6. **Mode scope:** all power-ups in Free + Drop, or Tip Drop-only at first?
-7. **Winning through power-ups:** Extra can win on place 1 or 2; Clear alone cannot win; Tip/repack can win for either seat — confirm desired drama.
-8. **Swarm presentation:** 2D overlay (proposal) vs 3D scene props?
-9. **Accessibility:** swarm must be catchable via keyboard/focus targets, not tap-only; power-up modes keep nudge/place.
+1. **Who catches:** earner only (proposal) vs both players race?
+2. **`swarmChance`:** starting ~0.35 after ply 6 — tune via feel + self-play?
+3. **Extra-turn double place:** one swarm roll after the whole extra turn (proposal) vs after each of the two places?
+4. **Turn cost:** Clear/Tip consume the whole turn (proposal) vs allow place after?
+5. **Mode scope:** all power-ups in Free + Drop, or Tip Drop-only at first?
+6. **Winning through power-ups:** Extra can win on place 1 or 2; Clear alone cannot win; Tip/repack can win for either seat — confirm desired drama.
+7. **Swarm presentation:** 2D overlay (proposal) vs 3D scene props?
+8. **Accessibility:** swarm must be catchable via keyboard/focus targets, not tap-only; power-up modes keep nudge/place.
 
 ## Non-goals (for this arc)
 
 - Shop / real-money crates / cosmetics-only power-ups
+- Typed package silhouettes (kind stays hidden until catch)
 - Diagonal clear, plane clear, bomb-radius clear (separate designs)
 - Continuous free-angle tumbling
 - Client-authoritative physics deciding online winners
@@ -437,18 +438,18 @@ Desync risk is high if animation-driven; **logic commit is mandatory**.
 
 ## Recommendation
 
-Lock the **catch mini-game** (cadence, earner-only, dual inventory HUD) before coding spends. Phase 0 ships flyby + empty inventory + Extra as the first spendable kind in Phase 1. Spike `tipBoard` logic early so cubes-only stays honest before Rapier work.
+Cadence, caps, and hidden contents are locked. Next product calls: earner-only catch, Clear/Tip turn cost, Tip cubes-only. Phase 0 ships flyby + dual inventory + caps; Phase 1 adds Extra as the first spend.
 
 ## Decision log
 
-| Topic | Status | Proposal |
+| Topic | Status | Decision |
 | ----- | ------ | -------- |
-| Acquisition | **Lean yes** | 3 packages / 1 live / skill catch; luck mini-game |
-| Who catches | Open | Earner only; AI uses `catchChance` ≈ 1/3 |
-| Cadence | Open | After each successful place while `playing` |
+| Acquisition | **Decided** | 3 packages / 1 live / skill catch; luck mini-game |
+| Cadence | **Decided** | Random (`swarmChance`); earliest after ply 6 (`occupiedCount >= 6`) |
+| Contents | **Decided** | Hidden; uniform among under-cap kinds on live catch |
+| Caps | **Decided** | Max **2** per kind per player |
 | Inventory UI | **Lean yes** | Always show both players’ kinds + counts |
-| Contents | Open | Uniform roll among power-up kinds on live catch |
-| Caps | Open | Counts stack; soft cap TBD |
+| Who catches | Open | Earner only; AI uses `catchChance` ≈ 1/3 |
 | Extra turn | Open | Two places; skip one turn flip; Drop respects `dropBusy` |
 | Clear target | Open | Axis-aligned full lines only; not planes/diagonals |
 | Clear turn | Open | Consumes turn; no place after |
