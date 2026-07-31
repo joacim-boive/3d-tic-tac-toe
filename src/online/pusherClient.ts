@@ -5,6 +5,7 @@ export type PresenceAuthParams = {
   seat: string;
   name: string;
   preset?: string;
+  placement?: string;
 };
 
 let client: Pusher | null = null;
@@ -34,6 +35,7 @@ export function getPusherClient(auth: PresenceAuthParams): Pusher {
           seat: auth.seat,
           name: auth.name,
           ...(auth.preset ? { preset: auth.preset } : {}),
+          ...(auth.placement ? { placement: auth.placement } : {}),
         });
         void fetch("/api/pusher-auth", {
           method: "POST",

@@ -35,6 +35,8 @@ export function SelectionCursor({ dims, spacing = 1 }: SelectionCursorProps) {
   const board = useGameStore((s) => s.board);
   const setCursor = useGameStore((s) => s.setCursor);
   const placeAtCursor = useGameStore((s) => s.placeAtCursor);
+  const placement = useGameStore((s) => s.placement);
+  const dropBusy = useGameStore((s) => s.dropBusy);
 
   const [touchAiming, setTouchAiming] = useState(false);
   const showAim = aiming || touchAiming;
@@ -210,7 +212,7 @@ export function SelectionCursor({ dims, spacing = 1 }: SelectionCursorProps) {
       // Touch never auto-places — Place button commits after preview.
       // Multi-touch orbit must not place even if pointerType is misreported.
       if (!active || moved || touchAim || multi) return;
-      if (status !== "playing") return;
+      if (status !== "playing" || dropBusy) return;
       if (!touch) placeAtCursor();
     };
 
@@ -233,6 +235,7 @@ export function SelectionCursor({ dims, spacing = 1 }: SelectionCursorProps) {
     placeAtCursor,
     setCursor,
     status,
+    dropBusy,
     raycaster,
     ndc,
     point,
@@ -244,33 +247,50 @@ export function SelectionCursor({ dims, spacing = 1 }: SelectionCursorProps) {
   const occupied = board.has(cellKey(cursor.x, cursor.y, cursor.z));
   const [cx, cy, cz] = cellToWorld(cursor, dims, spacing);
   const color = PLAYER_COLORS[currentPlayer];
+  // Drop mode: highlight the whole column shaft lightly, cursor at landing cell.
+  const columnH = placement === "drop" ? dims.y * spacing * 0.96 : cellSize;
+  const columnY = placement === "drop" ? -cy : 0;
 
   return (
     <group position={[cx, cy, cz]}>
+      {placement === "drop" ? (
+        <mesh position={[0, columnY, 0]}>
+          <boxGeometry args={[cellSize * 0.92, columnH, cellSize * 0.92]} />
+          <meshBasicMaterial
+            color={color}
+            transparent
+            opacity={occupied || dropBusy ? 0.04 : 0.1}
+            depthWrite={false}
+          />
+        </mesh>
+      ) : null}
       <mesh>
         <boxGeometry args={[cellSize, cellSize, cellSize]} />
         <meshBasicMaterial
           color={color}
           transparent
-          opacity={occupied ? 0.06 : 0.16}
+          opacity={occupied || dropBusy ? 0.06 : 0.16}
           depthWrite={false}
         />
       </mesh>
       <lineSegments geometry={edges}>
-        <lineBasicMaterial color={color} transparent opacity={0.95} />
+        <lineBasicMaterial color={color} transparent opacity={dropBusy ? 0.25 : 0.95} />
       </lineSegments>
-      <mesh>
-        <sphereGeometry args={[0.28, 20, 16]} />
-        <meshStandardMaterial
-          color={color}
-          transparent
-          opacity={occupied ? 0.2 : showAim ? 0.85 : 0.55}
-          emissive={color}
-          emissiveIntensity={showAim ? 0.45 : 0.2}
-          depthWrite={false}
-          roughness={0.3}
-        />
-      </mesh>
+      {/* Hide landing ghost while a piece is falling — otherwise it looks like an instant place. */}
+      {!dropBusy ? (
+        <mesh>
+          <sphereGeometry args={[0.28, 20, 16]} />
+          <meshStandardMaterial
+            color={color}
+            transparent
+            opacity={occupied ? 0.2 : showAim ? 0.85 : 0.55}
+            emissive={color}
+            emissiveIntensity={showAim ? 0.45 : 0.2}
+            depthWrite={false}
+            roughness={0.3}
+          />
+        </mesh>
+      ) : null}
     </group>
   );
 }

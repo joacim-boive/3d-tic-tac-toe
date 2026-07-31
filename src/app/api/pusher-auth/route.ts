@@ -23,6 +23,7 @@ export async function POST(request: Request): Promise<Response> {
   const name = String(form.get("name") ?? "").slice(0, 16);
   const seat = String(form.get("seat") ?? "");
   const preset = String(form.get("preset") ?? "") || undefined;
+  const placement = String(form.get("placement") ?? "") || undefined;
 
   if (!socketId || !channel.startsWith("presence-room-")) {
     return NextResponse.json({ error: "Invalid channel" }, { status: 400 });
@@ -33,7 +34,12 @@ export async function POST(request: Request): Promise<Response> {
 
   const auth = pusher.authorizeChannel(socketId, channel, {
     user_id: userId,
-    user_info: { seat, name: name.trim(), ...(preset ? { preset } : {}) },
+    user_info: {
+      seat,
+      name: name.trim(),
+      ...(preset ? { preset } : {}),
+      ...(placement ? { placement } : {}),
+    },
   });
 
   return NextResponse.json(auth);

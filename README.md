@@ -11,6 +11,7 @@ Built with Next.js, React Three Fiber, and Zustand. Designed for feel-testing pl
 - **Hotseat** — pass-and-play locally
 - **vs AI** — Easy / Medium / Hard opponent in the browser
 - **Online** — create a room, share the code or `/play/CODE` link; both enter names; match auto-starts
+- **Placement** — **Free** (any empty cell) or **Drop** (gravity: pick a column, markers fall and stack from the bottom with a light bounce)
 
 ### Online setup
 
@@ -46,6 +47,7 @@ Win length follows the board’s Z depth. Lines count along axes, face diagonals
 - [Next.js](https://nextjs.org/) (App Router) + React 19
 - [React Three Fiber](https://docs.pmnd.rs/react-three-fiber) + [drei](https://github.com/pmndrs/drei) + Three.js
 - [Zustand](https://zustand-demo.pmnd.rs/) for game state
+- [@react-three/rapier](https://github.com/pmndrs/react-three-rapier) for Drop-mode gravity / bounce (and future tilt power-ups)
 - TypeScript, oxlint, oxfmt
 
 ## Develop
@@ -61,6 +63,7 @@ Open [http://localhost:3000](http://localhost:3000).
 npm run build      # production build
 npm run check      # typecheck + lint + format
 npm run check:win  # win-detection self-check
+npm run check:drop # gravity drop-landing self-check
 ```
 
 ## Deploy

@@ -33,6 +33,8 @@ export function GameChrome({ children }: GameChromeProps) {
 
   const presetId = useGameStore((s) => s.presetId);
   const playMode = useGameStore((s) => s.playMode);
+  const placement = useGameStore((s) => s.placement);
+  const dropBusy = useGameStore((s) => s.dropBusy);
   const currentPlayer = useGameStore((s) => s.currentPlayer);
   const status = useGameStore((s) => s.status);
   const winner = useGameStore((s) => s.winner);
@@ -57,6 +59,8 @@ export function GameChrome({ children }: GameChromeProps) {
     const other = seat === "a" ? "b" : "a";
     const otherName = playerNames[other].trim() || displayName(other);
     statusText = `Waiting for ${otherName} to reconnect…`;
+  } else if (dropBusy) {
+    statusText = "Dropping…";
   } else if (status === "won" && winner) {
     statusText = `${displayName(winner)} wins`;
   } else if (status === "draw") {
@@ -64,10 +68,11 @@ export function GameChrome({ children }: GameChromeProps) {
   } else if (playMode === "ai" && currentPlayer === "b") {
     statusText = "Cyan is thinking…";
   } else {
-    statusText = `${displayName(currentPlayer)} to place`;
+    statusText = placement === "drop" ? `${displayName(currentPlayer)} to drop` : `${displayName(currentPlayer)} to place`;
   }
 
   const modeLabel = playMode === "ai" ? "vs AI" : playMode === "online" ? "Online" : "Hotseat";
+  const placementLabel = placement === "drop" ? "Drop" : "Free";
 
   const onMenu = () => {
     if (playMode === "online") {
@@ -84,6 +89,7 @@ export function GameChrome({ children }: GameChromeProps) {
           <span className="chrome__brand">Voxel Toe</span>
           <span className="chrome__preset">{preset.label}</span>
           <span className="chrome__mode">{modeLabel}</span>
+          <span className="chrome__mode">{placementLabel}</span>
         </div>
 
         <div className="chrome__status" style={{ ["--turn" as string]: turnColor }}>
@@ -114,8 +120,9 @@ export function GameChrome({ children }: GameChromeProps) {
               type="button"
               className="chrome__btn chrome__btn--accent"
               onClick={placeAtCursor}
+              disabled={dropBusy}
             >
-              Place
+              {placement === "drop" ? "Drop" : "Place"}
               {!touchUi && (
                 <>
                   {" "}
@@ -163,7 +170,7 @@ export function GameChrome({ children }: GameChromeProps) {
                 <kbd>pinch</kbd> zoom
               </li>
               <li>
-                <kbd>Place</kbd> commit
+                <kbd>{placement === "drop" ? "Drop" : "Place"}</kbd> commit
               </li>
             </>
           ) : (
@@ -178,13 +185,15 @@ export function GameChrome({ children }: GameChromeProps) {
                 <kbd>Shift</kbd> + move aim
               </li>
               <li>
-                <kbd>WASD</kbd> nudge
+                <kbd>WASD</kbd> {placement === "drop" ? "column" : "nudge"}
               </li>
+              {placement === "free" ? (
+                <li>
+                  <kbd>Q</kbd>/<kbd>E</kbd> depth
+                </li>
+              ) : null}
               <li>
-                <kbd>Q</kbd>/<kbd>E</kbd> depth
-              </li>
-              <li>
-                <kbd>Space</kbd> / click place
+                <kbd>Space</kbd> / click {placement === "drop" ? "drop" : "place"}
               </li>
             </>
           )}
