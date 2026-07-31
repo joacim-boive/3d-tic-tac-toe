@@ -56,6 +56,7 @@ function MarkerBody({
   const bounceCount = useRef(0);
   const sawBounce = useRef(false);
   const lastBounceAt = useRef(0);
+  const prevVy = useRef(0);
   const spawnY = dropSpawnY(dims, spacing);
   const [tx, ty, tz] = cellToWorld(entry.coord, dims, spacing);
   const spawnPos = useMemo(
@@ -88,6 +89,7 @@ function MarkerBody({
     bounceCount.current = 0;
     sawBounce.current = false;
     lastBounceAt.current = 0;
+    prevVy.current = 0;
     const t = window.setTimeout(snapAndFinish, SETTLE_TIMEOUT_MS);
     return () => window.clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
