@@ -18,13 +18,9 @@ import {
 const WIN_COLOR = "#2dff6a";
 const WIN_SCALE = 1.15;
 /** Rebound = impact × e. Longer falls → higher impact → higher bounce. */
-const BOUNCE_E = 0.7;
-const BOUNCE_DECAY = 0.48;
+const BOUNCE_E = 0.68;
+const BOUNCE_DECAY = 0.45;
 const MAX_BOUNCES = 3;
-const SETTLE_SPEED = 0.35;
-const SETTLE_TIMEOUT_MS = 12000;
-/** Never finish before the piece has had time to fall (guards bad dt / remounts). */
-const MIN_DROP_MS = 600;
 
 type PhysicsMarkersProps = {
   dims: BoardDims;
@@ -39,11 +35,68 @@ type MarkerEntry = {
   falling: boolean;
 };
 
+type DropPhase = {
+  /** Absolute time (s) when this phase starts. */
+  t0: number;
+  /** Height at phase start. */
+  y0: number;
+  /** Upward speed at phase start (0 for the initial fall). */
+  v0: number;
+};
+
 /**
- * Kinematic drop using wall-clock dt so gravity acceleration and
- * impact-scaled bounce stay correct regardless of R3F frame delta quirks.
- * Settled pieces become fixed Rapier bodies for a future tilt power-up.
+ * Build fall + bounce phases analytically.
+ * Phase 0: drop from spawn (v0=0). Later phases: bounce with v0 = impact×e^n.
  */
+function buildDropPhases(spawnY: number, landY: number, g: number): {
+  phases: DropPhase[];
+  totalDuration: number;
+} {
+  const grav = Math.abs(g);
+  const phases: DropPhase[] = [];
+  let tCursor = 0;
+  let height = spawnY - landY;
+
+  // Initial fall
+  const fallT = Math.sqrt((2 * height) / grav);
+  phases.push({ t0: 0, y0: spawnY, v0: 0 });
+  tCursor += fallT;
+  let impact = grav * fallT; // downward speed at impact
+
+  for (let i = 0; i < MAX_BOUNCES; i++) {
+    const e = BOUNCE_E * Math.pow(BOUNCE_DECAY, i);
+    const up = impact * e;
+    if (up < 0.4) break;
+    phases.push({ t0: tCursor, y0: landY, v0: up });
+    // Time to apex and back: 2*up/g
+    const hop = (2 * up) / grav;
+    tCursor += hop;
+    impact = up; // lands with the same speed it left (no air drag)
+  }
+
+  // Small settle pad so the last frame reads as resting.
+  tCursor += 0.12;
+  return { phases, totalDuration: tCursor };
+}
+
+function sampleDropY(phases: DropPhase[], landY: number, g: number, t: number): number {
+  // Find active phase (last whose t0 <= t).
+  let phase = phases[0]!;
+  for (let i = phases.length - 1; i >= 0; i--) {
+    if (t >= phases[i]!.t0) {
+      phase = phases[i]!;
+      break;
+    }
+  }
+  const localT = t - phase.t0;
+  if (phase.v0 === 0) {
+    // Free fall from rest: y = y0 + 0.5*g*t^2 (g negative).
+    return Math.max(landY, phase.y0 + 0.5 * g * localT * localT);
+  }
+  // Bounce hop: y = landY + v0*t + 0.5*g*t^2
+  return Math.max(landY, landY + phase.v0 * localT + 0.5 * g * localT * localT);
+}
+
 function FallingMarker({
   entry,
   dims,
@@ -56,81 +109,30 @@ function FallingMarker({
   const finishDrop = useGameStore((s) => s.finishDrop);
   const meshRef = useRef<Mesh>(null);
   const finished = useRef(false);
+  const startedAt = useRef(performance.now());
   const spawnY = dropSpawnY(dims, spacing);
   const [tx, ty, tz] = cellToWorld(entry.coord, dims, spacing);
-  const yRef = useRef(spawnY);
-  const vyRef = useRef(0);
-  const bounces = useRef(0);
-  const startedAt = useRef(performance.now());
-  const lastTick = useRef(performance.now());
   const g = DROP_GRAVITY[1];
+  const plan = useMemo(() => buildDropPhases(spawnY, ty, g), [spawnY, ty, g]);
   const color = useMemo(() => new Color(PLAYER_COLORS[entry.player]), [entry.player]);
 
   useEffect(() => {
-    yRef.current = spawnY;
-    vyRef.current = 0;
-    bounces.current = 0;
     finished.current = false;
     startedAt.current = performance.now();
-    lastTick.current = performance.now();
     if (meshRef.current) meshRef.current.position.set(tx, spawnY, tz);
-
-    const t = window.setTimeout(() => {
-      if (finished.current) return;
-      finished.current = true;
-      if (meshRef.current) meshRef.current.position.set(tx, ty, tz);
-      finishDrop();
-    }, SETTLE_TIMEOUT_MS);
-    return () => window.clearTimeout(t);
-  }, [spawnY, tx, ty, tz, finishDrop, entry.key]);
+  }, [tx, spawnY, tz, entry.key]);
 
   useFrame(() => {
     if (finished.current || !meshRef.current) return;
-
-    const now = performance.now();
-    const dt = Math.min((now - lastTick.current) / 1000, 1 / 25);
-    lastTick.current = now;
-    if (dt <= 0) return;
-
-    // Natural acceleration from gravity.
-    vyRef.current += g * dt;
-    yRef.current += vyRef.current * dt;
-
-    if (yRef.current <= ty && vyRef.current < 0) {
-      const impact = -vyRef.current;
-      yRef.current = ty;
-      if (bounces.current < MAX_BOUNCES && impact > SETTLE_SPEED) {
-        const e = BOUNCE_E * Math.pow(BOUNCE_DECAY, bounces.current);
-        vyRef.current = impact * e;
-        bounces.current += 1;
-      } else if (now - startedAt.current >= MIN_DROP_MS) {
-        vyRef.current = 0;
-        finished.current = true;
-        meshRef.current.position.set(tx, ty, tz);
-        finishDrop();
-        return;
-      } else {
-        // Too early to end — give a small bounce so motion continues.
-        vyRef.current = Math.max(impact * BOUNCE_E, 1.2);
-        bounces.current += 1;
-      }
-    }
-
-    if (
-      bounces.current > 0 &&
-      Math.abs(vyRef.current) < SETTLE_SPEED &&
-      yRef.current <= ty + 0.06 &&
-      now - startedAt.current >= MIN_DROP_MS
-    ) {
+    const t = (performance.now() - startedAt.current) / 1000;
+    if (t >= plan.totalDuration) {
       finished.current = true;
-      yRef.current = ty;
-      vyRef.current = 0;
       meshRef.current.position.set(tx, ty, tz);
       finishDrop();
       return;
     }
-
-    meshRef.current.position.set(tx, yRef.current, tz);
+    const y = sampleDropY(plan.phases, ty, g, t);
+    meshRef.current.position.set(tx, y, tz);
   });
 
   return (
