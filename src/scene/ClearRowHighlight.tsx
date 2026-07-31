@@ -1,85 +1,83 @@
 "use client";
 
-import { useLayoutEffect, useMemo, useRef } from "react";
-import {
-  AdditiveBlending,
-  Color,
-  DynamicDrawUsage,
-  InstancedMesh,
-  Object3D,
-  SphereGeometry,
-} from "three";
-import { cellKey, cellToWorld } from "@/game/board";
-import { axisLineCells, clearFixedFromCursor } from "@/game/clearRow";
+import { useMemo } from "react";
+import { Color } from "three";
+import { cellToWorld } from "@/game/board";
+import { clearFixedFromCursor, type Axis } from "@/game/clearRow";
 import { useGameStore } from "@/game/store";
-import type { BoardDims } from "@/game/types";
+import type { BoardDims, CellCoord } from "@/game/types";
 
-/** Hot red — destructive clear preview (distinct from coral/cyan markers). */
-const CLEAR_COLOR = "#ff2a2a";
+/** Soft red — destructive clear shaft (distinct from coral/cyan markers). */
+const CLEAR_COLOR = "#ff3a3a";
 
 type ClearRowHighlightProps = {
   dims: BoardDims;
   spacing?: number;
 };
 
+function shaftWorld(
+  axis: Axis,
+  a: number,
+  b: number,
+  dims: BoardDims,
+  spacing: number,
+): { position: [number, number, number]; size: [number, number, number] } {
+  const span = 0.96;
+  const cross = spacing * 0.88;
+  const mid = (n: number) => Math.floor((n - 1) / 2);
+
+  let cell: CellCoord;
+  if (axis === "x") {
+    cell = { x: mid(dims.x), y: a, z: b };
+  } else if (axis === "y") {
+    cell = { x: a, y: mid(dims.y), z: b };
+  } else {
+    cell = { x: a, y: b, z: mid(dims.z) };
+  }
+
+  const [wx, wy, wz] = cellToWorld(cell, dims, spacing);
+  // Center the shaft on the board mid along the varying axis (world origin on that axis).
+  if (axis === "x") {
+    return {
+      position: [0, wy, wz],
+      size: [dims.x * spacing * span, cross, cross],
+    };
+  }
+  if (axis === "y") {
+    return {
+      position: [wx, 0, wz],
+      size: [cross, dims.y * spacing * span, cross],
+    };
+  }
+  return {
+    position: [wx, wy, 0],
+    size: [cross, cross, dims.z * spacing * span],
+  };
+}
+
 /**
- * Glowing red translucent spheres along the clear-target line (axis + cursor).
- * Occupied cells glow hotter so the wipe reads as a power-up, not a place ghost.
+ * One translucent red column/shaft along the clear-target line — cleaner than per-cell spheres.
  */
 export function ClearRowHighlight({ dims, spacing = 1 }: ClearRowHighlightProps) {
   const powerUpMode = useGameStore((s) => s.powerUpMode);
   const clearAxis = useGameStore((s) => s.clearAxis);
   const cursor = useGameStore((s) => s.cursor);
-  const board = useGameStore((s) => s.board);
-  const meshRef = useRef<InstancedMesh>(null);
-  const geometry = useMemo(() => new SphereGeometry(0.32, 20, 16), []);
   const color = useMemo(() => new Color(CLEAR_COLOR), []);
-  const temp = useMemo(() => new Object3D(), []);
 
-  const cells = useMemo(() => {
-    if (powerUpMode !== "clear-row") return [];
-    const { a, b } = clearFixedFromCursor(clearAxis, cursor);
-    return axisLineCells(dims, clearAxis, a, b);
-  }, [powerUpMode, clearAxis, cursor, dims]);
+  if (powerUpMode !== "clear-row") return null;
 
-  useLayoutEffect(() => {
-    const mesh = meshRef.current;
-    if (!mesh) return;
-    mesh.instanceMatrix.setUsage(DynamicDrawUsage);
-    for (let i = 0; i < cells.length; i++) {
-      const cell = cells[i]!;
-      const occupied = board.has(cellKey(cell.x, cell.y, cell.z));
-      const [x, y, z] = cellToWorld(cell, dims, spacing);
-      temp.position.set(x, y, z);
-      // Occupied = hotter / larger; empty = softer danger ghost.
-      temp.scale.setScalar(occupied ? 1.12 : 0.92);
-      temp.updateMatrix();
-      mesh.setMatrixAt(i, temp.matrix);
-    }
-    mesh.count = cells.length;
-    mesh.instanceMatrix.needsUpdate = true;
-  }, [cells, board, dims, spacing, temp]);
-
-  if (powerUpMode !== "clear-row" || cells.length === 0) return null;
+  const { a, b } = clearFixedFromCursor(clearAxis, cursor);
+  const { position, size } = shaftWorld(clearAxis, a, b, dims, spacing);
 
   return (
-    <instancedMesh
-      ref={meshRef}
-      args={[geometry, undefined, Math.max(1, cells.length)]}
-      frustumCulled={false}
-      renderOrder={2}
-    >
-      <meshStandardMaterial
+    <mesh position={position} renderOrder={2}>
+      <boxGeometry args={size} />
+      <meshBasicMaterial
         color={color}
         transparent
-        opacity={0.55}
-        roughness={0.2}
-        metalness={0.05}
-        emissive={color}
-        emissiveIntensity={1.35}
+        opacity={0.22}
         depthWrite={false}
-        blending={AdditiveBlending}
       />
-    </instancedMesh>
+    </mesh>
   );
 }

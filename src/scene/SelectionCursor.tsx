@@ -272,7 +272,7 @@ export function SelectionCursor({ dims, spacing = 1 }: SelectionCursorProps) {
 
   if (status !== "playing") return null;
 
-  // Clear mode: no place-style cell border — the red line spheres are the only preview.
+  // Clear mode: no place-style cell border — the translucent shaft is the only preview.
   // Gesture listeners above still handle aim + tap-to-cycle.
   if (clearMode) return null;
 
