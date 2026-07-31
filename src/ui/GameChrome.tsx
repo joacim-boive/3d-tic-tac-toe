@@ -6,6 +6,8 @@ import { useGameStore } from "@/game/store";
 import { PLAYER_COLORS } from "@/game/types";
 import { leaveOnlineSession } from "@/online/session";
 import { RematchDialog } from "./RematchDialog";
+import { PackageSwarm } from "./PackageSwarm";
+import { PowerUpHud } from "./PowerUpHud";
 import { useGameControls } from "./useGameControls";
 
 type GameChromeProps = {
@@ -35,6 +37,9 @@ export function GameChrome({ children }: GameChromeProps) {
   const playMode = useGameStore((s) => s.playMode);
   const placement = useGameStore((s) => s.placement);
   const dropBusy = useGameStore((s) => s.dropBusy);
+  const swarmBusy = useGameStore((s) => s.swarmBusy);
+  const bonusPlacesRemaining = useGameStore((s) => s.bonusPlacesRemaining);
+  const powerUpMode = useGameStore((s) => s.powerUpMode);
   const currentPlayer = useGameStore((s) => s.currentPlayer);
   const status = useGameStore((s) => s.status);
   const winner = useGameStore((s) => s.winner);
@@ -59,12 +64,20 @@ export function GameChrome({ children }: GameChromeProps) {
     const other = seat === "a" ? "b" : "a";
     const otherName = playerNames[other].trim() || displayName(other);
     statusText = `Waiting for ${otherName} to reconnect…`;
+  } else if (swarmBusy) {
+    statusText = "Packages incoming…";
   } else if (dropBusy) {
     statusText = "Dropping…";
   } else if (status === "won" && winner) {
     statusText = `${displayName(winner)} wins`;
   } else if (status === "draw") {
     statusText = "Draw";
+  } else if (powerUpMode === "clear-row") {
+    statusText = "Clear row — pick axis & confirm";
+  } else if (powerUpMode === "tip") {
+    statusText = "Tip the field — pick a new floor";
+  } else if (bonusPlacesRemaining > 0) {
+    statusText = `${displayName(currentPlayer)} — extra place`;
   } else if (playMode === "ai" && currentPlayer === "b") {
     statusText = "Cyan is thinking…";
   } else {
@@ -115,12 +128,12 @@ export function GameChrome({ children }: GameChromeProps) {
               )}
             </button>
           )}
-          {status === "playing" && !paused && myTurn && (
+          {status === "playing" && !paused && myTurn && powerUpMode !== "clear-row" && powerUpMode !== "tip" && (
             <button
               type="button"
               className="chrome__btn chrome__btn--accent"
               onClick={placeAtCursor}
-              disabled={dropBusy}
+              disabled={dropBusy || swarmBusy}
             >
               {placement === "drop" ? "Drop" : "Place"}
               {!touchUi && (
@@ -143,7 +156,12 @@ export function GameChrome({ children }: GameChromeProps) {
         </div>
       </header>
 
-      <div className="game-viewport">{children}</div>
+      <div className="game-viewport">
+        {children}
+        <PackageSwarm />
+      </div>
+
+      <PowerUpHud />
 
       <RematchDialog />
 

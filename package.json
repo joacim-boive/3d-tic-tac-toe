@@ -20,6 +20,7 @@
     "check:drop": "npx tsx src/game/drop.selftest.ts",
     "check:selfplay": "npx tsx src/game/selfPlay.selftest.ts",
     "check:prefs": "npx tsx src/game/setupPrefs.selftest.ts",
+    "check:powerups": "npx tsx src/game/powerUps.selftest.ts",
     "eval:selfplay": "npx tsx src/game/selfPlay.cli.ts"
   },
   "dependencies": {

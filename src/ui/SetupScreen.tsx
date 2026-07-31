@@ -12,12 +12,14 @@ export function SetupScreen() {
   const playMode = useGameStore((s) => s.playMode);
   const placement = useGameStore((s) => s.placement);
   const aiDifficulty = useGameStore((s) => s.aiDifficulty);
+  const powerUpsEnabled = useGameStore((s) => s.powerUpsEnabled);
   const localName = useGameStore((s) => s.localName);
   const onlineError = useGameStore((s) => s.onlineError);
   const setPresetId = useGameStore((s) => s.setPresetId);
   const setPlayMode = useGameStore((s) => s.setPlayMode);
   const setPlacement = useGameStore((s) => s.setPlacement);
   const setAiDifficulty = useGameStore((s) => s.setAiDifficulty);
+  const setPowerUpsEnabled = useGameStore((s) => s.setPowerUpsEnabled);
   const setLocalName = useGameStore((s) => s.setLocalName);
   const setOnlineError = useGameStore((s) => s.setOnlineError);
   const startGame = useGameStore((s) => s.startGame);
@@ -138,6 +140,32 @@ export function SetupScreen() {
               >
                 <span className="preset-card__name">{preset.label}</span>
                 <span className="preset-card__meta">{preset.description}</span>
+              </button>
+            );
+          })}
+        </div>
+      </section>
+
+      <section className="setup__section" aria-label="Power-ups">
+        <h2 className="setup__label">Power-ups</h2>
+        <div className="setup__modes setup__modes--two" role="group">
+          {(
+            [
+              { id: true, label: "On", meta: "Catch packages for bonuses" },
+              { id: false, label: "Off", meta: "Classic play only" },
+            ] as const
+          ).map((opt) => {
+            const selected = powerUpsEnabled === opt.id;
+            return (
+              <button
+                key={String(opt.id)}
+                type="button"
+                className={`mode-chip mode-chip--stack${selected ? " is-selected" : ""}`}
+                onClick={() => setPowerUpsEnabled(opt.id)}
+                aria-pressed={selected}
+              >
+                <span className="mode-chip__label">{opt.label}</span>
+                <span className="mode-chip__meta">{opt.meta}</span>
               </button>
             );
           })}

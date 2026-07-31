@@ -14,6 +14,8 @@ export function useGameControls() {
   const status = useGameStore((s) => s.status);
   const phase = useGameStore((s) => s.phase);
   const playMode = useGameStore((s) => s.playMode);
+  const swarmBusy = useGameStore((s) => s.swarmBusy);
+  const powerUpMode = useGameStore((s) => s.powerUpMode);
 
   useEffect(() => {
     if (phase !== "playing") return;
@@ -31,47 +33,49 @@ export function useGameControls() {
         case " ":
         case "Enter":
           e.preventDefault();
-          if (status === "playing") placeAtCursor();
+          if (status === "playing" && !swarmBusy && powerUpMode !== "clear-row" && powerUpMode !== "tip") {
+            placeAtCursor();
+          }
           break;
         case "ArrowLeft":
         case "a":
         case "A":
-          if (status !== "playing") break;
+          if (status !== "playing" || swarmBusy) break;
           e.preventDefault();
           nudgeCursor(-1, 0, 0);
           break;
         case "ArrowRight":
         case "d":
         case "D":
-          if (status !== "playing") break;
+          if (status !== "playing" || swarmBusy) break;
           e.preventDefault();
           nudgeCursor(1, 0, 0);
           break;
         case "ArrowUp":
         case "w":
         case "W":
-          if (status !== "playing") break;
+          if (status !== "playing" || swarmBusy) break;
           e.preventDefault();
           nudgeCursor(0, 1, 0);
           break;
         case "ArrowDown":
         case "s":
         case "S":
-          if (status !== "playing") break;
+          if (status !== "playing" || swarmBusy) break;
           e.preventDefault();
           nudgeCursor(0, -1, 0);
           break;
         case "q":
         case "Q":
         case "[":
-          if (status !== "playing") break;
+          if (status !== "playing" || swarmBusy) break;
           e.preventDefault();
           nudgeCursor(0, 0, -1);
           break;
         case "e":
         case "E":
         case "]":
-          if (status !== "playing") break;
+          if (status !== "playing" || swarmBusy) break;
           e.preventDefault();
           nudgeCursor(0, 0, 1);
           break;
@@ -108,5 +112,16 @@ export function useGameControls() {
       window.removeEventListener("blur", onBlur);
       setAiming(false);
     };
-  }, [phase, status, playMode, setAiming, nudgeCursor, placeAtCursor, returnToSetup, rematch]);
+  }, [
+    phase,
+    status,
+    playMode,
+    swarmBusy,
+    powerUpMode,
+    setAiming,
+    nudgeCursor,
+    placeAtCursor,
+    returnToSetup,
+    rematch,
+  ]);
 }

@@ -1,4 +1,5 @@
 import type { CellCoord, PlacementMode, PlayerId, PlayerNames, PresetId } from "@/game/types";
+import type { PowerUpId, PowerUpInventory, SwarmPlan } from "@/game/powerUps";
 
 export type PresenceData = {
   seat: PlayerId;
@@ -38,6 +39,21 @@ export type RematchMessage = {
   accept: boolean;
 };
 
+export type PackageSwarmMessage = {
+  type: "package-swarm";
+  seed: number;
+  liveIndex: 0 | 1 | 2;
+  earner: PlayerId;
+  packages: SwarmPlan["packages"];
+};
+
+export type PackageResultMessage = {
+  type: "package-result";
+  earner: PlayerId;
+  caught: boolean;
+  kind?: PowerUpId;
+};
+
 export type StateMessage = {
   type: "state";
   board: Array<[string, PlayerId]>;
@@ -51,6 +67,9 @@ export type StateMessage = {
   winningLine: CellCoord[];
   /** Cell that completed the win (optional for older clients). */
   winningCell?: CellCoord | null;
+  inventory?: PowerUpInventory;
+  powerUpsEnabled?: boolean;
+  bonusPlacesRemaining?: number;
 };
 
 export type RoomMessage =
@@ -58,4 +77,6 @@ export type RoomMessage =
   | ReadyMessage
   | PlaceMessage
   | RematchMessage
+  | PackageSwarmMessage
+  | PackageResultMessage
   | StateMessage;
