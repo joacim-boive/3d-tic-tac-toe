@@ -15,17 +15,18 @@ function placeLine(board: Board, player: PlayerId, cells: CellCoord[]) {
 }
 
 function testAxisWin() {
-  // 4×4×3 → win length 3 along X
-  const dims: BoardDims = { x: 4, y: 4, z: 3 };
+  // 4×4×4 → win length 4 along X
+  const dims: BoardDims = { x: 4, y: 4, z: 4 };
   const board = createEmptyBoard();
   placeLine(board, "a", [
     { x: 0, y: 0, z: 0 },
     { x: 1, y: 0, z: 0 },
+    { x: 2, y: 0, z: 0 },
   ]);
-  board.set(cellKey(2, 0, 0), "a");
-  const win = checkWin(board, dims, { x: 2, y: 0, z: 0 }, "a");
-  assert(win !== null, "axis win should detect 3 in a row");
-  assert(win.line.length === 3, "winning line length");
+  board.set(cellKey(3, 0, 0), "a");
+  const win = checkWin(board, dims, { x: 3, y: 0, z: 0 }, "a");
+  assert(win !== null, "axis win should detect 4 in a row");
+  assert(win.line.length === 4, "winning line length");
 }
 
 function testSpaceDiagonal() {
@@ -43,23 +44,25 @@ function testSpaceDiagonal() {
 }
 
 function testNoFalseWin() {
-  const dims: BoardDims = { x: 4, y: 4, z: 3 };
+  const dims: BoardDims = { x: 4, y: 4, z: 4 };
   const board = createEmptyBoard();
   board.set(cellKey(0, 0, 0), "a");
   board.set(cellKey(1, 0, 0), "a");
-  board.set(cellKey(2, 0, 0), "b");
-  const win = checkWin(board, dims, { x: 1, y: 0, z: 0 }, "a");
+  board.set(cellKey(2, 0, 0), "a");
+  board.set(cellKey(3, 0, 0), "b");
+  const win = checkWin(board, dims, { x: 2, y: 0, z: 0 }, "a");
   assert(win === null, "broken line must not win");
 }
 
 function testWinLengthIsZ() {
-  // On 5×5×3, two in a row is not enough
-  const dims: BoardDims = { x: 5, y: 5, z: 3 };
+  // On 5×5×4, three in a row is not enough
+  const dims: BoardDims = { x: 5, y: 5, z: 4 };
   const board = createEmptyBoard();
   board.set(cellKey(0, 0, 0), "a");
   board.set(cellKey(1, 0, 0), "a");
-  const win = checkWin(board, dims, { x: 1, y: 0, z: 0 }, "a");
-  assert(win === null, "2 < Z=3 must not win");
+  board.set(cellKey(2, 0, 0), "a");
+  const win = checkWin(board, dims, { x: 2, y: 0, z: 0 }, "a");
+  assert(win === null, "3 < Z=4 must not win");
 }
 
 function testDirectionCount() {

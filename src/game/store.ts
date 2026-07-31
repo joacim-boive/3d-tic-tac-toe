@@ -9,7 +9,7 @@ import {
   resolvePlaceCoord,
   type Board,
 } from "./board";
-import { getPreset } from "./presets";
+import { getPreset, resolvePresetId } from "./presets";
 import type {
   AiDifficulty,
   CellCoord,
@@ -31,6 +31,10 @@ const LOCAL_NAME_KEY = "voxel-toe-name";
 
 const EMPTY_NAMES: PlayerNames = { a: "", b: "" };
 const EMPTY_VOTES: RematchVotes = { a: null, b: null };
+
+function opponentOf(player: PlayerId): PlayerId {
+  return player === "a" ? "b" : "a";
+}
 
 function persistLocalName(name: string) {
   if (typeof window === "undefined") return;
@@ -54,6 +58,8 @@ type GameState = {
   board: Board;
   occupiedCount: number;
   currentPlayer: PlayerId;
+  /** Who opens each match; rematch flips this to cut first-move steamrolls. */
+  startingPlayer: PlayerId;
   status: GameStatus;
   winner: PlayerId | null;
   winningLine: CellCoord[];
@@ -82,6 +88,8 @@ type GameState = {
   setCursor: (coord: CellCoord) => void;
   nudgeCursor: (dx: number, dy: number, dz: number) => void;
   startGame: () => void;
+  /** Clear the board and swap who opens (local rematch). */
+  rematch: () => void;
   returnToSetup: () => void;
   placeAtCursor: () => boolean;
   place: (coord: CellCoord) => boolean;
@@ -246,13 +254,14 @@ function applyPlace(
 
 export const useGameStore = create<GameState>((set, get) => ({
   phase: "setup",
-  presetId: "3x3x3",
+  presetId: "4x4x4",
   playMode: "hotseat",
   placement: "free",
   aiDifficulty: "medium",
   board: createEmptyBoard(),
   occupiedCount: 0,
   currentPlayer: "a",
+  startingPlayer: "a",
   status: "playing",
   winner: null,
   winningLine: [],
@@ -269,7 +278,7 @@ export const useGameStore = create<GameState>((set, get) => ({
   opponentConnected: false,
   onlineError: null,
 
-  setPresetId: (id) => set({ presetId: id }),
+  setPresetId: (id) => set({ presetId: resolvePresetId(id) }),
   setPlayMode: (mode) => set({ playMode: mode }),
   setPlacement: (placement) => set({ placement }),
   setAiDifficulty: (difficulty) => set({ aiDifficulty: difficulty }),
@@ -338,6 +347,7 @@ export const useGameStore = create<GameState>((set, get) => ({
       phase: "playing",
       board: createEmptyBoard(),
       occupiedCount: 0,
+      startingPlayer: "a",
       currentPlayer: "a",
       status: "playing",
       winner: null,
@@ -349,12 +359,41 @@ export const useGameStore = create<GameState>((set, get) => ({
     });
   },
 
+  rematch: () => {
+    clearAiTimer();
+    const state = get();
+    const dims = getPreset(state.presetId).dims;
+    const nextStarter = opponentOf(state.startingPlayer);
+    const startCursor =
+      state.placement === "drop"
+        ? snapDropCursor(centerCell(dims), createEmptyBoard(), dims)
+        : centerCell(dims);
+    set({
+      phase: "playing",
+      board: createEmptyBoard(),
+      occupiedCount: 0,
+      startingPlayer: nextStarter,
+      currentPlayer: nextStarter,
+      status: "playing",
+      winner: null,
+      winningLine: [],
+      cursor: startCursor,
+      aiming: false,
+      fallingKey: null,
+      dropBusy: false,
+    });
+    if (state.playMode === "ai" && nextStarter === AI_PLAYER) {
+      scheduleAiMove(get, set);
+    }
+  },
+
   returnToSetup: () => {
     clearAiTimer();
     set({
       phase: "setup",
       board: createEmptyBoard(),
       occupiedCount: 0,
+      startingPlayer: "a",
       currentPlayer: "a",
       status: "playing",
       winner: null,
@@ -390,7 +429,8 @@ export const useGameStore = create<GameState>((set, get) => ({
   },
 
   startOnlineGame: (names, presetId, placement) => {
-    const dims = getPreset(presetId).dims;
+    const resolved = resolvePresetId(presetId);
+    const dims = getPreset(resolved).dims;
     const mode = placement ?? get().placement;
     const startCursor =
       mode === "drop"
@@ -399,11 +439,12 @@ export const useGameStore = create<GameState>((set, get) => ({
     set({
       phase: "playing",
       playMode: "online",
-      presetId,
+      presetId: resolved,
       placement: mode,
       playerNames: names,
       board: createEmptyBoard(),
       occupiedCount: 0,
+      startingPlayer: "a",
       currentPlayer: "a",
       status: "playing",
       winner: null,
@@ -444,6 +485,7 @@ export const useGameStore = create<GameState>((set, get) => ({
   resetForRematch: () => {
     const state = get();
     const dims = getPreset(state.presetId).dims;
+    const nextStarter = opponentOf(state.startingPlayer);
     const startCursor =
       state.placement === "drop"
         ? snapDropCursor(centerCell(dims), createEmptyBoard(), dims)
@@ -451,7 +493,8 @@ export const useGameStore = create<GameState>((set, get) => ({
     set({
       board: createEmptyBoard(),
       occupiedCount: 0,
-      currentPlayer: "a",
+      startingPlayer: nextStarter,
+      currentPlayer: nextStarter,
       status: "playing",
       winner: null,
       winningLine: [],
@@ -471,6 +514,7 @@ export const useGameStore = create<GameState>((set, get) => ({
       phase: "setup",
       board: createEmptyBoard(),
       occupiedCount: 0,
+      startingPlayer: "a",
       currentPlayer: "a",
       status: "playing",
       winner: null,
@@ -488,7 +532,8 @@ export const useGameStore = create<GameState>((set, get) => ({
   },
 
   hydrateFromSnapshot: (snap) => {
-    const dims = getPreset(snap.presetId).dims;
+    const resolved = resolvePresetId(snap.presetId);
+    const dims = getPreset(resolved).dims;
     const placement = snap.placement ?? get().placement;
     const onlineStatus: OnlineStatus =
       snap.status === "won" || snap.status === "draw" ? "ended" : "playing";
@@ -499,7 +544,7 @@ export const useGameStore = create<GameState>((set, get) => ({
       occupiedCount: snap.occupiedCount,
       currentPlayer: snap.currentPlayer,
       playerNames: snap.names,
-      presetId: snap.presetId,
+      presetId: resolved,
       placement,
       status: snap.status,
       winner: snap.winner,

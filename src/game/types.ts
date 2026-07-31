@@ -28,7 +28,7 @@ export type BoardDims = {
   z: number;
 };
 
-export type PresetId = "3x3x3" | "4x4x3" | "5x5x3";
+export type PresetId = "3x3x3" | "4x4x4" | "5x5x4";
 
 export type GamePreset = {
   id: PresetId;

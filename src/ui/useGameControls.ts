@@ -10,7 +10,7 @@ export function useGameControls() {
   const nudgeCursor = useGameStore((s) => s.nudgeCursor);
   const placeAtCursor = useGameStore((s) => s.placeAtCursor);
   const returnToSetup = useGameStore((s) => s.returnToSetup);
-  const startGame = useGameStore((s) => s.startGame);
+  const rematch = useGameStore((s) => s.rematch);
   const status = useGameStore((s) => s.status);
   const phase = useGameStore((s) => s.phase);
   const playMode = useGameStore((s) => s.playMode);
@@ -85,7 +85,7 @@ export function useGameControls() {
         case "r":
         case "R":
           if (playMode !== "online" && (status === "won" || status === "draw")) {
-            startGame();
+            rematch();
           }
           break;
         default:
@@ -108,5 +108,5 @@ export function useGameControls() {
       window.removeEventListener("blur", onBlur);
       setAiming(false);
     };
-  }, [phase, status, playMode, setAiming, nudgeCursor, placeAtCursor, returnToSetup, startGame]);
+  }, [phase, status, playMode, setAiming, nudgeCursor, placeAtCursor, returnToSetup, rematch]);
 }

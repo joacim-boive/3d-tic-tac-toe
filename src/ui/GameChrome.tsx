@@ -43,7 +43,7 @@ export function GameChrome({ children }: GameChromeProps) {
   const seat = useGameStore((s) => s.seat);
   const onlineStatus = useGameStore((s) => s.onlineStatus);
   const playerNames = useGameStore((s) => s.playerNames);
-  const startGame = useGameStore((s) => s.startGame);
+  const rematch = useGameStore((s) => s.rematch);
   const returnToSetup = useGameStore((s) => s.returnToSetup);
   const placeAtCursor = useGameStore((s) => s.placeAtCursor);
   const displayName = useGameStore((s) => s.displayName);
@@ -105,7 +105,7 @@ export function GameChrome({ children }: GameChromeProps) {
 
         <div className="chrome__actions">
           {playMode !== "online" && (status === "won" || status === "draw") && (
-            <button type="button" className="chrome__btn chrome__btn--accent" onClick={startGame}>
+            <button type="button" className="chrome__btn chrome__btn--accent" onClick={rematch}>
               Rematch
               {!touchUi && (
                 <>
