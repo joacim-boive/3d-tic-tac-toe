@@ -1,5 +1,6 @@
 "use client";
 
+import { useFrame } from "@react-three/fiber";
 import { useLayoutEffect, useMemo, useRef } from "react";
 import { Color, DynamicDrawUsage, InstancedMesh, Object3D, SphereGeometry } from "three";
 import { cellKey, cellToWorld, parseCellKey } from "@/game/board";
@@ -10,6 +11,9 @@ const MAX_INSTANCES = 20 * 20 * 20;
 const temp = new Object3D();
 const WIN_COLOR = "#2dff6a";
 const WIN_SCALE = 1.15;
+/** Subtle continuous bob so the winning line stays readable after the board settles. */
+const WIN_BOUNCE_AMP = 0.1;
+const WIN_BOUNCE_HZ = 1.6;
 
 type MarkersProps = {
   dims: BoardDims;
@@ -81,14 +85,16 @@ function WinningMarkers({
   const meshRef = useRef<InstancedMesh>(null);
   const geometry = useMemo(() => new SphereGeometry(0.32, 16, 12), []);
   const color = useMemo(() => new Color(WIN_COLOR), []);
+  const basesRef = useRef<Array<[number, number, number]>>([]);
 
   useLayoutEffect(() => {
     const mesh = meshRef.current;
     if (!mesh) return;
     mesh.instanceMatrix.setUsage(DynamicDrawUsage);
+    basesRef.current = winningLine.map((c) => cellToWorld(c, dims, spacing));
 
-    for (let i = 0; i < winningLine.length; i++) {
-      const [x, y, z] = cellToWorld(winningLine[i], dims, spacing);
+    for (let i = 0; i < basesRef.current.length; i++) {
+      const [x, y, z] = basesRef.current[i]!;
       temp.position.set(x, y, z);
       temp.scale.setScalar(WIN_SCALE);
       temp.updateMatrix();
@@ -97,6 +103,23 @@ function WinningMarkers({
     mesh.count = winningLine.length;
     mesh.instanceMatrix.needsUpdate = true;
   }, [winningLine, dims, spacing]);
+
+  useFrame(({ clock }) => {
+    const mesh = meshRef.current;
+    const bases = basesRef.current;
+    if (!mesh || bases.length === 0) return;
+    const t = clock.elapsedTime;
+    for (let i = 0; i < bases.length; i++) {
+      const [x, y, z] = bases[i]!;
+      // Slight phase stagger so the line reads as a connected set, not one blob.
+      const bob = Math.sin((t * WIN_BOUNCE_HZ + i * 0.35) * Math.PI * 2) * WIN_BOUNCE_AMP;
+      temp.position.set(x, y + bob, z);
+      temp.scale.setScalar(WIN_SCALE);
+      temp.updateMatrix();
+      mesh.setMatrixAt(i, temp.matrix);
+    }
+    mesh.instanceMatrix.needsUpdate = true;
+  });
 
   if (winningLine.length === 0) return null;
 

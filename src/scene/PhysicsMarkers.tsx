@@ -17,6 +17,9 @@ import {
 
 const WIN_COLOR = "#2dff6a";
 const WIN_SCALE = 1.15;
+/** Match free-mode winning bob (world units / Hz). */
+const WIN_BOUNCE_AMP = 0.1;
+const WIN_BOUNCE_HZ = 1.6;
 /**
  * Satisfying heavy settle: one clear thud-bounce, then dead.
  * e still scales with impact so empty-column drops feel weightier.
@@ -201,17 +204,30 @@ function SettledMarker({
   dims: BoardDims;
   spacing: number;
 }) {
+  const meshRef = useRef<Mesh>(null);
   const [tx, ty, tz] = cellToWorld(entry.coord, dims, spacing);
   const colorHex = entry.winning ? WIN_COLOR : PLAYER_COLORS[entry.player];
   const color = useMemo(() => new Color(colorHex), [colorHex]);
   const scale = entry.winning ? WIN_SCALE : 1;
   const visualR = MARKER_RADIUS * scale;
   const collidersR = physicsRadius(spacing) * scale;
+  // Stable phase from cell key so neighbors in the winning line stagger slightly.
+  const phase = useMemo(() => {
+    let h = 0;
+    for (let i = 0; i < entry.key.length; i++) h = (h + entry.key.charCodeAt(i) * (i + 1)) % 1000;
+    return (h / 1000) * Math.PI * 2;
+  }, [entry.key]);
+
+  useFrame(({ clock }) => {
+    if (!entry.winning || !meshRef.current) return;
+    const bob = Math.sin((clock.elapsedTime * WIN_BOUNCE_HZ) * Math.PI * 2 + phase) * WIN_BOUNCE_AMP;
+    meshRef.current.position.y = bob;
+  });
 
   return (
     <RigidBody type="fixed" position={[tx, ty, tz]} colliders={false} ccd>
       <BallCollider args={[collidersR]} restitution={0} friction={DROP_FRICTION} density={1} />
-      <mesh castShadow={false}>
+      <mesh ref={meshRef} castShadow={false}>
         <sphereGeometry args={[visualR, 24, 18]} />
         <meshStandardMaterial
           color={color}
