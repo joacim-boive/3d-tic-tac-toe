@@ -177,6 +177,7 @@ function snapDropCursor(coord: CellCoord, board: Board, dims: { x: number; y: nu
 
 function scheduleAiMove(get: () => GameState, set: (partial: Partial<GameState>) => void) {
   clearAiTimer();
+  const thinkDelay = get().aiDifficulty === "extreme" ? 80 : AI_DELAY_MS;
   aiTimer = setTimeout(() => {
     aiTimer = null;
     const state = get();
@@ -196,7 +197,7 @@ function scheduleAiMove(get: () => GameState, set: (partial: Partial<GameState>)
     if (!move) return;
 
     applyPlace(get, set, move, AI_PLAYER);
-  }, AI_DELAY_MS);
+  }, thinkDelay);
 }
 
 function applyPlace(
