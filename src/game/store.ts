@@ -10,6 +10,11 @@ import {
   type Board,
 } from "./board";
 import { getPreset, resolvePresetId } from "./presets";
+import {
+  readSetupPrefsFromStorage,
+  writeSetupPrefsToStorage,
+  type SetupPrefs,
+} from "./setupPrefs";
 import type {
   AiDifficulty,
   CellCoord,
@@ -45,6 +50,21 @@ function persistLocalName(name: string) {
   } catch {
     // ponytail: private mode / quota — name just won't stick across reloads
   }
+}
+
+function persistSetupPrefs(state: {
+  presetId: PresetId;
+  playMode: PlayMode;
+  placement: PlacementMode;
+  aiDifficulty: AiDifficulty;
+}) {
+  const prefs: SetupPrefs = {
+    presetId: state.presetId,
+    playMode: state.playMode,
+    placement: state.placement,
+    aiDifficulty: state.aiDifficulty,
+  };
+  writeSetupPrefsToStorage(prefs);
 }
 
 type GamePhase = "setup" | "lobby" | "playing";
@@ -285,10 +305,22 @@ export const useGameStore = create<GameState>((set, get) => ({
   opponentConnected: false,
   onlineError: null,
 
-  setPresetId: (id) => set({ presetId: resolvePresetId(id) }),
-  setPlayMode: (mode) => set({ playMode: mode }),
-  setPlacement: (placement) => set({ placement }),
-  setAiDifficulty: (difficulty) => set({ aiDifficulty: difficulty }),
+  setPresetId: (id) => {
+    set({ presetId: resolvePresetId(id) });
+    persistSetupPrefs(get());
+  },
+  setPlayMode: (mode) => {
+    set({ playMode: mode });
+    persistSetupPrefs(get());
+  },
+  setPlacement: (placement) => {
+    set({ placement });
+    persistSetupPrefs(get());
+  },
+  setAiDifficulty: (difficulty) => {
+    set({ aiDifficulty: difficulty });
+    persistSetupPrefs(get());
+  },
   setLocalName: (name) => {
     const localName = name.slice(0, 16);
     persistLocalName(localName);
@@ -610,7 +642,7 @@ export const useGameStore = create<GameState>((set, get) => ({
   },
 }));
 
-/** Call once on mount of screens that show the name field (avoids SSR mismatch). */
+/** Call once on mount of setup/join screens (avoids SSR mismatch). */
 export function hydrateLocalNameFromStorage() {
   if (typeof window === "undefined") return;
   try {
@@ -621,4 +653,12 @@ export function hydrateLocalNameFromStorage() {
   } catch {
     // ignore
   }
+}
+
+/** Restore last Mode / Placement / Preset / Difficulty from localStorage. */
+export function hydrateSetupFromStorage() {
+  if (typeof window === "undefined") return;
+  const prefs = readSetupPrefsFromStorage();
+  if (Object.keys(prefs).length === 0) return;
+  useGameStore.setState(prefs);
 }

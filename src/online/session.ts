@@ -1,5 +1,6 @@
 import type { PresenceChannel } from "pusher-js";
 import type { Board } from "@/game/board";
+import { resolvePresetId } from "@/game/presets";
 import { generateRoomCode, isValidRoomCode, normalizeRoomCode } from "@/game/roomCode";
 import { setLocalPlacePublisher, useGameStore } from "@/game/store";
 import type { PlayerId, PlayerNames, PlacementMode, PresetId } from "@/game/types";
@@ -263,11 +264,12 @@ async function attachSession(
     }
 
     useGameStore.getState().beginOnlineLobby(code, seat, name);
-    if (preset) {
-      useGameStore.getState().setPresetId(preset);
-    }
-    if (placement) {
-      useGameStore.getState().setPlacement(placement);
+    // Apply host match options without writing over this client's saved setup prefs.
+    if (preset || placement) {
+      useGameStore.setState({
+        ...(preset ? { presetId: resolvePresetId(preset) } : {}),
+        ...(placement ? { placement } : {}),
+      });
     }
 
     wireChannel(channel, seat);

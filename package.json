@@ -19,6 +19,7 @@
     "check:notify": "npx tsx src/online/notify.selftest.ts",
     "check:drop": "npx tsx src/game/drop.selftest.ts",
     "check:selfplay": "npx tsx src/game/selfPlay.selftest.ts",
+    "check:prefs": "npx tsx src/game/setupPrefs.selftest.ts",
     "eval:selfplay": "npx tsx src/game/selfPlay.cli.ts"
   },
   "dependencies": {
