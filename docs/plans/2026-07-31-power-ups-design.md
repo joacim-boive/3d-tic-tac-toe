@@ -26,22 +26,115 @@ This doc is a brainstorm + proposed shape. Decisions below marked **Proposal** a
 
 ## Shared framing (all three)
 
-### Economy — how do you get them?
+### Economy — package catch mini-game
 
-**Proposal (v1):** each player starts a match with a small inventory, e.g. **one of each**, usable once. Toggleable in setup (“Power-ups: Off / On”). No random drops yet.
+Getting a power-up is its own little skill-and-luck beat — not a free starting inventory.
 
-Alternatives to revisit later:
+**Fantasy:** three identical packages streak across the playfield in random directions. Fast enough that grabbing all three is unrealistic. **Only one package is live**; the other two are duds. Catch the live one → you bank a random power-up. Miss everything (or only hit duds) → nothing.
 
-- Earn on milestones (first mark, break a threat, every Nth place)
-- Draft / pick-one-at-start
-- Shared pool / race to claim
-- Cooldown (once every K turns) instead of once-per-match
+```text
+place / turn resolves
+        │
+        ▼
+  package flyby (optional window)
+        │
+   catch live? ──yes──► roll PowerUpId → inventory[player][id]++
+        │
+        no
+        ▼
+  continue (opponent’s turn / next place)
+```
 
-Once-per-match keeps balance eval tractable and avoids snowballing.
+#### When does the flyby happen?
+
+**Proposal:** after every successful place that leaves the match still `playing` (and after Drop settle if needed). That ties reward to tempo: more places ⇒ more chances, without pausing before the first move.
+
+Alternatives:
+
+- Only every Nth place / every other turn (less noisy, less snowball)
+- At the **start** of your turn (catch then decide whether to spend)
+- Only when the board crosses density thresholds
+
+Open: should a flyby also fire after Clear/Tip (no place)? **Proposal: no** — only after a place, so the mini-game stays tied to the core verb.
+
+#### Who may catch?
+
+**Proposal:** only the player who just placed (the “earner”). Opponent watches. Avoids hotseat fights over the same crate and keeps online authority simple.
+
+- **Hotseat:** earner’s device/session clicks packages.
+- **Online:** only that seat’s client accepts clicks; peers see the same flyby.
+- **vs AI:** human plays the skill catch when they earn; when the AI earns, it **does not** aim — it rolls luck (below).
+
+#### Package swarm (feel)
+
+| Knob | Proposal (v1) |
+| ---- | ------------- |
+| Count | Always **3** packages |
+| Live count | Exactly **1** live; 2 duds |
+| Paths | Random spawn on a screen/scene edge → exit opposite-ish edge; varied speeds/arcs |
+| Duration | ~1.2–2.0s on screen; hard to multi-tap all three on mobile |
+| Look | Identical while flying (no tell). Reveal burst only on tap: sparkle = live, poof = dud |
+| Input | Tap/click hit-test on package sprites (2D overlay in screen space is easiest; 3D scene props optional later) |
+| Miss | Window ends → no reward; game continues |
+| Multi-hit | You may tap more than one; first **live** hit awards and ends the swarm early; dud hits just waste time |
+
+**2D overlay vs 3D props:** proposal = **HTML/canvas overlay** above the R3F canvas for v1 (reliable hit targets, no orbit conflict). Packages can still *read* as flying through the volume via parallax/depth cue.
+
+Seed trajectories + `liveIndex` from a match RNG so online peers share one movie.
+
+#### What’s inside the live package?
+
+**Proposal:** on a successful live catch, roll uniformly among enabled power-up kinds (`extra-turn` | `clear-row` | `tip`). Identity is hidden until catch (or shown in the reveal burst).
+
+Alternatives: weighted toward Extra early / Tip late; or packages are typed (different silhouettes) — more readable, less mystery.
+
+#### Stacking / caps
+
+**Proposal:** inventories are **counts**, not booleans — you can hold multiples of the same kind.
+
+Soft cap per kind (e.g. max 2) so a lucky streak doesn’t hoard the match. Open: hard cap vs none for v1.
+
+Rematch: inventories reset to empty; flybys resume from scratch.
+
+#### AI catch (luck, not skill)
+
+When the AI is the earner:
+
+**Proposal:** skip the visual skill check (or play a short autopilot flyby for the human to watch). Roll once:
+
+- `catchChance` ≈ 1/3 (same spirit as “one of three is live,” without requiring frame-perfect AI)
+- On success → same uniform power-up roll → AI inventory++
+- On miss → nothing
+
+Optionally animate the AI “grabbing” a random package so the human sees the outcome. AI **uses** banked power-ups with simple heuristics later (Phase 4); until then it may catch-and-hold or catch-and-spend randomly.
+
+Self-play / eval: model earn as Bernoulli(`catchChance`) + uniform kind — no graphics.
+
+#### Online sync
+
+```ts
+// host/earner broadcasts the flyby plan, then the result
+{ type: "package-swarm", seed: number, liveIndex: 0|1|2, earner: PlayerId }
+{ type: "package-result", earner: PlayerId, caught: boolean, kind?: PowerUpId }
+```
+
+Peers animate from `seed`/`liveIndex`. Only `earner` may emit `package-result` (or host validates). Inventory always included on full `state` snapshots for reconnect.
+
+### Inventory HUD — who has what
+
+Must always be obvious **for both players**:
+
+- Two inventory rows (or columns): Coral / Cyan, each with icon + count for Extra / Clear / Tip.
+- Counts update instantly on catch and on spend.
+- On your turn, **your** chips with count > 0 are actionable buttons; opponent’s row is read-only.
+- Empty kinds show `0` or a dim slot (don’t hide — makes asymmetry readable).
+- Optional toast: “Coral caught Extra turn!” / “Cyan missed the packages.”
+
+Hotseat: same dual display so the waiting player sees what they’re up against. Online: same. Setup toggle: **Power-ups: Off / On** (disables flybys + hides inventory).
 
 ### When can you use one?
 
-**Proposal:** on your turn, **before** placing (or instead of placing for Clear / Tip). Using a power-up that does not place still **consumes the turn**, except Extra turn which *is* the place action with a bonus.
+**Proposal:** on your turn, **before** placing (or instead of placing for Clear / Tip), if you have count > 0. Using a power-up that does not place still **consumes the turn**, except Extra turn which *is* the place action with a bonus.
 
 | Power-up | Consumes turn? | Then place? |
 | -------- | -------------- | ----------- |
@@ -49,18 +142,20 @@ Once-per-match keeps balance eval tractable and avoids snowballing.
 | Clear row | Yes | No (unless we later allow “clear then place”) |
 | Tip field | Yes | No (settle → opponent’s turn) |
 
-Rationale: Clear and Tip are already strong board mutations; stacking them with a free place in the same turn is likely oppressive. Easy to loosen later (“clear + place”) once we have self-play numbers.
+Rationale: Clear and Tip are already strong board mutations; stacking them with a free place in the same turn is likely oppressive. Easy to loosen later once we have numbers.
+
+Spending does **not** trigger a new package flyby (only places do).
 
 ### UI shell
 
-- Inventory chips in `GameChrome` (one control per unused power-up).
-- Activating enters a **power-up mode** (like Orbit vs Place): cancel returns to normal place.
-- Online: only the seat whose turn it is can activate; peers get a message / snapshot.
-- AI: only after human-usable rules are stable; v1 can be “AI never uses power-ups” or a dumb heuristic.
+- Dual inventory in `GameChrome` (both players, counts).
+- Activating enters a **power-up mode** (like Orbit vs Place): cancel returns to normal place; refund if cancelled before commit where applicable.
+- Package swarm overlay component (own input layer; pause place commits during the window).
+- Online: only the earner clicks packages; only current seat activates spends; peers get swarm + result + inventory via messages/`state`.
 
 ### Free vs Drop
 
-Power-ups should work in **both** placement modes unless noted. Drop always needs a **repack** step after Clear/Tip: for each column along current “up”, markers fall to the lowest empty cells, preserving relative order (or full physics settle — see Tip).
+Power-ups should work in **both** placement modes unless noted. Drop always needs a **repack** step after Clear/Tip: for each column along current “up”, markers fall to the lowest empty cells, preserving relative order (or full physics settle — see Tip). Package flybys are mode-agnostic (overlay).
 
 ---
 
@@ -279,18 +374,21 @@ Desync risk is high if animation-driven; **logic commit is mandatory**.
 
 ## Suggested implementation phases
 
-### Phase 0 — Foundations (half-day shape)
+### Phase 0 — Foundations + catch loop
 
-- Types: `PowerUpId`, inventory on store, setup toggle `powerUps: boolean`.
-- UI chips + “power-up mode” flag.
-- Online: extend `RoomMessage` with `powerup` + include inventory in `state`.
-- Self-test harness hooks (empty) for future logic.
+- Types: `PowerUpId`, `PowerUpInventory` (`Record<PlayerId, Record<PowerUpId, number>>`), setup toggle `powerUps: boolean`.
+- Dual inventory HUD (both players, counts; actionable only for current seat).
+- Package swarm overlay: 3 paths from seed, 1 live index, tap hit-test, reveal, award roll.
+- Gate place-input during swarm; fire swarm after successful place (post-`finishDrop` when needed).
+- AI earner: Bernoulli catch + uniform kind (optional watch animation).
+- Online: `package-swarm` / `package-result` + inventory on `state`.
+- Self-test: seeded swarm plan + award purity (no DOM).
 
 ### Phase 1 — Extra turn
 
-- `bonusPlacesRemaining` in `applyPlace`.
+- Spend from inventory; `bonusPlacesRemaining` in `applyPlace`.
 - HUD + cancel/refund rules.
-- Hotseat → AI (AI ignores) → online message discipline.
+- Hotseat → AI spend heuristic (or hold) → online message discipline.
 - Self-play optional flag later.
 
 ### Phase 2 — Clear row
@@ -308,44 +406,53 @@ Desync risk is high if animation-driven; **logic commit is mandatory**.
 - Online: logic-authoritative.
 - Balance pass with `eval:selfplay` using the logic tip (no graphics).
 
-### Phase 4 — AI + balance
+### Phase 4 — AI spend + balance
 
-- Heuristics: Extra when a double-place wins or creates dual threats; Clear when it breaks an opponent win-in-1; Tip last resort / random.
+- Catch already luck-based; add spend heuristics: Extra when double-place wins / dual threats; Clear when it breaks opponent win-in-1; Tip last resort / random.
+- Tune `catchChance`, swarm speed, and per-kind caps via self-play earn model.
 - Measure first-player WR with power-ups on/off.
 
 ---
 
 ## Cross-cutting open questions
 
-1. **Economy:** one of each per player (proposal) vs draft vs earn?
-2. **Turn cost:** Clear/Tip consume the whole turn (proposal) vs allow place after?
-3. **Mode scope:** all power-ups in Free + Drop, or Tip Drop-only at first?
-4. **Rematch:** inventories refill (proposal: yes).
-5. **Winning through power-ups:** Extra can win on place 1 or 2; Clear alone cannot win; Tip/repack can win for either seat — confirm desired drama.
-6. **Spectator clarity:** announce strings (“Cyan tipped the field”) for hotseat/online.
-7. **Accessibility:** power-up modes must work with keyboard (existing nudge/place) and touch.
+1. **Flyby cadence:** after every place (proposal) vs every Nth place / start of turn?
+2. **Who catches:** earner only (proposal) vs both players race?
+3. **Live package contents:** uniform random kind (proposal) vs weighted / typed silhouettes?
+4. **Inventory caps:** max stacks per kind?
+5. **Turn cost:** Clear/Tip consume the whole turn (proposal) vs allow place after?
+6. **Mode scope:** all power-ups in Free + Drop, or Tip Drop-only at first?
+7. **Winning through power-ups:** Extra can win on place 1 or 2; Clear alone cannot win; Tip/repack can win for either seat — confirm desired drama.
+8. **Swarm presentation:** 2D overlay (proposal) vs 3D scene props?
+9. **Accessibility:** swarm must be catchable via keyboard/focus targets, not tap-only; power-up modes keep nudge/place.
 
 ## Non-goals (for this arc)
 
-- Random crate drops, shop, cosmetics-only power-ups
+- Shop / real-money crates / cosmetics-only power-ups
 - Diagonal clear, plane clear, bomb-radius clear (separate designs)
 - Continuous free-angle tumbling
 - Client-authoritative physics deciding online winners
 - Fully Tip-aware α-β AI in the first ship
+- Perfect AI package aiming (AI uses luck roll by design)
 
 ## Recommendation
 
-Ship in the phase order above. Align product calls on **economy** and **Clear/Tip consume turn** before coding Phase 1. Spike `tipBoard` logic early (even during Phase 1) so we learn whether cubes-only is acceptable before investing in Rapier dynamics.
+Lock the **catch mini-game** (cadence, earner-only, dual inventory HUD) before coding spends. Phase 0 ships flyby + empty inventory + Extra as the first spendable kind in Phase 1. Spike `tipBoard` logic early so cubes-only stays honest before Rapier work.
 
 ## Decision log
 
 | Topic | Status | Proposal |
 | ----- | ------ | -------- |
-| Inventory | Open | One of each per player per match; setup toggle |
+| Acquisition | **Lean yes** | 3 packages / 1 live / skill catch; luck mini-game |
+| Who catches | Open | Earner only; AI uses `catchChance` ≈ 1/3 |
+| Cadence | Open | After each successful place while `playing` |
+| Inventory UI | **Lean yes** | Always show both players’ kinds + counts |
+| Contents | Open | Uniform roll among power-up kinds on live catch |
+| Caps | Open | Counts stack; soft cap TBD |
 | Extra turn | Open | Two places; skip one turn flip; Drop respects `dropBusy` |
 | Clear target | Open | Axis-aligned full lines only; not planes/diagonals |
 | Clear turn | Open | Consumes turn; no place after |
 | Tip outcome | Open | Logic pack authoritative; Rapier for juice |
 | Tip presets | Open | Cubes only in v1 |
 | Tip turn | Open | Consumes turn; no place after |
-| AI v1 | Open | Does not use power-ups (or Extra only) |
+| AI v1 | Open | Luck catch; simple/random spend until heuristics |
