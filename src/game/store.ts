@@ -125,6 +125,10 @@ type GameState = {
   tipTargetEuler: TipEuler;
   /** True while balls animate toward the new floor. */
   tipFalling: boolean;
+  /** Board snapshot when tip mode started (Cancel restores). */
+  tipCheckpoint: Board | null;
+  /** True after at least one tip+fall settled this activation. */
+  tipDirty: boolean;
   board: Board;
   occupiedCount: number;
   currentPlayer: PlayerId;
@@ -185,6 +189,8 @@ type GameState = {
   confirmClearRow: (a: number, b: number) => boolean;
   /** Begin fall animation from the current tipped orientation. */
   confirmTip: () => boolean;
+  /** Start fall after a tip lands (auto or Drop). */
+  beginTipFall: () => void;
   setTipTargetEuler: (euler: TipEuler) => void;
   commitTipEuler: (euler: TipEuler) => void;
   finishTipFall: () => void;
@@ -619,6 +625,8 @@ export const useGameStore = create<GameState>((set, get) => ({
   tipEuler: { ...IDENTITY_TIP_EULER },
   tipTargetEuler: { ...IDENTITY_TIP_EULER },
   tipFalling: false,
+  tipCheckpoint: null,
+  tipDirty: false,
   board: createEmptyBoard(),
   occupiedCount: 0,
   currentPlayer: "a",
@@ -788,8 +796,10 @@ export const useGameStore = create<GameState>((set, get) => ({
         tipEuler: { ...IDENTITY_TIP_EULER },
         tipTargetEuler: { ...IDENTITY_TIP_EULER },
         tipFalling: false,
+        tipCheckpoint: new Map(state.board),
+        tipDirty: false,
         aiming: false,
-        powerUpToast: "Drag to tip the box, then Drop",
+        powerUpToast: "Drag to tip — balls fall to the new floor",
       });
       return true;
     }
@@ -819,11 +829,26 @@ export const useGameStore = create<GameState>((set, get) => ({
       });
       return;
     }
+    if (state.powerUpMode === "tip" && state.tipCheckpoint) {
+      set({
+        board: state.tipCheckpoint,
+        powerUpMode: null,
+        tipEuler: { ...IDENTITY_TIP_EULER },
+        tipTargetEuler: { ...IDENTITY_TIP_EULER },
+        tipFalling: false,
+        tipCheckpoint: null,
+        tipDirty: false,
+        powerUpToast: null,
+      });
+      return;
+    }
     set({
       powerUpMode: null,
       tipEuler: { ...IDENTITY_TIP_EULER },
       tipTargetEuler: { ...IDENTITY_TIP_EULER },
       tipFalling: false,
+      tipCheckpoint: null,
+      tipDirty: false,
     });
   },
 
@@ -857,13 +882,47 @@ export const useGameStore = create<GameState>((set, get) => ({
     }
     const dims = getPreset(state.presetId).dims;
     if (!canTipPreset(dims)) return false;
+
     const locked = { ...state.tipTargetEuler };
     const toDown = tipDownFromEuler(locked);
-    if (toDown === "-y") {
+
+    // Still tipped — start the fall (same as auto after drag).
+    if (toDown !== "-y") {
+      set({
+        tipEuler: locked,
+        tipTargetEuler: locked,
+        tipFalling: true,
+        powerUpToast: "Balls falling…",
+        aiming: false,
+      });
+      return true;
+    }
+
+    // Upright after at least one settle — Done spends and exits.
+    if (!state.tipDirty) {
       set({ powerUpToast: "Tip the box onto a new face first" });
       return false;
     }
-    // Lock orientation and play fall — inventory spent when fall finishes
+
+    const spent = spendPowerUp(state.inventory[by], "tip");
+    if (!spent) return false;
+    const label = state.displayName(by);
+    set({
+      tipFalling: false,
+      tipEuler: { ...IDENTITY_TIP_EULER },
+      tipTargetEuler: { ...IDENTITY_TIP_EULER },
+      tipCheckpoint: null,
+      tipDirty: false,
+    });
+    finishPowerUpBoard(get, set, state.board, by, spent, `${label} tipped the field`);
+    return true;
+  },
+
+  beginTipFall: () => {
+    const state = get();
+    if (state.powerUpMode !== "tip" || state.tipFalling) return;
+    const locked = { ...state.tipTargetEuler };
+    if (tipDownFromEuler(locked) === "-y") return;
     set({
       tipEuler: locked,
       tipTargetEuler: locked,
@@ -871,7 +930,6 @@ export const useGameStore = create<GameState>((set, get) => ({
       powerUpToast: "Balls falling…",
       aiming: false,
     });
-    return true;
   },
 
   setTipTargetEuler: (euler) => {
@@ -889,27 +947,50 @@ export const useGameStore = create<GameState>((set, get) => ({
   finishTipFall: () => {
     const state = get();
     if (!state.tipFalling || state.powerUpMode !== "tip") return;
-    const by = state.currentPlayer;
     const dims = getPreset(state.presetId).dims;
     const toDown = tipDownFromEuler(state.tipEuler);
-    const spent = spendPowerUp(state.inventory[by], "tip");
-    if (!spent) {
+    if (toDown === "-y") {
+      set({ tipFalling: false });
+      return;
+    }
+    // Rebase board to the new floor; stay in tip mode so you can tip again or Done.
+    const board = tipBoard(state.board, dims, toDown);
+    const win = checkWinAny(board, dims);
+    if (win) {
+      // Completing a tip that wins — spend and end the match.
+      const by = state.currentPlayer;
+      const spent = spendPowerUp(state.inventory[by], "tip");
+      if (!spent) {
+        set({
+          tipFalling: false,
+          tipEuler: { ...IDENTITY_TIP_EULER },
+          tipTargetEuler: { ...IDENTITY_TIP_EULER },
+          tipCheckpoint: null,
+          tipDirty: false,
+          powerUpMode: null,
+        });
+        return;
+      }
       set({
         tipFalling: false,
         tipEuler: { ...IDENTITY_TIP_EULER },
         tipTargetEuler: { ...IDENTITY_TIP_EULER },
-        powerUpMode: null,
+        tipCheckpoint: null,
+        tipDirty: false,
       });
+      finishPowerUpBoard(get, set, board, by, spent, `${state.displayName(by)} tipped the field`);
       return;
     }
-    const board = tipBoard(state.board, dims, toDown);
-    const label = state.displayName(by);
     set({
+      board,
+      occupiedCount: board.size,
       tipFalling: false,
       tipEuler: { ...IDENTITY_TIP_EULER },
       tipTargetEuler: { ...IDENTITY_TIP_EULER },
+      tipDirty: true,
+      powerUpToast: "Tip again or Done",
     });
-    finishPowerUpBoard(get, set, board, by, spent, `${label} tipped the field`);
+    if (state.playMode === "online") localStateSyncPublisher?.();
   },
 
   catchSwarmPackage: (index, by) => {

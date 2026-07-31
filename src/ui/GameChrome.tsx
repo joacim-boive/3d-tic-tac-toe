@@ -78,7 +78,7 @@ export function GameChrome({ children }: GameChromeProps) {
   } else if (powerUpMode === "clear-row") {
     statusText = "Clear — aim · tap to switch axis";
   } else if (powerUpMode === "tip") {
-    statusText = "Drag to tip the box · then Drop";
+    statusText = "Tip — swipe up tips bottom toward you";
   } else if (bonusPlacesRemaining > 0) {
     statusText = `${displayName(currentPlayer)} — extra place`;
   } else if (playMode === "ai" && currentPlayer === "b") {
@@ -185,10 +185,10 @@ export function GameChrome({ children }: GameChromeProps) {
             ) : (
               <>
                 <li>
-                  <kbd>drag</kbd> tip the box
+                  <kbd>swipe up</kbd> bottom toward you
                 </li>
                 <li>
-                  <kbd>Drop</kbd> when ready
+                  <kbd>Done</kbd> when finished
                 </li>
                 <li>
                   <kbd>Esc</kbd> cancel

@@ -3,12 +3,21 @@
 import { Physics } from "@react-three/rapier";
 import { useFrame, useThree } from "@react-three/fiber";
 import { useEffect, useMemo, useRef } from "react";
-import { Color, Euler, Group, Quaternion, Vector3, type Mesh, type MeshStandardMaterial } from "three";
+import {
+  Color,
+  Euler,
+  Group,
+  Quaternion,
+  Vector3,
+  type Camera,
+  type Mesh,
+  type MeshStandardMaterial,
+} from "three";
 import { cellToWorld } from "@/game/board";
 import { useGameStore } from "@/game/store";
 import {
+  eulerForTipDown,
   tipDownFromEuler,
-  tipEulerByDrag,
   tipRemap,
   type TipEuler,
   type TipRemapEntry,
@@ -23,6 +32,7 @@ import { SelectionCursor } from "./SelectionCursor";
 
 const TIP_ANIM_SPEED = 12;
 const DRAG_THRESHOLD = 44;
+const HALF_PI = Math.PI / 2;
 /** Stagger window so balls don't all release at once. */
 const STAGGER_MAX_MS = 520;
 const BOUNCE_E = 0.28;
@@ -39,6 +49,47 @@ type TipBoardFrameProps = {
 
 function eulerToQuat(e: TipEuler): Quaternion {
   return new Quaternion().setFromEuler(new Euler(e.x, e.y, e.z, "XYZ"));
+}
+
+/**
+ * Map a screen swipe to a 90° tip relative to the camera.
+ * Swipe up → bottom face tips toward the camera.
+ * Swipe right → bottom face tips toward camera-right.
+ */
+function tipEulerFromSwipe(current: TipEuler, camera: Camera, dx: number, dy: number): TipEuler {
+  const towardCam = new Vector3(camera.position.x, 0, camera.position.z);
+  if (towardCam.lengthSq() < 1e-6) towardCam.set(0, 0, 1);
+  else towardCam.normalize();
+  const camRight = new Vector3(towardCam.z, 0, -towardCam.x);
+
+  const axis = new Vector3();
+  let angle = HALF_PI;
+  if (Math.abs(dx) > Math.abs(dy)) {
+    // Horizontal: tip about the view axis (into the scene).
+    axis.copy(towardCam);
+    // Swipe right → bottom moves right (toward camRight).
+    angle = (dx > 0 ? 1 : -1) * HALF_PI;
+  } else {
+    // Vertical: tip about camera-right.
+    axis.copy(camRight);
+    // Screen y grows downward; swipe up (dy < 0) → bottom toward camera.
+    angle = (dy < 0 ? -1 : 1) * HALF_PI;
+  }
+
+  const q = eulerToQuat(current);
+  const tryAngle = (a: number): TipEuler => {
+    const delta = new Quaternion().setFromAxisAngle(axis, a);
+    const next = delta.multiply(q.clone());
+    const e = new Euler().setFromQuaternion(next, "XYZ");
+    return eulerForTipDown(tipDownFromEuler({ x: e.x, y: e.y, z: e.z }));
+  };
+
+  const curDown = tipDownFromEuler(current);
+  let next = tryAngle(angle);
+  if (tipDownFromEuler(next) === curDown) {
+    next = tryAngle(-angle);
+  }
+  return next;
 }
 
 function easeOutCubic(t: number): number {
@@ -96,7 +147,7 @@ function sampleDropY(phases: DropPhase[], landY: number, g: number, t: number): 
 }
 
 /**
- * Board group that tumbles in tip mode; on confirm, balls fall to the new floor.
+ * Board group that tumbles in tip mode; after each tip, balls fall to the new floor.
  */
 export function TipBoardFrame({ dims, dropMode }: TipBoardFrameProps) {
   const groupRef = useRef<Group>(null);
@@ -104,8 +155,8 @@ export function TipBoardFrame({ dims, dropMode }: TipBoardFrameProps) {
   const tipEuler = useGameStore((s) => s.tipEuler);
   const tipFalling = useGameStore((s) => s.tipFalling);
   const tipTargetEuler = useGameStore((s) => s.tipTargetEuler);
-  const setTipTargetEuler = useGameStore((s) => s.setTipTargetEuler);
   const commitTipEuler = useGameStore((s) => s.commitTipEuler);
+  const beginTipFall = useGameStore((s) => s.beginTipFall);
   const finishTipFall = useGameStore((s) => s.finishTipFall);
   const board = useGameStore((s) => s.board);
 
@@ -126,10 +177,8 @@ export function TipBoardFrame({ dims, dropMode }: TipBoardFrameProps) {
     });
   }, [fallEntries, tipEuler, dims]);
 
-  /** Stable per-entry release delays for this fall. */
   const releaseDelays = useMemo(() => {
     if (!tipFalling || fallEntries.length === 0) return [] as number[];
-    // Seed from board size so remounts don't reshuffle mid-fall.
     let seed = (fallEntries.length * 2654435761) >>> 0;
     return fallEntries.map((_, i) => {
       seed = (seed * 1664525 + 1013904223 + i * 97) >>> 0;
@@ -142,6 +191,7 @@ export function TipBoardFrame({ dims, dropMode }: TipBoardFrameProps) {
     if (!g) return;
 
     if (tipFalling) {
+      // Rebase upright while balls fall in world −Y onto the new floor.
       displayQuat.current.identity();
       g.quaternion.identity();
       return;
@@ -159,6 +209,10 @@ export function TipBoardFrame({ dims, dropMode }: TipBoardFrameProps) {
         tipEuler.z !== tipTargetEuler.z)
     ) {
       commitTipEuler(tipTargetEuler);
+      // Floor updates as soon as the tip lands — balls fall to world-down.
+      if (tipDownFromEuler(tipTargetEuler) !== "-y") {
+        beginTipFall();
+      }
     }
   });
 
@@ -171,11 +225,7 @@ export function TipBoardFrame({ dims, dropMode }: TipBoardFrameProps) {
 
   return (
     <>
-      {tipMode && !tipFalling ? (
-        <TipDragController
-          onTip={(axis, dir) => setTipTargetEuler(tipEulerByDrag(tipTargetEuler, axis, dir))}
-        />
-      ) : null}
+      {tipMode && !tipFalling ? <TipDragController /> : null}
 
       <group ref={groupRef}>
         <Grid dims={dims} />
@@ -203,14 +253,12 @@ export function TipBoardFrame({ dims, dropMode }: TipBoardFrameProps) {
   );
 }
 
-function TipDragController({
-  onTip,
-}: {
-  onTip: (axis: "x" | "z", dir: 1 | -1) => void;
-}) {
-  const { gl } = useThree();
+function TipDragController() {
+  const { gl, camera } = useThree();
   const start = useRef<{ x: number; y: number } | null>(null);
   const armed = useRef(true);
+  const cameraRef = useRef(camera);
+  cameraRef.current = camera;
 
   useEffect(() => {
     const el = gl.domElement;
@@ -232,11 +280,9 @@ function TipDragController({
       const dy = e.clientY - start.current.y;
       if (Math.hypot(dx, dy) < DRAG_THRESHOLD) return;
       armed.current = false;
-      if (Math.abs(dx) > Math.abs(dy)) {
-        onTip("z", dx > 0 ? 1 : -1);
-      } else {
-        onTip("x", dy > 0 ? 1 : -1);
-      }
+      const tipTarget = useGameStore.getState().tipTargetEuler;
+      const next = tipEulerFromSwipe(tipTarget, cameraRef.current, dx, dy);
+      useGameStore.getState().setTipTargetEuler(next);
       start.current = { x: e.clientX, y: e.clientY };
     };
 
@@ -260,7 +306,7 @@ function TipDragController({
       el.removeEventListener("pointerup", onUp);
       el.removeEventListener("pointercancel", onUp);
     };
-  }, [gl, onTip]);
+  }, [gl]);
 
   return null;
 }
@@ -298,7 +344,6 @@ function TipFallPhysics({
     }
   };
 
-  // Safety: never hang the match if a ball fails to report settle
   useEffect(() => {
     const maxDelay = delaysMs.length ? Math.max(...delaysMs) : 0;
     const t = window.setTimeout(
@@ -349,7 +394,6 @@ function TipFallingBall({
   const bornAt = useRef(performance.now());
   const [ex, ey, ez] = end;
   const g = DROP_GRAVITY[1];
-  // If start is below land (rare after tip), lift slightly so gravity still reads
   const spawnY = Math.max(start.y, ey + 0.15);
   const plan = useMemo(() => buildDropPhases(spawnY, ey, g), [spawnY, ey, g]);
   const color = useMemo(() => new Color(PLAYER_COLORS[player]), [player]);
@@ -381,7 +425,6 @@ function TipFallingBall({
       }
       released.current = true;
       fallStartedAt.current = now;
-      // Begin fall from current pose; if we lifted spawnY, hop up first frame
       mesh.position.set(startX, spawnY, startZ);
     }
 
@@ -396,7 +439,6 @@ function TipFallingBall({
     }
 
     const y = sampleDropY(plan.phases, ey, g, t);
-    // Blend xz toward landing during the main fall, lock after first bounce
     const xzT = plan.fallEnd > 0 ? Math.min(1, t / plan.fallEnd) : 1;
     const xzEase = easeOutCubic(xzT);
     const x = startX + (ex - startX) * xzEase;
@@ -412,13 +454,13 @@ function TipFallingBall({
     } else {
       const sinceHit = t - plan.fallEnd;
       const u = Math.min(1, sinceHit / 0.22);
-      const e = easeOutCubic(u);
-      const squashY = SQUASH + (1.06 - SQUASH) * e;
+      const ease = easeOutCubic(u);
+      const squashY = SQUASH + (1.06 - SQUASH) * ease;
       const squashXZ = 1 / Math.sqrt(squashY);
       const yScale = 1 + (squashY - 1) * impactBoost;
       const xzScale = 1 + (squashXZ - 1) * impactBoost;
       mesh.scale.set(xzScale, yScale, xzScale);
-      mat.emissiveIntensity = baseEmissive + IMPACT_FLASH * (1 - e) * impactBoost;
+      mat.emissiveIntensity = baseEmissive + IMPACT_FLASH * (1 - ease) * impactBoost;
     }
   });
 

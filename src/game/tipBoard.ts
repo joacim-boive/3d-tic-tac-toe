@@ -172,7 +172,7 @@ export function snapTipEuler(euler: TipEuler): TipEuler {
   };
 }
 
-/** Apply one 90° tip around world X or Z (push the box onto its side). */
+/** Apply one 90° tip around world X or Z (legacy helper / tests). */
 export function tipEulerByDrag(euler: TipEuler, axis: "x" | "z", dir: 1 | -1): TipEuler {
   const snapped = snapTipEuler(euler);
   if (axis === "x") {

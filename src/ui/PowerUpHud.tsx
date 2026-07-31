@@ -78,8 +78,9 @@ export function PowerUpHud() {
   const cancelPowerUpMode = useGameStore((s) => s.cancelPowerUpMode);
   const confirmClearRow = useGameStore((s) => s.confirmClearRow);
   const confirmTip = useGameStore((s) => s.confirmTip);
-  const tipEuler = useGameStore((s) => s.tipEuler);
+  const tipTargetEuler = useGameStore((s) => s.tipTargetEuler);
   const tipFalling = useGameStore((s) => s.tipFalling);
+  const tipDirty = useGameStore((s) => s.tipDirty);
   const cursor = useGameStore((s) => s.cursor);
   const powerUpToast = useGameStore((s) => s.powerUpToast);
   const clearPowerUpToast = useGameStore((s) => s.clearPowerUpToast);
@@ -106,8 +107,9 @@ export function PowerUpHud() {
         currentPlayer === seat &&
         onlineStatus === "playing"));
 
-  const tipFloor = tipDownFromEuler(tipEuler);
+  const tipFloor = tipDownFromEuler(tipTargetEuler);
   const tipReady = tipFloor !== "-y";
+  const tipDoneReady = tipDirty && !tipReady;
 
   return (
     <div className="powerups">
@@ -174,18 +176,20 @@ export function PowerUpHud() {
             {tipFalling
               ? "Balls falling…"
               : tipReady
-                ? "Box tipped — drop the balls"
-                : "Drag the box to tip it onto a side"}
+                ? "Tipped — balls will fall to the new floor"
+                : tipDirty
+                  ? "Tip again or Done"
+                  : "Drag to tip — swipe up tips the bottom toward you"}
           </span>
           {!tipFalling ? (
             <>
               <button
                 type="button"
                 className="chrome__btn chrome__btn--accent"
-                disabled={!tipReady}
+                disabled={!tipReady && !tipDoneReady}
                 onClick={() => confirmTip()}
               >
-                Drop
+                {tipDoneReady ? "Done" : "Drop"}
               </button>
               <button type="button" className="chrome__btn" onClick={cancelPowerUpMode}>
                 Cancel
