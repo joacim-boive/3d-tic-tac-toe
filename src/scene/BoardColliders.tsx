@@ -18,9 +18,12 @@ export const MARKER_RADIUS = 0.32;
 export function physicsRadius(spacing = 1): number {
   return spacing * 0.48;
 }
-export const DROP_FRICTION = 0.4;
-/** World gravity — accelerate naturally over the fall; readable at board scale. */
-export const DROP_GRAVITY: [number, number, number] = [0, -9.5, 0];
+export const DROP_FRICTION = 0.55;
+/**
+ * Strong gravity — heavy markers (bowling-ball feel), snappy fall.
+ * Still accelerates over height so longer drops hit harder.
+ */
+export const DROP_GRAVITY: [number, number, number] = [0, -28, 0];
 
 /**
  * Invisible box: floor + four walls, open top.
@@ -73,7 +76,7 @@ export function BoardColliders({ dims, spacing = 1 }: BoardCollidersProps) {
   );
 }
 
-/** High spawn so empty-column drops accelerate over a long distance. */
+/** Spawn just above the board — enough height to accelerate, not a sky drop. */
 export function dropSpawnY(dims: BoardDims, spacing = 1): number {
-  return (dims.y * spacing) / 2 + spacing * 4;
+  return (dims.y * spacing) / 2 + spacing * 1.75;
 }

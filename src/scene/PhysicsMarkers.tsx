@@ -17,10 +17,15 @@ import {
 
 const WIN_COLOR = "#2dff6a";
 const WIN_SCALE = 1.15;
-/** Rebound = impact × e. Longer falls → higher impact → higher bounce. */
-const BOUNCE_E = 0.68;
-const BOUNCE_DECAY = 0.45;
-const MAX_BOUNCES = 3;
+/**
+ * Bowling-ball rebound: low e, dies fast.
+ * Still scales with impact (longer fall → slightly bigger thud-bounce).
+ */
+const BOUNCE_E = 0.26;
+const BOUNCE_DECAY = 0.35;
+const MAX_BOUNCES = 2;
+/** Hard cap on the whole drop animation (fall + bounces). */
+const MAX_DROP_DURATION = 1;
 
 type PhysicsMarkersProps = {
   dims: BoardDims;
@@ -45,8 +50,8 @@ type DropPhase = {
 };
 
 /**
- * Build fall + bounce phases analytically.
- * Phase 0: drop from spawn (v0=0). Later phases: bounce with v0 = impact×e^n.
+ * Build fall + muted bounce phases (bowling-ball thud, not tennis ball).
+ * Longer falls still hit harder → slightly bigger first bounce.
  */
 function buildDropPhases(spawnY: number, landY: number, g: number): {
   phases: DropPhase[];
@@ -55,28 +60,25 @@ function buildDropPhases(spawnY: number, landY: number, g: number): {
   const grav = Math.abs(g);
   const phases: DropPhase[] = [];
   let tCursor = 0;
-  let height = spawnY - landY;
+  const height = Math.max(0.05, spawnY - landY);
 
-  // Initial fall
   const fallT = Math.sqrt((2 * height) / grav);
   phases.push({ t0: 0, y0: spawnY, v0: 0 });
   tCursor += fallT;
-  let impact = grav * fallT; // downward speed at impact
+  let impact = grav * fallT;
 
   for (let i = 0; i < MAX_BOUNCES; i++) {
     const e = BOUNCE_E * Math.pow(BOUNCE_DECAY, i);
     const up = impact * e;
-    if (up < 0.4) break;
+    // Skip chatter — heavy pieces don't keep hopping.
+    if (up < 0.85) break;
     phases.push({ t0: tCursor, y0: landY, v0: up });
-    // Time to apex and back: 2*up/g
-    const hop = (2 * up) / grav;
-    tCursor += hop;
-    impact = up; // lands with the same speed it left (no air drag)
+    tCursor += (2 * up) / grav;
+    impact = up;
   }
 
-  // Small settle pad so the last frame reads as resting.
-  tCursor += 0.12;
-  return { phases, totalDuration: tCursor };
+  tCursor += 0.05;
+  return { phases, totalDuration: Math.min(tCursor, MAX_DROP_DURATION) };
 }
 
 function sampleDropY(phases: DropPhase[], landY: number, g: number, t: number): number {
