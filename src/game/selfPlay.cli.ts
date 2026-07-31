@@ -31,17 +31,17 @@ function printHelp() {
 Options:
   --preset <id|all>       3x3x3 | 4x4x4 | 5x5x4 | all   (default: all)
   --placement <mode>      free | drop | both            (default: both)
-  --difficulty <level>    easy | medium | hard          (default: medium)
+  --difficulty <level>    easy | medium | hard | extreme  (default: medium)
   --games <n>             games per preset×placement    (default: 2000)
   --seed <n>              RNG seed                      (default: 12648430)
   --opening-plies <n>     opening fingerprint length    (default: 2)
-  --budget <ms|Infinity>  Hard search budget            (default: Infinity offline)
-  --max-depth <n>         Cap Hard iterative deepening
+  --budget <ms|Infinity>  Hard/Extreme search budget    (default: Infinity offline)
+  --max-depth <n>         Cap Hard/Extreme iterative deepening
   --progress              Log progress every 10%
   --help                  Show this help
 
 Tips:
-  Use medium for large batches (10k–100k). Hard α-β is for small samples.
+  Use medium for large batches (10k–100k). Hard/Extreme α-β are for small samples.
   First-player win rate ≫ 50% with drawn-out games still short ⇒ rules favor the opener.
 `);
 }
@@ -90,7 +90,7 @@ function parseArgs(argv: string[]): CliArgs {
       }
       case "--difficulty": {
         const v = next();
-        if (v !== "easy" && v !== "medium" && v !== "hard") {
+        if (v !== "easy" && v !== "medium" && v !== "hard" && v !== "extreme") {
           throw new Error(`Invalid difficulty: ${v}`);
         }
         args.difficulty = v;

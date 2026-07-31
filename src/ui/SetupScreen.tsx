@@ -3,6 +3,7 @@
 import { useEffect, useState, useTransition } from "react";
 import { PRESETS } from "@/game/presets";
 import { hydrateLocalNameFromStorage, hydrateSetupFromStorage, useGameStore } from "@/game/store";
+import { isExtremeAllowed } from "@/game/ai";
 import type { AiDifficulty, PlacementMode, PlayMode, PresetId } from "@/game/types";
 import { createOnlineRoom, joinOnlineRoom } from "@/online/session";
 
@@ -146,12 +147,18 @@ export function SetupScreen() {
       {playMode === "ai" ? (
         <section className="setup__section" aria-label="AI difficulty">
           <h2 className="setup__label">Difficulty</h2>
-          <div className="setup__modes setup__modes--three" role="group">
+          <div
+            className={`setup__modes${isExtremeAllowed(presetId) ? "" : " setup__modes--three"}`}
+            role="group"
+          >
             {(
               [
                 { id: "easy", label: "Easy" },
                 { id: "medium", label: "Medium" },
                 { id: "hard", label: "Hard" },
+                ...(isExtremeAllowed(presetId)
+                  ? [{ id: "extreme" as const, label: "Extreme" }]
+                  : []),
               ] as const
             ).map((level) => {
               const selected = aiDifficulty === level.id;
@@ -168,6 +175,9 @@ export function SetupScreen() {
               );
             })}
           </div>
+          {isExtremeAllowed(presetId) ? (
+            <p className="setup__hint">Extreme thinks deeper — beating it is a real feat.</p>
+          ) : null}
         </section>
       ) : null}
 

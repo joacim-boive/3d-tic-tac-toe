@@ -8,28 +8,45 @@ import {
   randomEmptyCell,
   type Board,
 } from "./board";
-import type { AiDifficulty, BoardDims, CellCoord, PlacementMode, PlayerId } from "./types";
+import type { AiDifficulty, BoardDims, CellCoord, PlacementMode, PlayerId, PresetId } from "./types";
 import { cellCount, winLength } from "./types";
 
 const EASY_RANDOM_RATE = 0.7;
-/** Depth for boards larger than 3×3×3. */
-const HARD_SHALLOW_DEPTH = 3;
+/** Depth for boards larger than 3×3×3 (Hard). */
+const HARD_SHALLOW_DEPTH = 4;
 /** Cap for 3×3×3 — full endgame search freezes Mobile Safari (main-thread watchdog). */
 const HARD_DEEP_DEPTH = 5;
 /** Soft wall-clock budget; iterative deepening stops when exceeded. */
 const HARD_BUDGET_MS = 80;
+
+/** Extreme: 5×5×4 and similar large boards. */
+const EXTREME_LARGE_DEPTH = 5;
+/** Extreme: 4×4×4 mid-size. */
+const EXTREME_MID_DEPTH = 7;
+/** Extreme: 3×3×3 if ever invoked (UI hides it there). */
+const EXTREME_SMALL_DEPTH = 9;
+/** Extreme thinks hard — still bounded for Mobile Safari. */
+const EXTREME_BUDGET_MS = 450;
+
 const WIN_SCORE = 1_000_000;
+/** Leaf bonus for an open (need − 1) window — creates an immediate threat next ply. */
+const THREAT_SCORE = 80_000;
 
 export type Rng = () => number;
 
 /** Optional overrides for offline eval / self-play (browser defaults unchanged). */
 export type AiSearchOptions = {
   rng?: Rng;
-  /** Hard search wall-clock budget in ms. Use Infinity to finish each depth. */
+  /** Search wall-clock budget in ms. Use Infinity to finish each depth. */
   budgetMs?: number;
-  /** Cap iterative-deepening depth for Hard. */
+  /** Cap iterative-deepening depth. */
   maxDepth?: number;
 };
+
+/** Extreme is offered on boards larger than classic 3×3×3. */
+export function isExtremeAllowed(presetId: PresetId): boolean {
+  return presetId !== "3x3x3";
+}
 
 function opponentOf(player: PlayerId): PlayerId {
   return player === "a" ? "b" : "a";
@@ -42,6 +59,10 @@ function pickRandom<T>(items: T[], rng: Rng): T | null {
 
 function legalEmpties(board: Board, dims: BoardDims, placement: PlacementMode): CellCoord[] {
   return placement === "drop" ? listDropLandings(board, dims) : listEmptyCells(board, dims);
+}
+
+function cellIndex(cell: CellCoord, dims: BoardDims): number {
+  return cell.x + dims.x * (cell.y + dims.y * cell.z);
 }
 
 /** First empty cell that wins for `player` if played now. */
@@ -61,6 +82,49 @@ export function findWinningMove(
   return null;
 }
 
+/** How many immediate winning replies `player` has from this position. */
+function countWinningReplies(
+  board: Board,
+  dims: BoardDims,
+  player: PlayerId,
+  empties: CellCoord[],
+): number {
+  let n = 0;
+  for (const cell of empties) {
+    const key = cellKey(cell.x, cell.y, cell.z);
+    board.set(key, player);
+    const win = checkWin(board, dims, cell, player);
+    board.delete(key);
+    if (win) {
+      n++;
+      if (n >= 2) return n;
+    }
+  }
+  return n;
+}
+
+/**
+ * Move that leaves `player` with ≥2 immediate winning follow-ups (a fork).
+ * Opponent can block only one — decisive on larger boards where shallow search misses it.
+ */
+function findForkMove(
+  board: Board,
+  dims: BoardDims,
+  player: PlayerId,
+  empties: CellCoord[],
+  placement: PlacementMode,
+): CellCoord | null {
+  for (const cell of empties) {
+    const key = cellKey(cell.x, cell.y, cell.z);
+    board.set(key, player);
+    const followUps = legalEmpties(board, dims, placement);
+    const threats = countWinningReplies(board, dims, player, followUps);
+    board.delete(key);
+    if (threats >= 2) return cell;
+  }
+  return null;
+}
+
 function tacticalMove(
   board: Board,
   dims: BoardDims,
@@ -70,6 +134,27 @@ function tacticalMove(
   const win = findWinningMove(board, dims, aiPlayer, empties);
   if (win) return win;
   return findWinningMove(board, dims, opponentOf(aiPlayer), empties);
+}
+
+/**
+ * Win → block win → own fork → block opponent fork.
+ * Extreme/Hard use this before α-β so forced tactics aren't missed under a budget.
+ */
+function forcedTacticalMove(
+  board: Board,
+  dims: BoardDims,
+  aiPlayer: PlayerId,
+  empties: CellCoord[],
+  placement: PlacementMode,
+): CellCoord | null {
+  const basic = tacticalMove(board, dims, aiPlayer, empties);
+  if (basic) return basic;
+
+  const fork = findForkMove(board, dims, aiPlayer, empties, placement);
+  if (fork) return fork;
+
+  const human = opponentOf(aiPlayer);
+  return findForkMove(board, dims, human, empties, placement);
 }
 
 /** Move that leaves AI with at least one immediate winning follow-up. */
@@ -109,8 +194,27 @@ function centerBias(cell: CellCoord, dims: BoardDims): number {
   return -d;
 }
 
-function orderEmpties(empties: CellCoord[], dims: BoardDims): CellCoord[] {
-  return [...empties].sort((a, b) => centerBias(b, dims) - centerBias(a, dims));
+function sameCell(a: CellCoord, b: CellCoord): boolean {
+  return a.x === b.x && a.y === b.y && a.z === b.z;
+}
+
+function orderEmpties(
+  empties: CellCoord[],
+  dims: BoardDims,
+  prefer: CellCoord | null,
+  killer: CellCoord | null,
+): CellCoord[] {
+  return [...empties].sort((a, b) => {
+    if (prefer) {
+      if (sameCell(a, prefer)) return -1;
+      if (sameCell(b, prefer)) return 1;
+    }
+    if (killer) {
+      if (sameCell(a, killer)) return -1;
+      if (sameCell(b, killer)) return 1;
+    }
+    return centerBias(b, dims) - centerBias(a, dims);
+  });
 }
 
 /** Score open win-windows: unblocked own marks positive, opponent negative. */
@@ -138,8 +242,12 @@ function evaluate(board: Board, dims: BoardDims, aiPlayer: PlayerId): number {
             else if (owner === human) theirs++;
           }
           if (ours > 0 && theirs > 0) continue;
-          if (ours > 0) score += 10 ** ours;
-          else if (theirs > 0) score -= 10 ** theirs;
+          if (ours > 0) {
+            score += ours === need - 1 ? THREAT_SCORE : 10 ** ours;
+          } else if (theirs > 0) {
+            // Slightly overweight opponent threats so defense isn't undervalued.
+            score -= theirs === need - 1 ? THREAT_SCORE * 1.05 : 10 ** theirs;
+          }
         }
       }
     }
@@ -150,44 +258,103 @@ function evaluate(board: Board, dims: BoardDims, aiPlayer: PlayerId): number {
 
 type SearchResult = { score: number; move: CellCoord | null; aborted: boolean };
 
+type SearchContext = {
+  aiPlayer: PlayerId;
+  placement: PlacementMode;
+  deadline: number;
+  /** Best move from previous iterative-deepening ply — tried first at root. */
+  pvMove: CellCoord | null;
+  /** Depth of the current root search (for PV ordering). */
+  rootDepth: number;
+  /** One killer move per remaining-depth slot. */
+  killers: (CellCoord | null)[];
+  /** Zobrist keys: [cellIndex][0=a, 1=b]. */
+  zobrist: Uint32Array;
+  hash: number;
+  /** Transposition: hash → best move seen (ordering only). */
+  tt: Map<number, { move: CellCoord | null }>;
+  useTt: boolean;
+};
+
+function playerZobristSlot(player: PlayerId): number {
+  return player === "a" ? 0 : 1;
+}
+
+function xorPiece(ctx: SearchContext, dims: BoardDims, cell: CellCoord, player: PlayerId) {
+  const idx = cellIndex(cell, dims) * 2 + playerZobristSlot(player);
+  ctx.hash ^= ctx.zobrist[idx]!;
+}
+
+function buildZobrist(dims: BoardDims): Uint32Array {
+  const n = cellCount(dims) * 2;
+  const table = new Uint32Array(n);
+  // Deterministic LCG so TT behavior is stable across calls (not crypto).
+  let s = 0x9e3779b9;
+  for (let i = 0; i < n; i++) {
+    s = (Math.imul(s, 1664525) + 1013904223) >>> 0;
+    table[i] = s;
+  }
+  return table;
+}
+
+function hashBoard(board: Board, dims: BoardDims, zobrist: Uint32Array): number {
+  let h = 0;
+  for (const [key, player] of board) {
+    const [xs, ys, zs] = key.split(",");
+    const cell = { x: Number(xs), y: Number(ys), z: Number(zs) };
+    const idx = cellIndex(cell, dims) * 2 + playerZobristSlot(player);
+    h ^= zobrist[idx]!;
+  }
+  return h;
+}
+
 function minimax(
   board: Board,
   dims: BoardDims,
-  aiPlayer: PlayerId,
   toMove: PlayerId,
   depthLeft: number,
   occupiedCount: number,
   alpha: number,
   beta: number,
-  deadline: number,
-  placement: PlacementMode,
+  ctx: SearchContext,
 ): SearchResult {
-  if (performance.now() >= deadline) {
+  if (performance.now() >= ctx.deadline) {
     return { score: 0, move: null, aborted: true };
   }
 
-  const empties = orderEmpties(legalEmpties(board, dims, placement), dims);
+  // TT is move-ordering only (no score cutoffs) — avoids incorrect α-β reuse.
+  const ttHit = ctx.useTt ? ctx.tt.get(ctx.hash) : undefined;
+  const prefer = depthLeft === ctx.rootDepth ? ctx.pvMove : null;
+  const killer = ctx.killers[depthLeft] ?? null;
+  const empties = orderEmpties(
+    legalEmpties(board, dims, ctx.placement),
+    dims,
+    prefer ?? ttHit?.move ?? null,
+    killer,
+  );
+
   if (empties.length === 0 || isDraw(occupiedCount, dims)) {
     return { score: 0, move: null, aborted: false };
   }
 
   if (depthLeft === 0) {
-    return { score: evaluate(board, dims, aiPlayer), move: null, aborted: false };
+    return { score: evaluate(board, dims, ctx.aiPlayer), move: null, aborted: false };
   }
 
-  const maximizing = toMove === aiPlayer;
+  const maximizing = toMove === ctx.aiPlayer;
   let bestMove: CellCoord | null = empties[0] ?? null;
   let bestScore = maximizing ? -Infinity : Infinity;
 
   for (const cell of empties) {
     const key = cellKey(cell.x, cell.y, cell.z);
     board.set(key, toMove);
+    xorPiece(ctx, dims, cell, toMove);
     const win = checkWin(board, dims, cell, toMove);
 
     let child: SearchResult;
     if (win) {
       // Prefer faster wins / slower losses.
-      const score = toMove === aiPlayer ? WIN_SCORE + depthLeft : -WIN_SCORE - depthLeft;
+      const score = toMove === ctx.aiPlayer ? WIN_SCORE + depthLeft : -WIN_SCORE - depthLeft;
       child = { score, move: null, aborted: false };
     } else if (isDraw(occupiedCount + 1, dims)) {
       child = { score: 0, move: null, aborted: false };
@@ -195,18 +362,17 @@ function minimax(
       child = minimax(
         board,
         dims,
-        aiPlayer,
         opponentOf(toMove),
         depthLeft - 1,
         occupiedCount + 1,
         alpha,
         beta,
-        deadline,
-        placement,
+        ctx,
       );
     }
 
     board.delete(key);
+    xorPiece(ctx, dims, cell, toMove);
 
     if (child.aborted) return { score: bestScore, move: bestMove, aborted: true };
 
@@ -224,13 +390,34 @@ function minimax(
       }
       beta = Math.min(beta, bestScore);
     }
-    if (beta <= alpha) break;
+    if (beta <= alpha) {
+      ctx.killers[depthLeft] = cell;
+      break;
+    }
+  }
+
+  if (ctx.useTt && bestMove) {
+    ctx.tt.set(ctx.hash, { move: bestMove });
   }
 
   return { score: bestScore, move: bestMove, aborted: false };
 }
 
-function hardMove(
+function defaultMaxDepth(dims: BoardDims, difficulty: "hard" | "extreme"): number {
+  const total = cellCount(dims);
+  if (difficulty === "extreme") {
+    if (total <= 27) return EXTREME_SMALL_DEPTH;
+    if (total <= 64) return EXTREME_MID_DEPTH;
+    return EXTREME_LARGE_DEPTH;
+  }
+  return total <= 27 ? HARD_DEEP_DEPTH : HARD_SHALLOW_DEPTH;
+}
+
+function defaultBudget(difficulty: "hard" | "extreme"): number {
+  return difficulty === "extreme" ? EXTREME_BUDGET_MS : HARD_BUDGET_MS;
+}
+
+function searchMove(
   board: Board,
   dims: BoardDims,
   aiPlayer: PlayerId,
@@ -239,34 +426,42 @@ function hardMove(
   placement: PlacementMode,
   options: AiSearchOptions,
   rng: Rng,
+  difficulty: "hard" | "extreme",
 ): CellCoord | null {
-  const tactical = tacticalMove(board, dims, aiPlayer, empties);
-  if (tactical) return tactical;
+  const forced = forcedTacticalMove(board, dims, aiPlayer, empties, placement);
+  if (forced) return forced;
 
   const total = cellCount(dims);
-  // ponytail: full endgame α-β on 3×3×3 hangs Safari; deepen within a budget instead.
-  const defaultCap = total <= 27 ? HARD_DEEP_DEPTH : HARD_SHALLOW_DEPTH;
+  const defaultCap = defaultMaxDepth(dims, difficulty);
   const maxDepth = Math.min(options.maxDepth ?? defaultCap, total - occupiedCount);
-  const budget = options.budgetMs ?? HARD_BUDGET_MS;
+  const budget = options.budgetMs ?? defaultBudget(difficulty);
   const deadline = performance.now() + budget;
+  const useTt = difficulty === "extreme";
+  const zobrist = buildZobrist(dims);
+
+  const ctx: SearchContext = {
+    aiPlayer,
+    placement,
+    deadline,
+    pvMove: null,
+    rootDepth: 1,
+    killers: Array.from({ length: maxDepth + 1 }, () => null),
+    zobrist,
+    hash: hashBoard(board, dims, zobrist),
+    tt: new Map(),
+    useTt,
+  };
 
   let best = pickRandom(empties, rng);
   for (let depth = 1; depth <= maxDepth; depth++) {
     if (performance.now() >= deadline) break;
-    const result = minimax(
-      board,
-      dims,
-      aiPlayer,
-      aiPlayer,
-      depth,
-      occupiedCount,
-      -Infinity,
-      Infinity,
-      deadline,
-      placement,
-    );
+    ctx.rootDepth = depth;
+    const result = minimax(board, dims, aiPlayer, depth, occupiedCount, -Infinity, Infinity, ctx);
     if (result.aborted) break;
-    if (result.move) best = result.move;
+    if (result.move) {
+      best = result.move;
+      ctx.pvMove = result.move;
+    }
   }
   return best;
 }
@@ -279,8 +474,8 @@ function mediumMove(
   placement: PlacementMode,
   rng: Rng,
 ): CellCoord | null {
-  const tactical = tacticalMove(board, dims, aiPlayer, empties);
-  if (tactical) return tactical;
+  const forced = forcedTacticalMove(board, dims, aiPlayer, empties, placement);
+  if (forced) return forced;
   const threat = findThreatMove(board, dims, aiPlayer, empties, placement, rng);
   if (threat) return threat;
   return pickRandom(empties, rng);
@@ -323,6 +518,18 @@ export function pickAiMove(
     case "medium":
       return mediumMove(board, dims, aiPlayer, empties, placement, rng);
     case "hard":
-      return hardMove(board, dims, aiPlayer, empties, occupiedCount, placement, options, rng);
+      return searchMove(board, dims, aiPlayer, empties, occupiedCount, placement, options, rng, "hard");
+    case "extreme":
+      return searchMove(
+        board,
+        dims,
+        aiPlayer,
+        empties,
+        occupiedCount,
+        placement,
+        options,
+        rng,
+        "extreme",
+      );
   }
 }

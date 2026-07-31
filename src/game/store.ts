@@ -177,6 +177,7 @@ function snapDropCursor(
 
 function scheduleAiMove(get: () => GameState, set: (partial: Partial<GameState>) => void) {
   clearAiTimer();
+  const thinkDelay = get().aiDifficulty === "extreme" ? 80 : AI_DELAY_MS;
   aiTimer = setTimeout(() => {
     aiTimer = null;
     const state = get();
@@ -200,7 +201,7 @@ function scheduleAiMove(get: () => GameState, set: (partial: Partial<GameState>)
     if (!move) return;
 
     applyPlace(get, set, move, AI_PLAYER);
-  }, AI_DELAY_MS);
+  }, thinkDelay);
 }
 
 function applyPlace(
@@ -310,7 +311,13 @@ export const useGameStore = create<GameState>((set, get) => ({
   onlineError: null,
 
   setPresetId: (id) => {
-    set({ presetId: resolvePresetId(id) });
+    const presetId = resolvePresetId(id);
+    const patch: Partial<GameState> = { presetId };
+    // Extreme is only offered on boards larger than 3×3×3.
+    if (presetId === "3x3x3" && get().aiDifficulty === "extreme") {
+      patch.aiDifficulty = "hard";
+    }
+    set(patch);
     persistSetupPrefs(get());
   },
   setPlayMode: (mode) => {
@@ -664,5 +671,9 @@ export function hydrateSetupFromStorage() {
   if (typeof window === "undefined") return;
   const prefs = readSetupPrefsFromStorage();
   if (Object.keys(prefs).length === 0) return;
+  const presetId = prefs.presetId ?? useGameStore.getState().presetId;
+  if (prefs.aiDifficulty === "extreme" && presetId === "3x3x3") {
+    prefs.aiDifficulty = "hard";
+  }
   useGameStore.setState(prefs);
 }

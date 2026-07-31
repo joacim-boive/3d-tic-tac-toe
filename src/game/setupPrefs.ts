@@ -12,7 +12,7 @@ export type SetupPrefs = {
 
 const PLAY_MODES: readonly PlayMode[] = ["hotseat", "ai", "online"];
 const PLACEMENTS: readonly PlacementMode[] = ["free", "drop"];
-const DIFFICULTIES: readonly AiDifficulty[] = ["easy", "medium", "hard"];
+const DIFFICULTIES: readonly AiDifficulty[] = ["easy", "medium", "hard", "extreme"];
 
 function isPlayMode(v: unknown): v is PlayMode {
   return typeof v === "string" && (PLAY_MODES as readonly string[]).includes(v);
