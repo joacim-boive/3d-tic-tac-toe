@@ -20,15 +20,15 @@ const WIN_SCALE = 1.15;
  * Primary bounce factor: reboundSpeed = impactSpeed × e.
  * Longer falls → higher impact → higher bounce (natural).
  */
-const BOUNCE_E = 0.7;
+const BOUNCE_E = 0.78;
 /** Each successive bounce is quieter. */
-const BOUNCE_DECAY = 0.62;
+const BOUNCE_DECAY = 0.55;
 const MAX_BOUNCES = 3;
-const SETTLE_SPEED = 0.5;
+const SETTLE_SPEED = 0.4;
 const SETTLE_DIST = 0.5;
-const SETTLE_TIMEOUT_MS = 5500;
-const SETTLE_FRAMES = 10;
-const IMPACT_MIN = 0.9;
+const SETTLE_TIMEOUT_MS = 7000;
+const SETTLE_FRAMES = 12;
+const IMPACT_MIN = 0.6;
 
 type PhysicsMarkersProps = {
   dims: BoardDims;

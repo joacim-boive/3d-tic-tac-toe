@@ -21,7 +21,7 @@ export const MARKER_RADIUS = 0.32;
 export const DROP_RESTITUTION = 0.05;
 export const DROP_FRICTION = 0.35;
 /** World gravity for drop mode — pieces accelerate over the fall distance. */
-export const DROP_GRAVITY: [number, number, number] = [0, -20, 0];
+export const DROP_GRAVITY: [number, number, number] = [0, -9.5, 0];
 
 /**
  * Invisible box: floor + four walls, open top.
@@ -83,5 +83,6 @@ export function BoardColliders({ dims, spacing = 1 }: BoardCollidersProps) {
  * Longer falls (toward empty bottom cells) reach higher impact speed → bigger bounce.
  */
 export function dropSpawnY(dims: BoardDims, spacing = 1): number {
-  return (dims.y * spacing) / 2 + spacing * 3.25;
+  // High spawn → long empty-column falls accelerate more → harder hit → bigger bounce.
+  return (dims.y * spacing) / 2 + spacing * 4;
 }
