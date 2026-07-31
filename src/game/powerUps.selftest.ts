@@ -20,7 +20,7 @@ import {
   spendPowerUp,
   underCapKinds,
 } from "./powerUps";
-import { canTipPreset, tipBoard, tipChoices } from "./tipBoard";
+import { canTipPreset, eulerForTipDown, tipBoard, tipChoices, tipDownFromEuler } from "./tipBoard";
 import type { BoardDims } from "./types";
 
 function assert(cond: unknown, msg: string): asserts cond {
@@ -142,16 +142,14 @@ function testTipCube() {
   let board = createEmptyBoard();
   board.set(cellKey(0, 2, 1), "a");
   board.set(cellKey(0, 1, 1), "b");
-  // Tip so −x becomes floor: pieces at x=0 fall to y=0, stacked by old y
   const tipped = tipBoard(board, dims, "-x");
-  assert(tipped.get(cellKey(1, 0, 1)) === "b" || tipped.get(cellKey(2, 0, 1)) === "b" || tipped.size === 2, "pieces survive");
   assert(tipped.size === 2, "both pieces kept");
-  // After −x tip: new_y = old_x (=0), so both at y=0; new_x = old_y → b at x=1, a at x=2, same z
-  assert(tipped.get(cellKey(1, 0, 1)) === "b", "b was lower y → packs first? wait sort by new y then key");
-  // Both have new_y=0; packed by sort y then key — same column (new_x differs!)
-  // b: (0,1,1) → (1,0,1); a: (0,2,1) → (2,0,1) — different columns
+  assert(tipped.get(cellKey(1, 0, 1)) === "b", "b maps to x=1");
   assert(tipped.get(cellKey(2, 0, 1)) === "a", "a maps to x=2");
   assert(tipChoices().length === 5, "5 tip choices excl −y");
+  for (const d of ["+x", "-x", "+y", "-y", "+z", "-z"] as const) {
+    assert(tipDownFromEuler(eulerForTipDown(d)) === d, `euler round-trip ${d}`);
+  }
 }
 
 function testTipCreatesWin() {

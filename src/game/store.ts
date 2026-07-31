@@ -30,7 +30,14 @@ import {
   type SwarmPlan,
 } from "./powerUps";
 import { readSetupPrefsFromStorage, writeSetupPrefsToStorage, type SetupPrefs } from "./setupPrefs";
-import { canTipPreset, tipBoard, tipChoices, type TipDown } from "./tipBoard";
+import {
+  IDENTITY_TIP_EULER,
+  canTipPreset,
+  tipBoard,
+  tipChoices,
+  tipDownFromEuler,
+  type TipEuler,
+} from "./tipBoard";
 import type {
   AiDifficulty,
   CellCoord,
@@ -108,6 +115,12 @@ type GameState = {
   powerUpToast: string | null;
   /** Precomputed AI catch outcome while watch-only swarm plays. */
   swarmAiResult: { caught: boolean; kind?: PowerUpId } | null;
+  /** Current snapped tip orientation (tip mode). */
+  tipEuler: TipEuler;
+  /** Animated tip target (drag tumbles toward this). */
+  tipTargetEuler: TipEuler;
+  /** True while balls animate toward the new floor. */
+  tipFalling: boolean;
   board: Board;
   occupiedCount: number;
   currentPlayer: PlayerId;
@@ -165,7 +178,11 @@ type GameState = {
   cancelPowerUpMode: () => void;
   setClearAxis: (axis: Axis) => void;
   confirmClearRow: (a: number, b: number) => boolean;
-  confirmTip: (toDown: TipDown) => boolean;
+  /** Begin fall animation from the current tipped orientation. */
+  confirmTip: () => boolean;
+  setTipTargetEuler: (euler: TipEuler) => void;
+  commitTipEuler: (euler: TipEuler) => void;
+  finishTipFall: () => void;
   catchSwarmPackage: (index: number) => void;
   endSwarm: () => void;
   clearPowerUpToast: () => void;
@@ -467,7 +484,7 @@ function applyPlace(
   const state = get();
   if (state.status !== "playing" || state.phase !== "playing") return false;
   if (state.playMode === "online" && state.onlineStatus === "paused") return false;
-  if (state.dropBusy || state.swarmBusy) return false;
+  if (state.dropBusy || state.swarmBusy || state.tipFalling) return false;
   if (state.powerUpMode === "clear-row" || state.powerUpMode === "tip") return false;
 
   const preset = getPreset(state.presetId);
@@ -587,6 +604,9 @@ export const useGameStore = create<GameState>((set, get) => ({
   clearAxis: "x",
   powerUpToast: null,
   swarmAiResult: null,
+  tipEuler: { ...IDENTITY_TIP_EULER },
+  tipTargetEuler: { ...IDENTITY_TIP_EULER },
+  tipFalling: false,
   board: createEmptyBoard(),
   occupiedCount: 0,
   currentPlayer: "a",
@@ -732,6 +752,14 @@ export const useGameStore = create<GameState>((set, get) => ({
         set({ powerUpToast: "Tip works on cube boards only" });
         return false;
       }
+      set({
+        powerUpMode: "tip",
+        tipEuler: { ...IDENTITY_TIP_EULER },
+        tipTargetEuler: { ...IDENTITY_TIP_EULER },
+        tipFalling: false,
+        powerUpToast: "Drag to tip the box, then Drop",
+      });
+      return true;
     }
 
     set({ powerUpMode: kind });
@@ -740,6 +768,7 @@ export const useGameStore = create<GameState>((set, get) => ({
 
   cancelPowerUpMode: () => {
     const state = get();
+    if (state.tipFalling) return;
     if (state.powerUpMode === "extra-turn" && state.bonusPlacesRemaining > 0) {
       // Refund if no place has consumed the bonus yet
       const by = state.currentPlayer;
@@ -754,7 +783,12 @@ export const useGameStore = create<GameState>((set, get) => ({
       });
       return;
     }
-    set({ powerUpMode: null });
+    set({
+      powerUpMode: null,
+      tipEuler: { ...IDENTITY_TIP_EULER },
+      tipTargetEuler: { ...IDENTITY_TIP_EULER },
+      tipFalling: false,
+    });
   },
 
   confirmClearRow: (a, b) => {
@@ -776,10 +810,10 @@ export const useGameStore = create<GameState>((set, get) => ({
     return true;
   },
 
-  confirmTip: (toDown) => {
+  confirmTip: () => {
     const state = get();
     if (state.powerUpMode !== "tip" || state.status !== "playing") return false;
-    if (state.dropBusy || state.swarmBusy) return false;
+    if (state.dropBusy || state.swarmBusy || state.tipFalling) return false;
     const by = state.currentPlayer;
     if (state.playMode === "ai" && by !== HUMAN) return false;
     if (state.playMode === "online") {
@@ -787,13 +821,59 @@ export const useGameStore = create<GameState>((set, get) => ({
     }
     const dims = getPreset(state.presetId).dims;
     if (!canTipPreset(dims)) return false;
-    if (toDown === "-y") return false;
+    const locked = { ...state.tipTargetEuler };
+    const toDown = tipDownFromEuler(locked);
+    if (toDown === "-y") {
+      set({ powerUpToast: "Tip the box onto a new face first" });
+      return false;
+    }
+    // Lock orientation and play fall — inventory spent when fall finishes
+    set({
+      tipEuler: locked,
+      tipTargetEuler: locked,
+      tipFalling: true,
+      powerUpToast: "Balls falling…",
+      aiming: false,
+    });
+    return true;
+  },
+
+  setTipTargetEuler: (euler) => {
+    const state = get();
+    if (state.powerUpMode !== "tip" || state.tipFalling) return;
+    set({ tipTargetEuler: euler });
+  },
+
+  commitTipEuler: (euler) => {
+    const state = get();
+    if (state.powerUpMode !== "tip" || state.tipFalling) return;
+    set({ tipEuler: euler, tipTargetEuler: euler });
+  },
+
+  finishTipFall: () => {
+    const state = get();
+    if (!state.tipFalling || state.powerUpMode !== "tip") return;
+    const by = state.currentPlayer;
+    const dims = getPreset(state.presetId).dims;
+    const toDown = tipDownFromEuler(state.tipEuler);
     const spent = spendPowerUp(state.inventory[by], "tip");
-    if (!spent) return false;
+    if (!spent) {
+      set({
+        tipFalling: false,
+        tipEuler: { ...IDENTITY_TIP_EULER },
+        tipTargetEuler: { ...IDENTITY_TIP_EULER },
+        powerUpMode: null,
+      });
+      return;
+    }
     const board = tipBoard(state.board, dims, toDown);
     const label = state.displayName(by);
+    set({
+      tipFalling: false,
+      tipEuler: { ...IDENTITY_TIP_EULER },
+      tipTargetEuler: { ...IDENTITY_TIP_EULER },
+    });
     finishPowerUpBoard(get, set, board, by, spent, `${label} tipped the field`);
-    return true;
   },
 
   catchSwarmPackage: (index) => {
@@ -954,6 +1034,9 @@ export const useGameStore = create<GameState>((set, get) => ({
       powerUpMode: null,
       powerUpToast: null,
       swarmAiResult: null,
+      tipEuler: { ...IDENTITY_TIP_EULER },
+      tipTargetEuler: { ...IDENTITY_TIP_EULER },
+      tipFalling: false,
     });
   },
 
@@ -988,6 +1071,9 @@ export const useGameStore = create<GameState>((set, get) => ({
       powerUpMode: null,
       powerUpToast: null,
       swarmAiResult: null,
+      tipEuler: { ...IDENTITY_TIP_EULER },
+      tipTargetEuler: { ...IDENTITY_TIP_EULER },
+      tipFalling: false,
     });
     if (state.playMode === "ai" && nextStarter === AI_PLAYER) {
       scheduleAiMove(get, set);
@@ -1017,6 +1103,9 @@ export const useGameStore = create<GameState>((set, get) => ({
       powerUpMode: null,
       powerUpToast: null,
       swarmAiResult: null,
+      tipEuler: { ...IDENTITY_TIP_EULER },
+      tipTargetEuler: { ...IDENTITY_TIP_EULER },
+      tipFalling: false,
       roomId: null,
       seat: null,
       onlineStatus: "idle",
@@ -1078,6 +1167,9 @@ export const useGameStore = create<GameState>((set, get) => ({
       powerUpMode: null,
       powerUpToast: null,
       swarmAiResult: null,
+      tipEuler: { ...IDENTITY_TIP_EULER },
+      tipTargetEuler: { ...IDENTITY_TIP_EULER },
+      tipFalling: false,
       onlineStatus: "playing",
       opponentConnected: true,
       rematchVotes: { ...EMPTY_VOTES },
@@ -1136,6 +1228,9 @@ export const useGameStore = create<GameState>((set, get) => ({
       powerUpMode: null,
       powerUpToast: null,
       swarmAiResult: null,
+      tipEuler: { ...IDENTITY_TIP_EULER },
+      tipTargetEuler: { ...IDENTITY_TIP_EULER },
+      tipFalling: false,
       onlineStatus: "playing",
       rematchVotes: { ...EMPTY_VOTES },
     });
@@ -1168,6 +1263,9 @@ export const useGameStore = create<GameState>((set, get) => ({
       powerUpMode: null,
       powerUpToast: null,
       swarmAiResult: null,
+      tipEuler: { ...IDENTITY_TIP_EULER },
+      tipTargetEuler: { ...IDENTITY_TIP_EULER },
+      tipFalling: false,
       roomId: null,
       seat: null,
       onlineStatus: "idle",
@@ -1224,7 +1322,7 @@ export const useGameStore = create<GameState>((set, get) => ({
   place: (coord) => {
     const state = get();
     if (state.status !== "playing") return false;
-    if (state.dropBusy || state.swarmBusy) return false;
+    if (state.dropBusy || state.swarmBusy || state.tipFalling) return false;
     if (state.powerUpMode === "clear-row" || state.powerUpMode === "tip") return false;
     if (state.playMode === "ai" && state.currentPlayer !== HUMAN) return false;
     if (state.playMode === "online") {

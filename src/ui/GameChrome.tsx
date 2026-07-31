@@ -40,6 +40,7 @@ export function GameChrome({ children }: GameChromeProps) {
   const swarmBusy = useGameStore((s) => s.swarmBusy);
   const bonusPlacesRemaining = useGameStore((s) => s.bonusPlacesRemaining);
   const powerUpMode = useGameStore((s) => s.powerUpMode);
+  const tipFalling = useGameStore((s) => s.tipFalling);
   const currentPlayer = useGameStore((s) => s.currentPlayer);
   const status = useGameStore((s) => s.status);
   const winner = useGameStore((s) => s.winner);
@@ -72,10 +73,12 @@ export function GameChrome({ children }: GameChromeProps) {
     statusText = `${displayName(winner)} wins`;
   } else if (status === "draw") {
     statusText = "Draw";
+  } else if (tipFalling) {
+    statusText = "Balls falling…";
   } else if (powerUpMode === "clear-row") {
     statusText = "Clear row — pick axis & confirm";
   } else if (powerUpMode === "tip") {
-    statusText = "Tip the field — pick a new floor";
+    statusText = "Drag to tip the box · then Drop";
   } else if (bonusPlacesRemaining > 0) {
     statusText = `${displayName(currentPlayer)} — extra place`;
   } else if (playMode === "ai" && currentPlayer === "b") {

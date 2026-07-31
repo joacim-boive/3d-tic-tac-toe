@@ -8,18 +8,9 @@ import {
   type PowerUpId,
 } from "@/game/powerUps";
 import { useGameStore } from "@/game/store";
-import { canTipPreset, tipChoices, type TipDown } from "@/game/tipBoard";
+import { canTipPreset, tipDownFromEuler } from "@/game/tipBoard";
 import { PLAYER_COLORS, PLAYER_LABELS, type PlayerId } from "@/game/types";
 import type { Axis } from "@/game/clearRow";
-
-const TIP_LABELS: Record<TipDown, string> = {
-  "+x": "+X",
-  "-x": "−X",
-  "+y": "+Y",
-  "-y": "−Y",
-  "+z": "+Z",
-  "-z": "−Z",
-};
 
 function InventoryRow({
   player,
@@ -87,6 +78,8 @@ export function PowerUpHud() {
   const cancelPowerUpMode = useGameStore((s) => s.cancelPowerUpMode);
   const confirmClearRow = useGameStore((s) => s.confirmClearRow);
   const confirmTip = useGameStore((s) => s.confirmTip);
+  const tipEuler = useGameStore((s) => s.tipEuler);
+  const tipFalling = useGameStore((s) => s.tipFalling);
   const cursor = useGameStore((s) => s.cursor);
   const powerUpToast = useGameStore((s) => s.powerUpToast);
   const clearPowerUpToast = useGameStore((s) => s.clearPowerUpToast);
@@ -106,12 +99,16 @@ export function PowerUpHud() {
     status === "playing" &&
     !swarmBusy &&
     !dropBusy &&
+    !tipFalling &&
     (playMode === "hotseat" ||
       (playMode === "ai" && currentPlayer === "a") ||
       (playMode === "online" &&
         seat != null &&
         currentPlayer === seat &&
         onlineStatus === "playing"));
+
+  const tipFloor = tipDownFromEuler(tipEuler);
+  const tipReady = tipFloor !== "-y";
 
   return (
     <div className="powerups">
@@ -175,22 +172,28 @@ export function PowerUpHud() {
 
       {powerUpMode === "tip" ? (
         <div className="powerups__mode">
-          <span>Tip — new floor</span>
-          <div className="powerups__tips" role="group" aria-label="Tip direction">
-            {tipChoices().map((dir) => (
+          <span>
+            {tipFalling
+              ? "Balls falling…"
+              : tipReady
+                ? "Box tipped — drop the balls"
+                : "Drag the box to tip it onto a side"}
+          </span>
+          {!tipFalling ? (
+            <>
               <button
-                key={dir}
                 type="button"
                 className="chrome__btn chrome__btn--accent"
-                onClick={() => confirmTip(dir)}
+                disabled={!tipReady}
+                onClick={() => confirmTip()}
               >
-                {TIP_LABELS[dir]}
+                Drop
               </button>
-            ))}
-          </div>
-          <button type="button" className="chrome__btn" onClick={cancelPowerUpMode}>
-            Cancel
-          </button>
+              <button type="button" className="chrome__btn" onClick={cancelPowerUpMode}>
+                Cancel
+              </button>
+            </>
+          ) : null}
         </div>
       ) : null}
     </div>
