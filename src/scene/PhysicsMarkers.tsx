@@ -1,14 +1,15 @@
 "use client";
 
 import { useFrame } from "@react-three/fiber";
-import { BallCollider, RigidBody, type RapierRigidBody } from "@react-three/rapier";
+import { BallCollider, RigidBody } from "@react-three/rapier";
 import { useEffect, useMemo, useRef } from "react";
-import { Color } from "three";
+import { Color, type Mesh } from "three";
 import { cellKey, cellToWorld, parseCellKey } from "@/game/board";
 import { useGameStore } from "@/game/store";
 import { PLAYER_COLORS, type BoardDims, type CellCoord, type PlayerId } from "@/game/types";
 import {
   DROP_FRICTION,
+  DROP_GRAVITY,
   MARKER_RADIUS,
   dropSpawnY,
   physicsRadius,
@@ -16,16 +17,12 @@ import {
 
 const WIN_COLOR = "#2dff6a";
 const WIN_SCALE = 1.15;
-/** Rebound speed = impact speed × e (longer falls → harder hits → higher bounce). */
-const BOUNCE_E = 0.78;
-const BOUNCE_DECAY = 0.55;
+/** Rebound = impact × e. Longer falls → higher impact → higher bounce. */
+const BOUNCE_E = 0.72;
+const BOUNCE_DECAY = 0.5;
 const MAX_BOUNCES = 3;
-const SETTLE_SPEED = 0.35;
-const SETTLE_DIST = 0.45;
-const SETTLE_TIMEOUT_MS = 8000;
-const SETTLE_FRAMES = 14;
-const IMPACT_MIN = 0.55;
-const BOUNCE_COOLDOWN_MS = 140;
+const SETTLE_SPEED = 0.4;
+const SETTLE_TIMEOUT_MS = 10000;
 
 type PhysicsMarkersProps = {
   dims: BoardDims;
@@ -40,7 +37,12 @@ type MarkerEntry = {
   falling: boolean;
 };
 
-function MarkerBody({
+/**
+ * Kinematic drop: integrate gravity ourselves so acceleration and
+ * impact-scaled bounce are reliable (Rapier contact solving was eating rebounds).
+ * Settled pieces become fixed Rapier bodies for a future tilt power-up.
+ */
+function FallingMarker({
   entry,
   dims,
   spacing,
@@ -50,150 +52,137 @@ function MarkerBody({
   spacing: number;
 }) {
   const finishDrop = useGameStore((s) => s.finishDrop);
-  const bodyRef = useRef<RapierRigidBody>(null);
-  const settledRef = useRef(!entry.falling);
-  const calmFrames = useRef(0);
-  const bounceCount = useRef(0);
-  const sawBounce = useRef(false);
-  const lastBounceAt = useRef(0);
-  const prevVy = useRef(0);
-  const spawnY = dropSpawnY(dims, spacing);
+  const meshRef = useRef<Mesh>(null);
+  const finished = useRef(false);
+  const yRef = useRef(dropSpawnY(dims, spacing));
+  const vyRef = useRef(0);
+  const bounces = useRef(0);
   const [tx, ty, tz] = cellToWorld(entry.coord, dims, spacing);
-  const spawnPos = useMemo(
-    (): [number, number, number] => [tx, spawnY, tz],
-    [tx, spawnY, tz],
+  const g = DROP_GRAVITY[1]; // negative
+  const color = useMemo(() => new Color(PLAYER_COLORS[entry.player]), [entry.player]);
+  const visualR = MARKER_RADIUS;
+
+  useEffect(() => {
+    yRef.current = dropSpawnY(dims, spacing);
+    vyRef.current = 0;
+    bounces.current = 0;
+    finished.current = false;
+    const t = window.setTimeout(() => {
+      if (finished.current) return;
+      finished.current = true;
+      finishDrop();
+    }, SETTLE_TIMEOUT_MS);
+    return () => window.clearTimeout(t);
+  }, [dims, spacing, finishDrop, entry.key]);
+
+  useFrame((_, dt) => {
+    if (finished.current || !meshRef.current) return;
+    const step = Math.min(dt, 1 / 30);
+
+    // Natural acceleration: v += g·dt, y += v·dt
+    vyRef.current += g * step;
+    yRef.current += vyRef.current * step;
+
+    // Impact against the landing cell plane — bounce ∝ impact speed.
+    if (yRef.current <= ty && vyRef.current < 0) {
+      const impact = -vyRef.current;
+      yRef.current = ty;
+      if (bounces.current < MAX_BOUNCES && impact > SETTLE_SPEED) {
+        const e = BOUNCE_E * Math.pow(BOUNCE_DECAY, bounces.current);
+        vyRef.current = impact * e;
+        bounces.current += 1;
+      } else {
+        vyRef.current = 0;
+        finished.current = true;
+        meshRef.current.position.set(tx, ty, tz);
+        finishDrop();
+        return;
+      }
+    }
+
+    // Settled after at least one bounce when nearly at rest on the cell.
+    if (
+      bounces.current > 0 &&
+      Math.abs(vyRef.current) < SETTLE_SPEED &&
+      yRef.current <= ty + 0.05
+    ) {
+      finished.current = true;
+      yRef.current = ty;
+      vyRef.current = 0;
+      meshRef.current.position.set(tx, ty, tz);
+      finishDrop();
+      return;
+    }
+
+    meshRef.current.position.set(tx, yRef.current, tz);
+  });
+
+  return (
+    <mesh ref={meshRef} position={[tx, yRef.current, tz]} castShadow={false}>
+      <sphereGeometry args={[visualR, 20, 16]} />
+      <meshStandardMaterial
+        color={color}
+        transparent
+        opacity={0.9}
+        roughness={0.28}
+        metalness={0.2}
+        emissive={color}
+        emissiveIntensity={0.22}
+        depthWrite={false}
+      />
+    </mesh>
   );
-  const restPos = useMemo((): [number, number, number] => [tx, ty, tz], [tx, ty, tz]);
+}
+
+function SettledMarker({
+  entry,
+  dims,
+  spacing,
+}: {
+  entry: MarkerEntry;
+  dims: BoardDims;
+  spacing: number;
+}) {
+  const [tx, ty, tz] = cellToWorld(entry.coord, dims, spacing);
   const colorHex = entry.winning ? WIN_COLOR : PLAYER_COLORS[entry.player];
   const color = useMemo(() => new Color(colorHex), [colorHex]);
   const scale = entry.winning ? WIN_SCALE : 1;
   const visualR = MARKER_RADIUS * scale;
-  const collidersR = physicsRadius(spacing) * (entry.winning ? WIN_SCALE : 1);
-
-  const snapAndFinish = () => {
-    if (settledRef.current) return;
-    settledRef.current = true;
-    const body = bodyRef.current;
-    if (body) {
-      body.setLinvel({ x: 0, y: 0, z: 0 }, true);
-      body.setAngvel({ x: 0, y: 0, z: 0 }, true);
-      body.setTranslation({ x: tx, y: ty, z: tz }, true);
-      body.setBodyType(1, true); // Fixed
-    }
-    finishDrop();
-  };
-
-  useEffect(() => {
-    if (!entry.falling) return;
-    calmFrames.current = 0;
-    bounceCount.current = 0;
-    sawBounce.current = false;
-    lastBounceAt.current = 0;
-    prevVy.current = 0;
-    const t = window.setTimeout(snapAndFinish, SETTLE_TIMEOUT_MS);
-    return () => window.clearTimeout(t);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [entry.falling]);
-
-  useFrame(() => {
-    if (!entry.falling || settledRef.current) return;
-    const body = bodyRef.current;
-    if (!body) return;
-
-    const v = body.linvel();
-    const p = body.translation();
-    const speed = Math.hypot(v.x, v.y, v.z);
-    const dist = Math.hypot(p.x - tx, p.y - ty, p.z - tz);
-    const now = performance.now();
-
-    /*
-     * Rapier resolves contacts before useFrame, often killing vy on impact.
-     * Use the previous frame's downward speed as the true impact velocity so
-     * rebound scales with how hard/fast the piece hit (longer fall → bigger bounce).
-     */
-    const impact = -prevVy.current;
-    const hitLandingPlane = p.y <= ty + 0.1;
-    const velocityKilled = prevVy.current < -IMPACT_MIN && v.y > prevVy.current * 0.4;
-
-    if (
-      hitLandingPlane &&
-      velocityKilled &&
-      impact >= IMPACT_MIN &&
-      bounceCount.current < MAX_BOUNCES &&
-      now - lastBounceAt.current >= BOUNCE_COOLDOWN_MS
-    ) {
-      const e = BOUNCE_E * Math.pow(BOUNCE_DECAY, bounceCount.current);
-      bounceCount.current += 1;
-      lastBounceAt.current = now;
-      sawBounce.current = true;
-      body.setTranslation({ x: tx, y: ty, z: tz }, true);
-      body.setLinvel({ x: v.x * 0.08, y: impact * e, z: v.z * 0.08 }, true);
-      prevVy.current = impact * e;
-      return;
-    }
-
-    prevVy.current = v.y;
-
-    if (v.y > 0.35) sawBounce.current = true;
-    if (!sawBounce.current) return;
-
-    const nearRest = speed < SETTLE_SPEED && dist < SETTLE_DIST && p.y <= ty + 0.4;
-    if (nearRest) {
-      calmFrames.current += 1;
-      if (calmFrames.current >= SETTLE_FRAMES) snapAndFinish();
-    } else {
-      calmFrames.current = 0;
-    }
-  });
-
-  if (!entry.falling) {
-    return (
-      <RigidBody type="fixed" position={restPos} colliders={false} ccd>
-        <BallCollider args={[collidersR]} restitution={0} friction={DROP_FRICTION} density={1} />
-        <mesh castShadow={false}>
-          <sphereGeometry args={[visualR, 20, 16]} />
-          <meshStandardMaterial
-            color={color}
-            transparent={!entry.winning}
-            opacity={entry.winning ? 1 : 0.9}
-            roughness={0.28}
-            metalness={0.2}
-            emissive={color}
-            emissiveIntensity={entry.winning ? 0.45 : 0.22}
-            depthWrite={entry.winning}
-          />
-        </mesh>
-      </RigidBody>
-    );
-  }
+  const collidersR = physicsRadius(spacing) * scale;
 
   return (
-    <RigidBody
-      ref={bodyRef}
-      type="dynamic"
-      position={spawnPos}
-      colliders={false}
-      linearDamping={0}
-      angularDamping={0.2}
-      ccd
-      canSleep={false}
-    >
+    <RigidBody type="fixed" position={[tx, ty, tz]} colliders={false} ccd>
       <BallCollider args={[collidersR]} restitution={0} friction={DROP_FRICTION} density={1} />
       <mesh castShadow={false}>
         <sphereGeometry args={[visualR, 20, 16]} />
         <meshStandardMaterial
           color={color}
-          transparent
-          opacity={0.9}
+          transparent={!entry.winning}
+          opacity={entry.winning ? 1 : 0.9}
           roughness={0.28}
           metalness={0.2}
           emissive={color}
-          emissiveIntensity={0.22}
-          depthWrite={false}
+          emissiveIntensity={entry.winning ? 0.45 : 0.22}
+          depthWrite={entry.winning}
         />
       </mesh>
     </RigidBody>
   );
+}
+
+function MarkerBody({
+  entry,
+  dims,
+  spacing,
+}: {
+  entry: MarkerEntry;
+  dims: BoardDims;
+  spacing: number;
+}) {
+  if (entry.falling) {
+    return <FallingMarker entry={entry} dims={dims} spacing={spacing} />;
+  }
+  return <SettledMarker entry={entry} dims={dims} spacing={spacing} />;
 }
 
 export function PhysicsMarkers({ dims, spacing = 1 }: PhysicsMarkersProps) {
