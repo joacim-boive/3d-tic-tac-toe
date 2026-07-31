@@ -182,7 +182,11 @@ function scheduleAiMove(get: () => GameState, set: (partial: Partial<GameState>)
     const state = get();
     if (state.status !== "playing" || state.playMode !== "ai") return;
     if (state.currentPlayer !== AI_PLAYER) return;
-    if (state.dropBusy) return;
+    // Drop still settling — retry rather than silently skipping the AI turn.
+    if (state.dropBusy) {
+      scheduleAiMove(get, set);
+      return;
+    }
 
     const preset = getPreset(state.presetId);
     const move = pickAiMove(
