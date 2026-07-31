@@ -20,13 +20,24 @@ const HARD_DEEP_DEPTH = 5;
 const HARD_BUDGET_MS = 80;
 const WIN_SCORE = 1_000_000;
 
+export type Rng = () => number;
+
+/** Optional overrides for offline eval / self-play (browser defaults unchanged). */
+export type AiSearchOptions = {
+  rng?: Rng;
+  /** Hard search wall-clock budget in ms. Use Infinity to finish each depth. */
+  budgetMs?: number;
+  /** Cap iterative-deepening depth for Hard. */
+  maxDepth?: number;
+};
+
 function opponentOf(player: PlayerId): PlayerId {
   return player === "a" ? "b" : "a";
 }
 
-function pickRandom<T>(items: T[]): T | null {
+function pickRandom<T>(items: T[], rng: Rng): T | null {
   if (items.length === 0) return null;
-  return items[Math.floor(Math.random() * items.length)] ?? null;
+  return items[Math.floor(rng() * items.length)] ?? null;
 }
 
 function legalEmpties(board: Board, dims: BoardDims, placement: PlacementMode): CellCoord[] {
@@ -68,17 +79,26 @@ function findThreatMove(
   aiPlayer: PlayerId,
   empties: CellCoord[],
   placement: PlacementMode,
+  rng: Rng,
 ): CellCoord | null {
-  const threats: CellCoord[] = [];
-  for (const cell of empties) {
+  // Shuffle then take the first threat — same distribution as collecting-all + pick,
+  // but stops early (matters on 5×5×4 free self-play).
+  const order = [...empties];
+  for (let i = order.length - 1; i > 0; i--) {
+    const j = Math.floor(rng() * (i + 1));
+    const tmp = order[i]!;
+    order[i] = order[j]!;
+    order[j] = tmp;
+  }
+  for (const cell of order) {
     const key = cellKey(cell.x, cell.y, cell.z);
     board.set(key, aiPlayer);
     const followUps = legalEmpties(board, dims, placement);
     const threatens = findWinningMove(board, dims, aiPlayer, followUps) !== null;
     board.delete(key);
-    if (threatens) threats.push(cell);
+    if (threatens) return cell;
   }
-  return pickRandom(threats);
+  return null;
 }
 
 function centerBias(cell: CellCoord, dims: BoardDims): number {
@@ -217,19 +237,20 @@ function hardMove(
   empties: CellCoord[],
   occupiedCount: number,
   placement: PlacementMode,
+  options: AiSearchOptions,
+  rng: Rng,
 ): CellCoord | null {
   const tactical = tacticalMove(board, dims, aiPlayer, empties);
   if (tactical) return tactical;
 
   const total = cellCount(dims);
   // ponytail: full endgame α-β on 3×3×3 hangs Safari; deepen within a budget instead.
-  const maxDepth = Math.min(
-    total <= 27 ? HARD_DEEP_DEPTH : HARD_SHALLOW_DEPTH,
-    total - occupiedCount,
-  );
-  const deadline = performance.now() + HARD_BUDGET_MS;
+  const defaultCap = total <= 27 ? HARD_DEEP_DEPTH : HARD_SHALLOW_DEPTH;
+  const maxDepth = Math.min(options.maxDepth ?? defaultCap, total - occupiedCount);
+  const budget = options.budgetMs ?? HARD_BUDGET_MS;
+  const deadline = performance.now() + budget;
 
-  let best = pickRandom(empties);
+  let best = pickRandom(empties, rng);
   for (let depth = 1; depth <= maxDepth; depth++) {
     if (performance.now() >= deadline) break;
     const result = minimax(
@@ -256,12 +277,13 @@ function mediumMove(
   aiPlayer: PlayerId,
   empties: CellCoord[],
   placement: PlacementMode,
+  rng: Rng,
 ): CellCoord | null {
   const tactical = tacticalMove(board, dims, aiPlayer, empties);
   if (tactical) return tactical;
-  const threat = findThreatMove(board, dims, aiPlayer, empties, placement);
+  const threat = findThreatMove(board, dims, aiPlayer, empties, placement, rng);
   if (threat) return threat;
-  return pickRandom(empties);
+  return pickRandom(empties, rng);
 }
 
 function easyMove(
@@ -271,12 +293,14 @@ function easyMove(
   empties: CellCoord[],
   occupiedCount: number,
   placement: PlacementMode,
+  rng: Rng,
+  seeded: boolean,
 ): CellCoord | null {
-  if (Math.random() < EASY_RANDOM_RATE) {
-    if (placement === "drop") return pickRandom(empties);
-    return randomEmptyCell(board, dims, occupiedCount) ?? pickRandom(empties);
+  if (rng() < EASY_RANDOM_RATE) {
+    if (placement === "drop" || seeded) return pickRandom(empties, rng);
+    return randomEmptyCell(board, dims, occupiedCount) ?? pickRandom(empties, rng);
   }
-  return tacticalMove(board, dims, aiPlayer, empties) ?? pickRandom(empties);
+  return tacticalMove(board, dims, aiPlayer, empties) ?? pickRandom(empties, rng);
 }
 
 export function pickAiMove(
@@ -286,16 +310,19 @@ export function pickAiMove(
   aiPlayer: PlayerId,
   occupiedCount: number,
   placement: PlacementMode = "free",
+  options: AiSearchOptions = {},
 ): CellCoord | null {
   const empties = legalEmpties(board, dims, placement);
   if (empties.length === 0) return null;
+  const rng = options.rng ?? Math.random;
+  const seeded = options.rng != null;
 
   switch (difficulty) {
     case "easy":
-      return easyMove(board, dims, aiPlayer, empties, occupiedCount, placement);
+      return easyMove(board, dims, aiPlayer, empties, occupiedCount, placement, rng, seeded);
     case "medium":
-      return mediumMove(board, dims, aiPlayer, empties, placement);
+      return mediumMove(board, dims, aiPlayer, empties, placement, rng);
     case "hard":
-      return hardMove(board, dims, aiPlayer, empties, occupiedCount, placement);
+      return hardMove(board, dims, aiPlayer, empties, occupiedCount, placement, options, rng);
   }
 }

@@ -37,10 +37,10 @@ Without these vars, auth returns 503 and Online create/join fails.
 | Preset | Board | Win length |
 | ------ | ----- | ---------- |
 | 3×3×3  | 3³    | 3          |
-| 4×4×3  | 4×4×3 | 3          |
-| 5×5×3  | 5×5×3 | 3          |
+| 4×4×4  | 4³    | 4          |
+| 5×5×4  | 5×5×4 | 4          |
 
-Win length follows the board’s Z depth. Lines count along axes, face diagonals, and space diagonals.
+Win length follows the board’s Z depth. Lines count along axes, face diagonals, and space diagonals. Mid/large presets need four in a row so Drop and Free games stay competitive past the opening.
 
 ## Stack
 
@@ -64,7 +64,11 @@ npm run build      # production build
 npm run check      # typecheck + lint + format
 npm run check:win  # win-detection self-check
 npm run check:drop # gravity drop-landing self-check
+npm run check:selfplay  # self-play harness smoke test
+npm run eval:selfplay -- --all --games 2000 --difficulty medium
 ```
+
+Self-play eval prints first/second win rate, draw rate, average game length, and common openings — useful when tuning presets or trying new mechanics.
 
 ## Deploy
 

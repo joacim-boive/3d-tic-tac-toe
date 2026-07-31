@@ -14,7 +14,7 @@ Replace the random vs-AI opponent with Easy / Medium / Hard levels that run enti
 - **Runtime:** Browser only. No workers, no server, no new deps. Keep ~400ms AI delay.
 - **Hard strategy is adaptive by board size:**
   - **3×3×3:** iterative-deepening α-β (depth ≤ 5, ~80ms budget) — near-perfect without freezing Mobile Safari.
-  - **4×4×3 / 5×5×3:** win/block + shallow depth-2/3 search with a simple line-score heuristic.
+  - **4×4×4 / 5×5×4:** win/block + shallow depth-2/3 search with a simple line-score heuristic.
 
 ## Behavior ladder
 
@@ -43,4 +43,4 @@ One runnable self-check (assert-style, no test framework): open winning move is 
 
 ## Out of scope
 
-Mid-game difficulty change, persistence, Web Worker offload, perfect play on 4×4×3 / 5×5×3, multiplayer AI.
+Mid-game difficulty change, persistence, Web Worker offload, perfect play on 4×4×4 / 5×5×4, multiplayer AI.

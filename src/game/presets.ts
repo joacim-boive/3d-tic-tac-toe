@@ -1,24 +1,29 @@
 import type { BoardDims, GamePreset, PresetId } from "./types";
 import { MAX_BOARD_SIZE, winLength } from "./types";
 
+/**
+ * Win length follows Z. Larger footprints with only 3-in-a-row (old 4×4×3 / 5×5×3)
+ * let the starter force wins too easily — especially in Drop — so mid/large presets
+ * require 4-in-a-row on deeper boards.
+ */
 export const PRESETS: readonly GamePreset[] = [
   {
     id: "3x3x3",
     label: "3×3×3",
-    description: "Classic cube · 3 in a row",
+    description: "Blitz cube · 3 in a row",
     dims: { x: 3, y: 3, z: 3 },
   },
   {
-    id: "4x4x3",
-    label: "4×4×3",
-    description: "Wider field · 3 in a row",
-    dims: { x: 4, y: 4, z: 3 },
+    id: "4x4x4",
+    label: "4×4×4",
+    description: "Classic cube · 4 in a row",
+    dims: { x: 4, y: 4, z: 4 },
   },
   {
-    id: "5x5x3",
-    label: "5×5×3",
-    description: "Wide field · 3 in a row",
-    dims: { x: 5, y: 5, z: 3 },
+    id: "5x5x4",
+    label: "5×5×4",
+    description: "Wide field · 4 in a row",
+    dims: { x: 5, y: 5, z: 4 },
   },
 ] as const;
 
@@ -38,4 +43,12 @@ export function getPreset(id: PresetId): GamePreset {
   }
   assertDims(preset.dims);
   return preset;
+}
+
+/** Map legacy / unknown ids (e.g. old online rooms) onto current presets. */
+export function resolvePresetId(id: string): PresetId {
+  if (id === "4x4x3") return "4x4x4";
+  if (id === "5x5x3") return "5x5x4";
+  if (id === "3x3x3" || id === "4x4x4" || id === "5x5x4") return id;
+  return "3x3x3";
 }

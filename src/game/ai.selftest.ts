@@ -40,12 +40,13 @@ function testBlocksOpponentWin() {
 }
 
 function testFindWinningMoveHelper() {
-  const dims: BoardDims = { x: 4, y: 4, z: 3 };
+  const dims: BoardDims = { x: 4, y: 4, z: 4 };
   const board = createEmptyBoard();
   board.set(cellKey(0, 0, 0), "a");
   board.set(cellKey(1, 0, 0), "a");
+  board.set(cellKey(2, 0, 0), "a");
   const win = findWinningMove(board, dims, "a");
-  assert(win !== null && sameCell(win, { x: 2, y: 0, z: 0 }), "helper finds win on larger board");
+  assert(win !== null && sameCell(win, { x: 3, y: 0, z: 0 }), "helper finds 4-in-a-row win");
 }
 
 testTakesWinningMove();
