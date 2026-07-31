@@ -4,7 +4,7 @@ Date: 2026-07-31
 
 ## Goal
 
-Add optional power-ups that bend the grid without breaking the core loop: place markers, get `dims.z` in a row, feel good in 3D. Start with three candidates:
+Add optional power-ups that bend the grid without breaking the core loop: place markers, get `dims.z` in a row, feel good in 3D. Acquisition is a **luck + skill package-catch mini-game** (not free starting stock). Spendable kinds:
 
 1. **Extra turn** — place two markers in one turn
 2. **Clear one row** — wipe every marker along a chosen axis-aligned line
@@ -197,9 +197,9 @@ Equivalent mental model: `placesThisTurn = 2` countdown.
 - In Drop, two places in different columns ≈ two normal turns of tempo; two in one column is a tall stack — still tempo, less fork potential.
 - Self-play: model as “occasionally take two plies” and measure first-player win rate shift.
 
-### Why ship first
+### Why ship first (among spends)
 
-Smallest code surface: mostly `applyPlace` + inventory + UI. Validates economy/HUD/online message patterns before Clear/Tip.
+Smallest spend surface: mostly `applyPlace` + inventory decrement + UI. Ships right after the catch loop (Phase 0) so earn → show counts → spend is playable end-to-end before Clear/Tip.
 
 ---
 
