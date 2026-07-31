@@ -1,34 +1,31 @@
 "use client";
 
 import { useFrame } from "@react-three/fiber";
-import {
-  BallCollider,
-  RigidBody,
-  type CollisionEnterPayload,
-  type RapierRigidBody,
-} from "@react-three/rapier";
+import { BallCollider, RigidBody, type RapierRigidBody } from "@react-three/rapier";
 import { useEffect, useMemo, useRef } from "react";
 import { Color } from "three";
 import { cellKey, cellToWorld, parseCellKey } from "@/game/board";
 import { useGameStore } from "@/game/store";
 import { PLAYER_COLORS, type BoardDims, type CellCoord, type PlayerId } from "@/game/types";
-import { DROP_FRICTION, MARKER_RADIUS, dropSpawnY } from "./BoardColliders";
+import {
+  DROP_FRICTION,
+  MARKER_RADIUS,
+  dropSpawnY,
+  physicsRadius,
+} from "./BoardColliders";
 
 const WIN_COLOR = "#2dff6a";
 const WIN_SCALE = 1.15;
-/**
- * Primary bounce factor: reboundSpeed = impactSpeed × e.
- * Longer falls → higher impact → higher bounce (natural).
- */
+/** Rebound speed = impact speed × e (longer falls → harder hits → higher bounce). */
 const BOUNCE_E = 0.78;
-/** Each successive bounce is quieter. */
 const BOUNCE_DECAY = 0.55;
 const MAX_BOUNCES = 3;
-const SETTLE_SPEED = 0.4;
-const SETTLE_DIST = 0.5;
-const SETTLE_TIMEOUT_MS = 7000;
-const SETTLE_FRAMES = 12;
-const IMPACT_MIN = 0.6;
+const SETTLE_SPEED = 0.35;
+const SETTLE_DIST = 0.45;
+const SETTLE_TIMEOUT_MS = 8000;
+const SETTLE_FRAMES = 14;
+const IMPACT_MIN = 0.55;
+const BOUNCE_COOLDOWN_MS = 140;
 
 type PhysicsMarkersProps = {
   dims: BoardDims;
@@ -69,7 +66,8 @@ function MarkerBody({
   const colorHex = entry.winning ? WIN_COLOR : PLAYER_COLORS[entry.player];
   const color = useMemo(() => new Color(colorHex), [colorHex]);
   const scale = entry.winning ? WIN_SCALE : 1;
-  const radius = MARKER_RADIUS * scale;
+  const visualR = MARKER_RADIUS * scale;
+  const collidersR = physicsRadius(spacing) * (entry.winning ? WIN_SCALE : 1);
 
   const snapAndFinish = () => {
     if (settledRef.current) return;
@@ -95,27 +93,6 @@ function MarkerBody({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [entry.falling]);
 
-  const onCollisionEnter = (_payload: CollisionEnterPayload) => {
-    if (!entry.falling || settledRef.current) return;
-    if (bounceCount.current >= MAX_BOUNCES) return;
-    const now = performance.now();
-    // One impulse per bounce (Rapier may emit several contacts per impact).
-    if (now - lastBounceAt.current < 120) return;
-    const body = bodyRef.current;
-    if (!body) return;
-
-    const v = body.linvel();
-    const impact = -v.y;
-    if (impact < IMPACT_MIN) return;
-
-    const e = BOUNCE_E * Math.pow(BOUNCE_DECAY, bounceCount.current);
-    bounceCount.current += 1;
-    lastBounceAt.current = now;
-    sawBounce.current = true;
-    // Rebound ∝ impact speed; kill most lateral skid so stacks stay in-column.
-    body.setLinvel({ x: v.x * 0.12, y: impact * e, z: v.z * 0.12 }, true);
-  };
-
   useFrame(() => {
     if (!entry.falling || settledRef.current) return;
     const body = bodyRef.current;
@@ -125,13 +102,33 @@ function MarkerBody({
     const p = body.translation();
     const speed = Math.hypot(v.x, v.y, v.z);
     const dist = Math.hypot(p.x - tx, p.y - ty, p.z - tz);
+    const now = performance.now();
 
-    // Also detect natural Rapier bounce if material restitution fires first.
-    if (v.y > 0.4) sawBounce.current = true;
+    /*
+     * Impact-scaled bounce, applied after the physics step so Rapier's
+     * contact solver can't immediately overwrite the rebound.
+     * Trigger when falling through the landing plane at the target cell.
+     */
+    if (
+      v.y < -IMPACT_MIN &&
+      p.y <= ty + 0.04 &&
+      bounceCount.current < MAX_BOUNCES &&
+      now - lastBounceAt.current >= BOUNCE_COOLDOWN_MS
+    ) {
+      const impact = -v.y;
+      const e = BOUNCE_E * Math.pow(BOUNCE_DECAY, bounceCount.current);
+      bounceCount.current += 1;
+      lastBounceAt.current = now;
+      sawBounce.current = true;
+      body.setTranslation({ x: tx, y: ty, z: tz }, true);
+      body.setLinvel({ x: v.x * 0.08, y: impact * e, z: v.z * 0.08 }, true);
+      return;
+    }
 
+    if (v.y > 0.35) sawBounce.current = true;
     if (!sawBounce.current) return;
 
-    const nearRest = speed < SETTLE_SPEED && dist < SETTLE_DIST && p.y <= ty + 0.45;
+    const nearRest = speed < SETTLE_SPEED && dist < SETTLE_DIST && p.y <= ty + 0.4;
     if (nearRest) {
       calmFrames.current += 1;
       if (calmFrames.current >= SETTLE_FRAMES) snapAndFinish();
@@ -143,9 +140,9 @@ function MarkerBody({
   if (!entry.falling) {
     return (
       <RigidBody type="fixed" position={restPos} colliders={false} ccd>
-        <BallCollider args={[radius]} restitution={0.55} friction={DROP_FRICTION} density={1} />
+        <BallCollider args={[collidersR]} restitution={0} friction={DROP_FRICTION} density={1} />
         <mesh castShadow={false}>
-          <sphereGeometry args={[radius, 20, 16]} />
+          <sphereGeometry args={[visualR, 20, 16]} />
           <meshStandardMaterial
             color={color}
             transparent={!entry.winning}
@@ -171,12 +168,10 @@ function MarkerBody({
       angularDamping={0.2}
       ccd
       canSleep={false}
-      onCollisionEnter={onCollisionEnter}
     >
-      {/* Low material restitution — bounce is driven by impact-scaled impulse above. */}
-      <BallCollider args={[radius]} restitution={0.05} friction={DROP_FRICTION} density={1} />
+      <BallCollider args={[collidersR]} restitution={0} friction={DROP_FRICTION} density={1} />
       <mesh castShadow={false}>
-        <sphereGeometry args={[radius, 20, 16]} />
+        <sphereGeometry args={[visualR, 20, 16]} />
         <meshStandardMaterial
           color={color}
           transparent
