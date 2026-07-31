@@ -102,6 +102,13 @@ button {
   font-weight: 600;
 }
 
+.setup__hint {
+  margin: 0.55rem 0 0;
+  font-size: 0.82rem;
+  color: var(--ink-muted);
+  line-height: 1.35;
+}
+
 .setup__presets {
   display: flex;
   flex-direction: column;

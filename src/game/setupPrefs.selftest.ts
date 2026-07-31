@@ -20,6 +20,16 @@ function testValidBlob() {
   assert(prefs.aiDifficulty === "hard", "difficulty");
 }
 
+function testExtremeDifficulty() {
+  const prefs = parseSetupPrefs({
+    presetId: "4x4x4",
+    playMode: "ai",
+    placement: "free",
+    aiDifficulty: "extreme",
+  });
+  assert(prefs.aiDifficulty === "extreme", "extreme accepted");
+}
+
 function testLegacyPresetId() {
   const prefs = parseSetupPrefs({ presetId: "4x4x3" });
   assert(prefs.presetId === "4x4x4", "legacy 4x4x3 → 4x4x4");
@@ -44,6 +54,7 @@ function testNullSafe() {
 }
 
 testValidBlob();
+testExtremeDifficulty();
 testLegacyPresetId();
 testIgnoresJunk();
 testNullSafe();
