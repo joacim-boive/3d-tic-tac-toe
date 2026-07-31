@@ -64,7 +64,11 @@ npm run build      # production build
 npm run check      # typecheck + lint + format
 npm run check:win  # win-detection self-check
 npm run check:drop # gravity drop-landing self-check
+npm run check:selfplay  # self-play harness smoke test
+npm run eval:selfplay -- --all --games 2000 --difficulty medium
 ```
+
+Self-play eval prints first/second win rate, draw rate, average game length, and common openings — useful when tuning presets or trying new mechanics.
 
 ## Deploy
 
