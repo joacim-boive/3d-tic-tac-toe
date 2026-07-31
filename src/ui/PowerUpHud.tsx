@@ -1,6 +1,5 @@
 "use client";
 
-import { useEffect } from "react";
 import { getPreset } from "@/game/presets";
 import {
   POWER_UP_IDS,
@@ -82,17 +81,9 @@ export function PowerUpHud() {
   const tipFalling = useGameStore((s) => s.tipFalling);
   const tipDirty = useGameStore((s) => s.tipDirty);
   const cursor = useGameStore((s) => s.cursor);
-  const powerUpToast = useGameStore((s) => s.powerUpToast);
-  const clearPowerUpToast = useGameStore((s) => s.clearPowerUpToast);
   const swarmBusy = useGameStore((s) => s.swarmBusy);
   const dropBusy = useGameStore((s) => s.dropBusy);
   const bonusPlacesRemaining = useGameStore((s) => s.bonusPlacesRemaining);
-
-  useEffect(() => {
-    if (!powerUpToast) return;
-    const t = window.setTimeout(() => clearPowerUpToast(), 3200);
-    return () => window.clearTimeout(t);
-  }, [powerUpToast, clearPowerUpToast]);
 
   if (!powerUpsEnabled || playMode === "hotseat") return null;
 
@@ -113,15 +104,6 @@ export function PowerUpHud() {
 
   return (
     <div className="powerups">
-      {powerUpToast ? (
-        <p className="powerups__toast" role="status">
-          {powerUpToast}
-          <button type="button" className="powerups__toast-dismiss" onClick={clearPowerUpToast}>
-            ×
-          </button>
-        </p>
-      ) : null}
-
       <div className="powerups__inventories">
         <InventoryRow player="a" actionable={myTurn && currentPlayer === "a"} />
         <InventoryRow player="b" actionable={myTurn && currentPlayer === "b"} />
@@ -129,7 +111,6 @@ export function PowerUpHud() {
 
       {bonusPlacesRemaining > 0 || powerUpMode === "extra-turn" ? (
         <div className="powerups__mode">
-          <span>Extra turn — place again after this one</span>
           {bonusPlacesRemaining > 0 && powerUpMode === "extra-turn" ? (
             <button type="button" className="chrome__btn" onClick={cancelPowerUpMode}>
               Cancel
@@ -140,7 +121,6 @@ export function PowerUpHud() {
 
       {powerUpMode === "clear-row" ? (
         <div className="powerups__mode">
-          <span>Aim · tap board or axis to switch · Clear</span>
           <div className="powerups__axis" role="group" aria-label="Axis">
             {(["x", "y", "z"] as const).map((axis) => (
               <button
@@ -172,15 +152,6 @@ export function PowerUpHud() {
 
       {powerUpMode === "tip" ? (
         <div className="powerups__mode">
-          <span>
-            {tipFalling
-              ? "Balls falling…"
-              : tipReady
-                ? "Tipped — balls will fall to the new floor"
-                : tipDirty
-                  ? "Tip again or Done"
-                  : "Spin on the bottom · swipe up/down to flip"}
-          </span>
           {!tipFalling ? (
             <>
               <button

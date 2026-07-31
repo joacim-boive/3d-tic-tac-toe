@@ -361,7 +361,7 @@ function finishPowerUpBoard(
   board: Board,
   by: PlayerId,
   spentCounts: PowerUpInventory["a"],
-  toast: string,
+  _toast?: string,
 ) {
   const state = get();
   const dims = getPreset(state.presetId).dims;
@@ -382,7 +382,7 @@ function finishPowerUpBoard(
       winningCell: win.line[0] ?? null,
       powerUpMode: null,
       bonusPlacesRemaining: 0,
-      powerUpToast: toast,
+      powerUpToast: null,
       aiming: false,
       fallingKey: null,
       dropBusy: false,
@@ -404,7 +404,7 @@ function finishPowerUpBoard(
       winningCell: null,
       powerUpMode: null,
       bonusPlacesRemaining: 0,
-      powerUpToast: toast,
+      powerUpToast: null,
       aiming: false,
       fallingKey: null,
       dropBusy: false,
@@ -426,7 +426,7 @@ function finishPowerUpBoard(
     winningCell: null,
     powerUpMode: null,
     bonusPlacesRemaining: 0,
-    powerUpToast: toast,
+    powerUpToast: null,
     fallingKey: null,
     dropBusy: false,
   });
@@ -779,7 +779,7 @@ export const useGameStore = create<GameState>((set, get) => ({
         inventory: inv,
         bonusPlacesRemaining: 1,
         powerUpMode: "extra-turn",
-        powerUpToast: "Extra turn — place twice",
+        powerUpToast: null,
       });
       if (state.playMode === "online") localStateSyncPublisher?.();
       return true;
@@ -788,7 +788,7 @@ export const useGameStore = create<GameState>((set, get) => ({
     if (kind === "tip") {
       const dims = getPreset(state.presetId).dims;
       if (!canTipPreset(dims)) {
-        set({ powerUpToast: "Tip works on cube boards only" });
+        set({ powerUpToast: null });
         return false;
       }
       set({
@@ -799,15 +799,14 @@ export const useGameStore = create<GameState>((set, get) => ({
         tipCheckpoint: new Map(state.board),
         tipDirty: false,
         aiming: false,
-        powerUpToast: "Drag to tip — balls fall to the new floor",
+        powerUpToast: null,
       });
       return true;
     }
 
     set({
       powerUpMode: kind,
-      powerUpToast:
-        kind === "clear-row" ? "Aim a line · tap to switch axis · Clear" : null,
+      powerUpToast: null,
     });
     return true;
   },
@@ -892,7 +891,7 @@ export const useGameStore = create<GameState>((set, get) => ({
         tipEuler: locked,
         tipTargetEuler: locked,
         tipFalling: true,
-        powerUpToast: "Balls falling…",
+        powerUpToast: null,
         aiming: false,
       });
       return true;
@@ -900,7 +899,7 @@ export const useGameStore = create<GameState>((set, get) => ({
 
     // Upright after at least one settle — Done spends and exits.
     if (!state.tipDirty) {
-      set({ powerUpToast: "Tip the box onto a new face first" });
+      set({ powerUpToast: null });
       return false;
     }
 
@@ -927,7 +926,7 @@ export const useGameStore = create<GameState>((set, get) => ({
       tipEuler: locked,
       tipTargetEuler: locked,
       tipFalling: true,
-      powerUpToast: "Balls falling…",
+      powerUpToast: null,
       aiming: false,
     });
   },
@@ -988,7 +987,7 @@ export const useGameStore = create<GameState>((set, get) => ({
       tipEuler: { ...IDENTITY_TIP_EULER },
       tipTargetEuler: { ...IDENTITY_TIP_EULER },
       tipDirty: true,
-      powerUpToast: "Tip again or Done",
+      powerUpToast: null,
     });
     if (state.playMode === "online") localStateSyncPublisher?.();
   },
@@ -1015,13 +1014,12 @@ export const useGameStore = create<GameState>((set, get) => ({
     const kind = pickRandomKind(state.inventory[by], createPowerUpRng(plan.seed ^ 0xdeadbeef));
     if (!kind || !hasInventoryRoom(state.inventory[by])) {
       const swarmPopped = { ...state.swarmPopped, [index]: "deny" as const };
-      const who = get().displayName(by);
       set({
         swarm: null,
         swarmBusy: false,
         swarmPopped,
         swarmAiResult: null,
-        powerUpToast: `${who} denied the package!`,
+        powerUpToast: null,
       });
       if (state.playMode === "online") {
         localSwarmResultPublisher?.(by, index, "deny");
@@ -1038,7 +1036,7 @@ export const useGameStore = create<GameState>((set, get) => ({
         swarmBusy: false,
         swarmPopped,
         swarmAiResult: null,
-        powerUpToast: `${get().displayName(by)} denied the package!`,
+        powerUpToast: null,
       });
       if (state.playMode === "online") {
         localSwarmResultPublisher?.(by, index, "deny");
@@ -1049,9 +1047,6 @@ export const useGameStore = create<GameState>((set, get) => ({
 
     const inv = cloneInventory(state.inventory);
     inv[by] = next;
-    const label =
-      kind === "extra-turn" ? "Extra turn" : kind === "clear-row" ? "Clear row" : "Tip field";
-    const who = get().displayName(by);
     const swarmPopped = { ...state.swarmPopped, [index]: "claim" as const };
     set({
       inventory: inv,
@@ -1059,7 +1054,7 @@ export const useGameStore = create<GameState>((set, get) => ({
       swarmBusy: false,
       swarmPopped,
       swarmAiResult: null,
-      powerUpToast: `${who} caught ${label}!`,
+      powerUpToast: null,
     });
     if (state.playMode === "online") {
       localSwarmResultPublisher?.(by, index, "claim", kind);
@@ -1088,19 +1083,13 @@ export const useGameStore = create<GameState>((set, get) => ({
         if (next) {
           const inv = cloneInventory(state.inventory);
           inv.b = next;
-          const label =
-            aiResult.kind === "extra-turn"
-              ? "Extra turn"
-              : aiResult.kind === "clear-row"
-                ? "Clear row"
-                : "Tip field";
           set({
             inventory: inv,
             swarm: null,
             swarmBusy: false,
             swarmPopped: {},
             swarmAiResult: null,
-            powerUpToast: `Cyan caught ${label}!`,
+            powerUpToast: null,
           });
           afterSwarm(get, set);
           return;
@@ -1111,7 +1100,7 @@ export const useGameStore = create<GameState>((set, get) => ({
         swarmBusy: false,
         swarmPopped: {},
         swarmAiResult: null,
-        powerUpToast: "Nobody caught a package",
+        powerUpToast: null,
       });
       afterSwarm(get, set);
       return;
@@ -1122,7 +1111,7 @@ export const useGameStore = create<GameState>((set, get) => ({
       swarmBusy: false,
       swarmPopped: {},
       swarmAiResult: null,
-      powerUpToast: state.powerUpToast ?? "Nobody caught a package",
+      powerUpToast: null,
     });
     afterSwarm(get, set);
   },
@@ -1147,7 +1136,7 @@ export const useGameStore = create<GameState>((set, get) => ({
         swarmBusy: false,
         swarmPopped: { ...state.swarmPopped, [index]: "deny" },
         swarmAiResult: null,
-        powerUpToast: `${get().displayName(by)} denied the package!`,
+        powerUpToast: null,
       });
       afterSwarm(get, set);
       return;
@@ -1159,15 +1148,13 @@ export const useGameStore = create<GameState>((set, get) => ({
       if (next) {
         const inv = cloneInventory(state.inventory);
         inv[by] = next;
-        const label =
-          kind === "extra-turn" ? "Extra turn" : kind === "clear-row" ? "Clear row" : "Tip field";
         set({
           inventory: inv,
           swarm: null,
           swarmBusy: false,
           swarmPopped: { ...state.swarmPopped, [index]: "claim" },
           swarmAiResult: null,
-          powerUpToast: `${get().displayName(by)} caught ${label}!`,
+          powerUpToast: null,
         });
         afterSwarm(get, set);
         return;
@@ -1178,7 +1165,7 @@ export const useGameStore = create<GameState>((set, get) => ({
       swarmBusy: false,
       swarmPopped: { ...state.swarmPopped, [index]: "deny" },
       swarmAiResult: null,
-      powerUpToast: `${get().displayName(by)} denied the package!`,
+      powerUpToast: null,
     });
     afterSwarm(get, set);
   },

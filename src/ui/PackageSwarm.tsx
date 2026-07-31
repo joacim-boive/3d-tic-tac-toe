@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, type CSSProperties, type PointerEvent } from "react";
-import { MAX_PER_KIND, SWARM_DURATION_MS } from "@/game/powerUps";
+import { SWARM_DURATION_MS } from "@/game/powerUps";
 import { useGameStore } from "@/game/store";
 import type { PlayerId } from "@/game/types";
 
@@ -15,7 +15,6 @@ export function PackageSwarm() {
   const swarmPopped = useGameStore((s) => s.swarmPopped);
   const seat = useGameStore((s) => s.seat);
   const playMode = useGameStore((s) => s.playMode);
-  const inventory = useGameStore((s) => s.inventory);
   const catchSwarmPackage = useGameStore((s) => s.catchSwarmPackage);
   const endSwarm = useGameStore((s) => s.endSwarm);
   const ended = useRef(false);
@@ -52,8 +51,6 @@ export function PackageSwarm() {
   const catcher: PlayerId =
     playMode === "online" && seat != null ? seat : "a";
 
-  const catcherFull = !Object.values(inventory[catcher]).some((n) => n < MAX_PER_KIND);
-
   const onTap = (index: number, e: PointerEvent<HTMLButtonElement>) => {
     e.preventDefault();
     e.stopPropagation();
@@ -67,9 +64,6 @@ export function PackageSwarm() {
 
   return (
     <div className="swarm" role="dialog" aria-label="Compete for a power-up package">
-      <div className="swarm__hint">
-        <span>{canCatch ? (catcherFull ? "Tap to deny!" : "Tap to claim!") : "Watching…"}</span>
-      </div>
       {swarm.packages.map((pkg) => {
         const duration = SWARM_DURATION_MS * pkg.speed;
         const state = swarmPopped[pkg.id];
