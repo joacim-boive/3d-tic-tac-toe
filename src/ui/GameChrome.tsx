@@ -164,7 +164,7 @@ export function GameChrome({ children }: GameChromeProps) {
                 <kbd>drag</kbd> aim
               </li>
               <li>
-                <kbd>3 fingers</kbd> depth
+                <kbd>3 fingers</kbd> up/down depth
               </li>
               <li>
                 <kbd>2 fingers</kbd> orbit

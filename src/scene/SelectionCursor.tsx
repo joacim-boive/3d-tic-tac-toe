@@ -12,8 +12,8 @@ import { pickCellOnDepthPlane } from "./pickCellOnDepthPlane";
 import { useSliceHighlightStore } from "./sliceHighlightStore";
 import {
   clampDepthIndex,
-  depthStepsFromSpreadDelta,
-  pointerSpread,
+  depthStepsFromSwipeDelta,
+  pointerCentroidY,
   reconcileStickyDepth,
   stepStickyDepth,
 } from "./stickyDepth";
@@ -25,8 +25,8 @@ type SelectionCursorProps = {
 
 const DRAG_PX = 10;
 const MULTI_WAIT_MS = 120;
-/** 3-finger pinch: pixels of spread change per depth layer. */
-const TRI_SPREAD_PX = 48;
+/** 3-finger vertical swipe: pixels per depth layer. */
+const TRI_SWIPE_PX = 48;
 
 function isTouchPointer(type: string): boolean {
   return type === "touch" || type === "pen";
@@ -39,7 +39,7 @@ type AimSession = {
 };
 
 type TriDepthSession = {
-  startSpread: number;
+  startY: number;
   startDepth: number;
   axis: SliceAxis;
 };
@@ -47,7 +47,7 @@ type TriDepthSession = {
 /**
  * Sticky-depth aim cursor.
  * 1-finger / Shift+move: pick freely on the sticky plane (including up/down).
- * 3-finger pinch: change depth (pinch in = deeper). Q/E or Shift+wheel on desktop.
+ * 3-finger swipe up/down: change depth (up = deeper). Q/E or Shift+wheel on desktop.
  */
 export function SelectionCursor({ dims, spacing = 1 }: SelectionCursorProps) {
   const { camera, gl } = useThree();
@@ -291,9 +291,8 @@ export function SelectionCursor({ dims, spacing = 1 }: SelectionCursorProps) {
 
     const beginTriDepth = () => {
       const stickyNow = ensureStickyRef.current();
-      const spread = pointerSpread(listPointerPoints());
       triDepthRef.current = {
-        startSpread: spread,
+        startY: pointerCentroidY(listPointerPoints()),
         startDepth: stickyNow.index,
         axis: stickyNow.axis,
       };
@@ -307,8 +306,8 @@ export function SelectionCursor({ dims, spacing = 1 }: SelectionCursorProps) {
     const updateTriDepth = () => {
       const session = triDepthRef.current;
       if (!session) return;
-      const spread = pointerSpread(listPointerPoints());
-      const steps = depthStepsFromSpreadDelta(spread - session.startSpread, TRI_SPREAD_PX);
+      const y = pointerCentroidY(listPointerPoints());
+      const steps = depthStepsFromSwipeDelta(y - session.startY, TRI_SWIPE_PX);
       const dir = deepDirection(camera.position, session.axis);
       const depth = clampDepthIndex(session.startDepth + steps * dir, session.axis, dims);
       publishStickyRef.current(session.axis, depth);
@@ -451,7 +450,7 @@ export function SelectionCursor({ dims, spacing = 1 }: SelectionCursorProps) {
         // Still in tri-depth — refresh anchor so lifting one finger doesn't jump.
         const stickyNow = ensureStickyRef.current();
         triDepthRef.current = {
-          startSpread: pointerSpread(listPointerPoints()),
+          startY: pointerCentroidY(listPointerPoints()),
           startDepth: stickyNow.index,
           axis: stickyNow.axis,
         };

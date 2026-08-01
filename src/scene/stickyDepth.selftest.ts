@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import {
-  depthStepsFromSpreadDelta,
-  pointerSpread,
+  depthStepsFromSwipeDelta,
+  pointerCentroidY,
   reconcileStickyDepth,
   stepStickyDepth,
 } from "./stickyDepth";
@@ -30,13 +30,14 @@ assert.deepEqual(
   { axis: "z", index: 3 },
 );
 
-assert.ok(pointerSpread([
-  { x: 0, y: 0 },
-  { x: 10, y: 0 },
+assert.equal(pointerCentroidY([
   { x: 0, y: 10 },
-]) > 0);
-assert.equal(depthStepsFromSpreadDelta(-50, 50), 1);
-assert.equal(depthStepsFromSpreadDelta(50, 50), -1);
-assert.equal(depthStepsFromSpreadDelta(-20, 50), 0);
+  { x: 10, y: 20 },
+  { x: 20, y: 30 },
+]), 20);
+// Swipe up (deltaY negative) → deeper
+assert.equal(depthStepsFromSwipeDelta(-50, 50), 1);
+assert.equal(depthStepsFromSwipeDelta(50, 50), -1);
+assert.equal(depthStepsFromSwipeDelta(-20, 50), 0);
 
 console.log("stickyDepth.selftest: ok");

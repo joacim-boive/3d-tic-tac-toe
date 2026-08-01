@@ -46,30 +46,20 @@ export function stepStickyDepth(
   };
 }
 
-/** Mean distance of points from their centroid — used for 3-finger pinch depth. */
-export function pointerSpread(points: ReadonlyArray<{ x: number; y: number }>): number {
-  if (points.length < 2) return 0;
-  let cx = 0;
-  let cy = 0;
-  for (const p of points) {
-    cx += p.x;
-    cy += p.y;
-  }
-  cx /= points.length;
-  cy /= points.length;
+/** Average client Y of active pointers — used for 3-finger vertical depth. */
+export function pointerCentroidY(points: ReadonlyArray<{ x: number; y: number }>): number {
+  if (points.length === 0) return 0;
   let sum = 0;
-  for (const p of points) {
-    sum += Math.hypot(p.x - cx, p.y - cy);
-  }
+  for (const p of points) sum += p.y;
   return sum / points.length;
 }
 
 /**
- * Map a change in finger spread to depth steps.
- * Pinch in (negative delta) → deeper; spread out → shallower.
+ * Map a vertical swipe to depth steps.
+ * `deltaY` is currentY − startY in client coords (up → negative).
+ * Swipe up → deeper; swipe down → shallower.
  */
-export function depthStepsFromSpreadDelta(deltaSpread: number, pxPerStep: number): number {
+export function depthStepsFromSwipeDelta(deltaY: number, pxPerStep: number): number {
   if (pxPerStep <= 0) return 0;
-  // Negative deltaSpread (pinch) → positive deeper steps.
-  return Math.round(-deltaSpread / pxPerStep);
+  return Math.round(-deltaY / pxPerStep);
 }
