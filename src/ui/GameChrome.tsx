@@ -80,10 +80,10 @@ export function GameChrome({ children }: GameChromeProps) {
     statusText = `${displayName(winner)} wins`;
   } else if (status === "draw") {
     statusText = "Draw";
-  } else if (watchTipPlayback) {
-    statusText = playMode === "ai" ? "Cyan tipping…" : "Opponent tipping…";
   } else if (tipFalling) {
     statusText = "Balls falling…";
+  } else if (watchTipPlayback) {
+    statusText = playMode === "ai" ? "Cyan tipping…" : "Opponent tipping…";
   } else if (watchPowerUp?.kind === "clear-row") {
     statusText = `${displayName(watchPowerUp.by)} aiming Clear…`;
   } else if (watchPowerUp?.kind === "tip") {

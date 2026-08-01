@@ -479,12 +479,13 @@ function maybeAiSpendPowerUp(
   const counts = state.inventory.b;
   const rng = createPowerUpRng(randomSeed() ^ (state.occupiedCount * 997));
 
+  const dims = getPreset(state.presetId).dims;
+
   if (canSpend(counts, "extra-turn") && state.bonusPlacesRemaining === 0 && rng() < 0.28) {
     get().activatePowerUp("extra-turn");
     return;
   }
 
-  const dims = getPreset(state.presetId).dims;
   if (canSpend(counts, "clear-row") && rng() < 0.12) {
     const spent = spendPowerUp(counts, "clear-row");
     if (!spent) return;
@@ -504,8 +505,9 @@ function maybeAiSpendPowerUp(
     const toDown = choices[Math.floor(rng() * choices.length)]!;
     const tipEuler = eulerForTipDown(toDown);
     // Same rotate → ball-drop playback as an online opponent commit.
+    // Toast after settle (finishPowerUpBoard); status shows "Cyan tipping…" meanwhile.
     set({
-      powerUpToast: "Cyan tipped the field",
+      powerUpToast: null,
       watchPowerUp: null,
       watchTipPlayback: true,
       pendingTipSync: null,
@@ -761,6 +763,10 @@ function applyPlace(
       powerUpMode: null,
       pendingSwarmEarner: player,
     });
+    // AI Extra: this place consumed the bonus; schedule the real follow-up place.
+    if (!dropAnim && state.playMode === "ai" && player === AI_PLAYER) {
+      scheduleAiMove(get, set);
+    }
     return true;
   }
 

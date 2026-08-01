@@ -52,7 +52,7 @@ function testAiTipPlaybackSpendsAndHandsOff() {
 
   // Mirror maybeAiSpendPowerUp tip branch — start spectator-style playback.
   useGameStore.setState({
-    powerUpToast: "Cyan tipped the field",
+    powerUpToast: null,
     watchTipPlayback: true,
     tipEuler: { x: 0, y: 0, z: 0 },
     tipTargetEuler: { ...tipEuler },
@@ -76,6 +76,7 @@ function testAiTipPlaybackSpendsAndHandsOff() {
   assert(!s.tipFalling, "fall cleared");
   assert(s.currentPlayer === "a", "hand off to human after AI tip");
   assert(s.inventory.b.tip === invBefore.b.tip - 1, "AI tip spent on settle");
+  assert(s.powerUpToast === "Cyan tipped the field", "toast after settle");
   assert(s.board.size === expected.size, "board remapped");
   for (const [k, p] of expected) {
     assert(s.board.get(k) === p, `cell ${k} matches tip remap`);
