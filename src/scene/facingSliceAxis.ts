@@ -1,4 +1,5 @@
 import { Vector3 } from "three";
+import type { BoardDims } from "@/game/types";
 
 export type SliceAxis = "x" | "y" | "z";
 
@@ -9,21 +10,19 @@ export type SliceHighlight = {
 };
 
 /**
- * Pick the board axis whose face is most toward the camera (largest |view·axis|).
- * That plane is seen face-on instead of edge-on.
+ * Outer board face most toward the camera (largest |cam| axis, near side).
+ * Used so a place always shows a face-on side, never an edge-on internal cut.
  */
-export function facingSliceAxis(viewDir: Vector3): SliceAxis {
-  const ax = Math.abs(viewDir.x);
-  const ay = Math.abs(viewDir.y);
-  const az = Math.abs(viewDir.z);
-  if (ax >= ay && ax >= az) return "x";
-  if (ay >= az) return "y";
-  return "z";
-}
+export function facingOuterSlice(camPos: Vector3, dims: BoardDims): SliceHighlight {
+  const ax = Math.abs(camPos.x);
+  const ay = Math.abs(camPos.y);
+  const az = Math.abs(camPos.z);
 
-export function sliceIndexForCell(
-  axis: SliceAxis,
-  cell: { x: number; y: number; z: number },
-): number {
-  return cell[axis];
+  if (ax >= ay && ax >= az) {
+    return { axis: "x", index: camPos.x >= 0 ? dims.x - 1 : 0 };
+  }
+  if (ay >= az) {
+    return { axis: "y", index: camPos.y >= 0 ? dims.y - 1 : 0 };
+  }
+  return { axis: "z", index: camPos.z >= 0 ? dims.z - 1 : 0 };
 }

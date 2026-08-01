@@ -1,19 +1,17 @@
 import assert from "node:assert/strict";
 import { Vector3 } from "three";
-import { facingSliceAxis, sliceIndexForCell } from "./facingSliceAxis";
+import { facingOuterSlice } from "./facingSliceAxis";
 
-assert.equal(facingSliceAxis(new Vector3(1, 0, 0)), "x");
-assert.equal(facingSliceAxis(new Vector3(-0.9, 0.1, 0.2)), "x");
-assert.equal(facingSliceAxis(new Vector3(0, 1, 0)), "y");
-assert.equal(facingSliceAxis(new Vector3(0.2, -0.8, 0.3)), "y");
-assert.equal(facingSliceAxis(new Vector3(0, 0, 1)), "z");
-assert.equal(facingSliceAxis(new Vector3(0.3, 0.2, -0.9)), "z");
-// Ties break x > y > z by the comparisons above
-assert.equal(facingSliceAxis(new Vector3(1, 1, 0)), "x");
-assert.equal(facingSliceAxis(new Vector3(0, 1, 1)), "y");
+const dims = { x: 4, y: 4, z: 4 };
 
-assert.equal(sliceIndexForCell("x", { x: 2, y: 1, z: 0 }), 2);
-assert.equal(sliceIndexForCell("y", { x: 2, y: 1, z: 0 }), 1);
-assert.equal(sliceIndexForCell("z", { x: 2, y: 1, z: 0 }), 0);
+assert.deepEqual(facingOuterSlice(new Vector3(5, 1, 2), dims), { axis: "x", index: 3 });
+assert.deepEqual(facingOuterSlice(new Vector3(-5, 1, 2), dims), { axis: "x", index: 0 });
+assert.deepEqual(facingOuterSlice(new Vector3(1, 6, 2), dims), { axis: "y", index: 3 });
+assert.deepEqual(facingOuterSlice(new Vector3(1, -6, 2), dims), { axis: "y", index: 0 });
+assert.deepEqual(facingOuterSlice(new Vector3(1, 2, 7), dims), { axis: "z", index: 3 });
+assert.deepEqual(facingOuterSlice(new Vector3(1, 2, -7), dims), { axis: "z", index: 0 });
+// Ties break x > y > z
+assert.deepEqual(facingOuterSlice(new Vector3(5, 5, 1), dims), { axis: "x", index: 3 });
+assert.deepEqual(facingOuterSlice(new Vector3(1, 5, 5), dims), { axis: "y", index: 3 });
 
 console.log("facingSliceAxis.selftest: ok");

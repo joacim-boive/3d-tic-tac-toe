@@ -1,12 +1,12 @@
 "use client";
 
-import { useThree } from "@react-three/fiber";
-import { useEffect, useMemo, useRef } from "react";
-import { BufferGeometry, DoubleSide, Float32BufferAttribute, Vector3 } from "three";
+import { useFrame, useThree } from "@react-three/fiber";
+import { useMemo, useRef } from "react";
+import { BufferGeometry, DoubleSide, Float32BufferAttribute } from "three";
 import { cellToWorld } from "@/game/board";
 import { useGameStore } from "@/game/store";
 import type { BoardDims } from "@/game/types";
-import { facingSliceAxis, sliceIndexForCell, type SliceAxis } from "./facingSliceAxis";
+import { facingOuterSlice, type SliceAxis } from "./facingSliceAxis";
 import { useSliceHighlightStore } from "./sliceHighlightStore";
 
 type ActiveSliceProps = {
@@ -91,7 +91,6 @@ function planeLayout(
   const [cx, cy, cz] = cellToWorld(cell, dims, spacing);
 
   if (axis === "x") {
-    // YZ face — rotate so local +Z points along world +X
     return {
       position: [cx, 0, 0],
       rotation: [0, Math.PI / 2, 0],
@@ -100,7 +99,6 @@ function planeLayout(
     };
   }
   if (axis === "y") {
-    // XZ face — rotate so local +Z points along world +Y
     return {
       position: [0, cy, 0],
       rotation: [-Math.PI / 2, 0, 0],
@@ -117,39 +115,39 @@ function planeLayout(
 }
 
 /**
- * Soft fill + lattice on the face-most plane through the last placed marker.
- * Locked at place time from the camera-facing axis; stays put while orbiting.
+ * Soft fill + lattice on the cube face toward the camera at place time.
+ * Locked until the next place — does not follow aim or orbit.
  */
 export function ActiveSlice({ dims, spacing = 1 }: ActiveSliceProps) {
   const camera = useThree((s) => s.camera);
   const occupiedCount = useGameStore((s) => s.occupiedCount);
-  const lastPlaced = useGameStore((s) => s.lastPlaced);
   const phase = useGameStore((s) => s.phase);
   const slice = useSliceHighlightStore((s) => s.slice);
   const setSlice = useSliceHighlightStore((s) => s.setSlice);
   const clearSlice = useSliceHighlightStore((s) => s.clearSlice);
 
-  const viewDir = useMemo(() => new Vector3(), []);
   const lastCountRef = useRef(0);
 
-  useEffect(() => {
+  // Capture on the place frame so the camera matrix matches what the player saw.
+  useFrame(() => {
     if (phase !== "playing") {
-      clearSlice();
-      lastCountRef.current = 0;
+      if (lastCountRef.current !== 0 || slice !== null) {
+        lastCountRef.current = 0;
+        clearSlice();
+      }
       return;
     }
-    if (occupiedCount === 0 || !lastPlaced) {
-      clearSlice();
-      lastCountRef.current = 0;
+    if (occupiedCount === 0) {
+      if (lastCountRef.current !== 0 || slice !== null) {
+        lastCountRef.current = 0;
+        clearSlice();
+      }
       return;
     }
     if (occupiedCount === lastCountRef.current) return;
     lastCountRef.current = occupiedCount;
-
-    camera.getWorldDirection(viewDir);
-    const axis = facingSliceAxis(viewDir);
-    setSlice({ axis, index: sliceIndexForCell(axis, lastPlaced) });
-  }, [occupiedCount, lastPlaced, phase, camera, viewDir, setSlice, clearSlice]);
+    setSlice(facingOuterSlice(camera.position, dims));
+  });
 
   const layout = useMemo(() => {
     if (!slice) return null;
