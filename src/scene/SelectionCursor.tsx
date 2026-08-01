@@ -208,13 +208,12 @@ export function SelectionCursor({ dims, spacing = 1 }: SelectionCursorProps) {
     }
   });
 
-  // New board → clear sticky depth.
+  // New / empty board → clear sticky depth once (do not clear when aim ends).
   useEffect(() => {
-    if (occupiedCount === 0 && !aiming && !touchAiming) {
-      clearSticky();
-      stickyRef.current = null;
-    }
-  }, [occupiedCount, aiming, touchAiming, clearSticky]);
+    if (occupiedCount !== 0) return;
+    clearSticky();
+    stickyRef.current = null;
+  }, [occupiedCount, clearSticky]);
 
   // WASD along the depth axis updates sticky to match.
   useEffect(() => {
@@ -488,15 +487,35 @@ export function SelectionCursor({ dims, spacing = 1 }: SelectionCursorProps) {
         aimSessionRef.current = null;
         setTouchAiming(false);
         setAiming(false);
+        // Sticky plane stays lit after depth / aim ends.
       } else if (remaining === 1) {
+        const wasTri = triDepthRef.current !== null;
         endTriDepth();
-        setAiming(false);
-        setTouchAiming(false);
-        aimSessionRef.current = null;
-        dragRef.current.multi = false;
-        dragRef.current.touchAim = false;
+        const left = listPointerPoints()[0];
+        // After 3-finger depth, keep free aim on the sticky plane with the
+        // remaining finger — no need to lift and re-drag.
+        if (wasTri && left && touch) {
+          dragRef.current = {
+            active: true,
+            moved: true,
+            touchAim: true,
+            multi: false,
+            x: left.x,
+            y: left.y,
+          };
+          pendingAimRef.current = { x: left.x, y: left.y };
+          setTouchAiming(true);
+          setAiming(true);
+          const session = beginAimSessionRef.current("touch");
+          pickOnDepthRef.current(left.x, left.y, session.axis, session.depth);
+        } else {
+          setAiming(false);
+          setTouchAiming(false);
+          aimSessionRef.current = null;
+          dragRef.current.multi = false;
+          dragRef.current.touchAim = false;
+        }
       }
-
       if (!active || moved || touchAim || multi) return;
       if (status !== "playing" || dropBusyRef.current) return;
       if (!touch) placeAtCursor();

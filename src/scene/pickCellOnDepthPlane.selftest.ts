@@ -43,6 +43,39 @@ const dims: BoardDims = { x: 4, y: 4, z: 4 };
 }
 
 {
+  // Ray hits well below the board on the depth plane → clamp to bottom row y=0.
+  const origin = new Vector3(0, 0, 10);
+  const dir = new Vector3(0, -0.8, -1).normalize();
+  const hit = pickCellOnDepthPlane({
+    origin,
+    dir,
+    dims,
+    axis: "z",
+    depthIndex: 2,
+  });
+  assert.ok(hit);
+  assert.equal(hit.z, 2);
+  assert.equal(hit.y, 0);
+}
+
+{
+  // Ray hits above and past the side → clamp to top + side edge.
+  const origin = new Vector3(0, 0, 10);
+  const dir = new Vector3(2, 2, -1).normalize();
+  const hit = pickCellOnDepthPlane({
+    origin,
+    dir,
+    dims,
+    axis: "z",
+    depthIndex: 1,
+  });
+  assert.ok(hit);
+  assert.equal(hit.z, 1);
+  assert.equal(hit.x, 3);
+  assert.equal(hit.y, 3);
+}
+
+{
   const origin = new Vector3(0, 0, 10);
   const dir = new Vector3(0, 0, 1); // away from board
   const hit = pickCellOnDepthPlane({

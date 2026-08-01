@@ -161,7 +161,7 @@ export function GameChrome({ children }: GameChromeProps) {
           ) : touchUi ? (
             <>
               <li>
-                <kbd>drag</kbd> aim
+                <kbd>drag</kbd> aim on plane
               </li>
               <li>
                 <kbd>3 fingers</kbd> up/down depth

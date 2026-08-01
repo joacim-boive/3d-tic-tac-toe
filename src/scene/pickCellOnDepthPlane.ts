@@ -1,5 +1,5 @@
 import { Vector3 } from "three";
-import { cellToWorld, worldToCell } from "@/game/board";
+import { cellToWorld } from "@/game/board";
 import type { BoardDims, CellCoord } from "@/game/types";
 import type { SliceAxis } from "./facingSliceAxis";
 
@@ -13,9 +13,16 @@ type PickOnDepthPlaneArgs = {
   point?: Vector3;
 };
 
+function clampIndex(v: number, maxExclusive: number): number {
+  return Math.max(0, Math.min(maxExclusive - 1, Math.round(v)));
+}
+
 /**
  * Intersect a camera ray with the cell-center plane at `depthIndex` on `axis`,
  * and return the board cell there (axis coord forced to depthIndex).
+ *
+ * Hits past the board footprint clamp to the nearest in-bounds cell so edge /
+ * bottom cells stay reachable when aiming near the screen border.
  */
 export function pickCellOnDepthPlane({
   origin,
@@ -46,21 +53,17 @@ export function pickCellOnDepthPlane({
 
   point.copy(origin).addScaledVector(dir, t);
 
-  const hx = (dims.x * spacing) / 2;
-  const hy = (dims.y * spacing) / 2;
-  const hz = (dims.z * spacing) / 2;
-  const pad = spacing * 0.49;
-  // Keep the hit on the face even if the ray glances past the edge.
-  point.x = Math.max(-hx + pad, Math.min(hx - pad, point.x));
-  point.y = Math.max(-hy + pad, Math.min(hy - pad, point.y));
-  point.z = Math.max(-hz + pad, Math.min(hz - pad, point.z));
+  const ox = ((dims.x - 1) * spacing) / 2;
+  const oy = ((dims.y - 1) * spacing) / 2;
+  const oz = ((dims.z - 1) * spacing) / 2;
 
-  const cell = worldToCell(point.x, point.y, point.z, dims, spacing);
-  if (!cell) return null;
+  const x = clampIndex((point.x + ox) / spacing, dims.x);
+  const y = clampIndex((point.y + oy) / spacing, dims.y);
+  const z = clampIndex((point.z + oz) / spacing, dims.z);
 
   return {
-    x: axis === "x" ? depthIndex : cell.x,
-    y: axis === "y" ? depthIndex : cell.y,
-    z: axis === "z" ? depthIndex : cell.z,
+    x: axis === "x" ? depthIndex : x,
+    y: axis === "y" ? depthIndex : y,
+    z: axis === "z" ? depthIndex : z,
   };
 }
