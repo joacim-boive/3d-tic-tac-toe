@@ -342,6 +342,7 @@ button {
   user-select: none;
   -webkit-user-select: none;
   -webkit-touch-callout: none;
+  padding-bottom: env(safe-area-inset-bottom);
 }
 
 .game-viewport {
@@ -546,18 +547,22 @@ button {
 
 @media (max-width: 720px) {
   .chrome--top {
-    grid-template-columns: 1fr auto;
+    grid-template-columns: 1fr;
     grid-template-areas:
-      "meta actions"
-      "status status";
-  }
-
-  .chrome__meta {
-    grid-area: meta;
+      "actions"
+      "meta"
+      "status";
+    gap: 0.45rem;
   }
 
   .chrome__actions {
     grid-area: actions;
+    justify-content: flex-end;
+    flex-wrap: nowrap;
+  }
+
+  .chrome__meta {
+    grid-area: meta;
   }
 
   .chrome__status {
