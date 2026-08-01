@@ -1,7 +1,8 @@
 /**
  * ponytail: assert-based self-check for AI tactics — run with `npm run check:ai`.
  */
-import { findWinningMove, isExtremeAllowed, pickAiMove } from "./ai";
+import { bestQuietMove, findWinningMove, isExtremeAllowed, pickAiMove } from "./ai";
+import { pickAiPowerUpSpend } from "./aiPowerUps";
 import { cellKey, createEmptyBoard } from "./board";
 import type { BoardDims, CellCoord } from "./types";
 
@@ -11,6 +12,22 @@ function assert(cond: unknown, msg: string): asserts cond {
 
 function sameCell(a: CellCoord, b: CellCoord): boolean {
   return a.x === b.x && a.y === b.y && a.z === b.z;
+}
+
+function isNearCenter(cell: CellCoord, dims: BoardDims, placement: "free" | "drop"): boolean {
+  const cx = (dims.x - 1) / 2;
+  const cz = (dims.z - 1) / 2;
+  if (placement === "drop") {
+    assert(cell.y === 0, "drop opening must be on the floor");
+    // Prefer the central floor band — not a corner column.
+    const cornerX = cell.x === 0 || cell.x === dims.x - 1;
+    const cornerZ = cell.z === 0 || cell.z === dims.z - 1;
+    return !(cornerX && cornerZ) && Math.abs(cell.x - cx) <= 1.1 && Math.abs(cell.z - cz) <= 1.1;
+  }
+  const cy = (dims.y - 1) / 2;
+  return (
+    Math.abs(cell.x - cx) <= 1.1 && Math.abs(cell.y - cy) <= 1.1 && Math.abs(cell.z - cz) <= 1.1
+  );
 }
 
 function testTakesWinningMove() {
@@ -102,10 +119,174 @@ function testExtremeAllowedPresets() {
   assert(isExtremeAllowed("5x5x4"), "Extreme on 5×5×4");
 }
 
+function testDropOpeningPrefersCenter() {
+  const dims: BoardDims = { x: 4, y: 4, z: 4 };
+  const board = createEmptyBoard();
+
+  for (const difficulty of ["medium", "hard", "extreme"] as const) {
+    const move = pickAiMove(board, dims, difficulty, "b", 0, "drop", {
+      budgetMs: Number.POSITIVE_INFINITY,
+      maxDepth: 2,
+      rng: () => 0,
+    });
+    assert(move !== null, `${difficulty} drop opening`);
+    assert(
+      isNearCenter(move, dims, "drop"),
+      `${difficulty} drop opening must not be a floor corner, got (${move.x},${move.y},${move.z})`,
+    );
+  }
+}
+
+function testFreeOpeningPrefersCenter() {
+  const dims: BoardDims = { x: 4, y: 4, z: 4 };
+  const board = createEmptyBoard();
+  const move = bestQuietMove(
+    board,
+    dims,
+    "b",
+    [
+      { x: 0, y: 0, z: 0 },
+      { x: 1, y: 1, z: 1 },
+      { x: 3, y: 3, z: 3 },
+    ],
+    "free",
+  );
+  assert(move !== null && sameCell(move, { x: 1, y: 1, z: 1 }), "quiet pick prefers center");
+}
+
+function testClearIgnoresEmptyAndOwnOnlyLines() {
+  const dims: BoardDims = { x: 3, y: 3, z: 3 };
+  const board = createEmptyBoard();
+  board.set(cellKey(0, 0, 0), "b");
+  board.set(cellKey(1, 0, 0), "b");
+  board.set(cellKey(2, 1, 1), "a");
+
+  const decision = pickAiPowerUpSpend({
+    board,
+    dims,
+    aiPlayer: "b",
+    inventory: { "extra-turn": 0, "clear-row": 1, tip: 0 },
+    placement: "free",
+    difficulty: "extreme",
+    bonusPlacesRemaining: 0,
+  });
+
+  // If Clear fires, the chosen line must include an opponent mark.
+  if (decision.action === "clear-row") {
+    const { axis, a, b } = decision;
+    let theirs = 0;
+    if (axis === "x") {
+      for (let x = 0; x < dims.x; x++) {
+        if (board.get(cellKey(x, a, b)) === "a") theirs++;
+      }
+    } else if (axis === "y") {
+      for (let y = 0; y < dims.y; y++) {
+        if (board.get(cellKey(a, y, b)) === "a") theirs++;
+      }
+    } else {
+      for (let z = 0; z < dims.z; z++) {
+        if (board.get(cellKey(a, b, z)) === "a") theirs++;
+      }
+    }
+    assert(theirs > 0, "clear must hit at least one opponent mark");
+  }
+}
+
+function testClearBreaksOpponentForkThreat() {
+  const dims: BoardDims = { x: 4, y: 4, z: 4 };
+  const board = createEmptyBoard();
+  // Single open threat — blockable by place, so Clear should stay banked.
+  board.set(cellKey(0, 0, 0), "a");
+  board.set(cellKey(1, 0, 0), "a");
+  board.set(cellKey(2, 0, 0), "a");
+  board.set(cellKey(0, 1, 1), "b");
+  board.set(cellKey(1, 1, 1), "b");
+
+  const decision = pickAiPowerUpSpend({
+    board,
+    dims,
+    aiPlayer: "b",
+    inventory: { "extra-turn": 0, "clear-row": 1, tip: 0 },
+    placement: "free",
+    difficulty: "extreme",
+    bonusPlacesRemaining: 0,
+  });
+
+  assert(decision.action === "none", "single blockable threat → place, don't clear");
+}
+
+function testClearUsedOnOpponentFork() {
+  const dims: BoardDims = { x: 4, y: 4, z: 4 };
+  const board = createEmptyBoard();
+  // Human fork at (2,0,0): two winning replies if AI only places once.
+  board.set(cellKey(0, 0, 0), "a");
+  board.set(cellKey(1, 0, 0), "a");
+  board.set(cellKey(2, 1, 0), "a");
+  board.set(cellKey(2, 2, 0), "a");
+  board.set(cellKey(3, 3, 3), "b");
+  board.set(cellKey(3, 3, 2), "b");
+  board.set(cellKey(3, 2, 3), "b");
+
+  const decision = pickAiPowerUpSpend({
+    board,
+    dims,
+    aiPlayer: "b",
+    inventory: { "extra-turn": 0, "clear-row": 1, tip: 0 },
+    placement: "free",
+    difficulty: "extreme",
+    bonusPlacesRemaining: 0,
+  });
+
+  assert(decision.action === "clear-row", "clear to break an unstoppable fork");
+}
+
+function testExtraTurnWhenDoublePlaceWins() {
+  const dims: BoardDims = { x: 3, y: 3, z: 3 };
+  const board = createEmptyBoard();
+  // b at (0,0,0); two places (1,0,0)+(2,0,0) win. No single-place win.
+  board.set(cellKey(0, 0, 0), "b");
+  board.set(cellKey(0, 1, 0), "a");
+  board.set(cellKey(1, 1, 0), "a");
+
+  const decision = pickAiPowerUpSpend({
+    board,
+    dims,
+    aiPlayer: "b",
+    inventory: { "extra-turn": 1, "clear-row": 0, tip: 0 },
+    placement: "free",
+    difficulty: "hard",
+    bonusPlacesRemaining: 0,
+  });
+
+  assert(decision.action === "extra-turn", "use Extra when two places finish a win");
+}
+
+function testNoClearOnEmptyBoard() {
+  const dims: BoardDims = { x: 4, y: 4, z: 4 };
+  const board = createEmptyBoard();
+  const decision = pickAiPowerUpSpend({
+    board,
+    dims,
+    aiPlayer: "b",
+    inventory: { "extra-turn": 1, "clear-row": 1, tip: 1 },
+    placement: "free",
+    difficulty: "extreme",
+    bonusPlacesRemaining: 0,
+  });
+  assert(decision.action === "none", "empty board: no power-up spend");
+}
+
 testTakesWinningMove();
 testBlocksOpponentWin();
 testFindWinningMoveHelper();
 testTakesForkOnLargerBoard();
 testBlocksOpponentFork();
 testExtremeAllowedPresets();
+testDropOpeningPrefersCenter();
+testFreeOpeningPrefersCenter();
+testClearIgnoresEmptyAndOwnOnlyLines();
+testClearBreaksOpponentForkThreat();
+testClearUsedOnOpponentFork();
+testExtraTurnWhenDoublePlaceWins();
+testNoClearOnEmptyBoard();
 console.log("ai.selftest: ok");

@@ -5,10 +5,18 @@ import {
   LINE_DIRECTIONS,
   listDropLandings,
   listEmptyCells,
+  parseCellKey,
   randomEmptyCell,
   type Board,
 } from "./board";
-import type { AiDifficulty, BoardDims, CellCoord, PlacementMode, PlayerId, PresetId } from "./types";
+import type {
+  AiDifficulty,
+  BoardDims,
+  CellCoord,
+  PlacementMode,
+  PlayerId,
+  PresetId,
+} from "./types";
 import { cellCount, winLength } from "./types";
 
 const EASY_RANDOM_RATE = 0.7;
@@ -31,6 +39,12 @@ const EXTREME_BUDGET_MS = 450;
 const WIN_SCORE = 1_000_000;
 /** Leaf bonus for an open (need − 1) window — creates an immediate threat next ply. */
 const THREAT_SCORE = 80_000;
+/**
+ * Geometric center pull per occupied cell. Pure window-counts overvalue corners
+ * on win-length-sized boards (space diagonals), which made Drop open on a floor
+ * corner. Threats still dwarf this (80k).
+ */
+const POSITIONAL_WEIGHT = 10;
 
 export type Rng = () => number;
 
@@ -194,6 +208,18 @@ function centerBias(cell: CellCoord, dims: BoardDims): number {
   return -d;
 }
 
+/** Drop cares about column (x,z) control — height is forced by gravity. */
+function dropColumnBias(cell: CellCoord, dims: BoardDims): number {
+  const cx = (dims.x - 1) / 2;
+  const cz = (dims.z - 1) / 2;
+  return -((cell.x - cx) ** 2 + (cell.z - cz) ** 2);
+}
+
+function positionalBonus(cell: CellCoord, dims: BoardDims, placement: PlacementMode): number {
+  const bias = placement === "drop" ? dropColumnBias(cell, dims) : centerBias(cell, dims);
+  return POSITIONAL_WEIGHT * bias;
+}
+
 function sameCell(a: CellCoord, b: CellCoord): boolean {
   return a.x === b.x && a.y === b.y && a.z === b.z;
 }
@@ -218,7 +244,12 @@ function orderEmpties(
 }
 
 /** Score open win-windows: unblocked own marks positive, opponent negative. */
-function evaluate(board: Board, dims: BoardDims, aiPlayer: PlayerId): number {
+export function evaluate(
+  board: Board,
+  dims: BoardDims,
+  aiPlayer: PlayerId,
+  placement: PlacementMode = "free",
+): number {
   const need = winLength(dims);
   const human = opponentOf(aiPlayer);
   let score = 0;
@@ -253,7 +284,49 @@ function evaluate(board: Board, dims: BoardDims, aiPlayer: PlayerId): number {
     }
   }
 
+  // Soft center / column preference — keeps Drop openings off floor corners.
+  for (const [key, owner] of board) {
+    const bonus = positionalBonus(parseCellKey(key), dims, placement);
+    score += owner === aiPlayer ? bonus : -bonus;
+  }
+
   return score;
+}
+
+/**
+ * Best non-tactical placement by static eval (center-aware).
+ * Used for Medium quiet moves and as the Hard/Extreme search seed.
+ */
+export function bestQuietMove(
+  board: Board,
+  dims: BoardDims,
+  aiPlayer: PlayerId,
+  empties: CellCoord[],
+  placement: PlacementMode = "free",
+  rng: Rng = Math.random,
+): CellCoord | null {
+  if (empties.length === 0) return null;
+
+  let bestScore = -Infinity;
+  const tied: CellCoord[] = [];
+
+  for (const cell of empties) {
+    const key = cellKey(cell.x, cell.y, cell.z);
+    board.set(key, aiPlayer);
+    const win = checkWin(board, dims, cell, aiPlayer);
+    const score = win ? WIN_SCORE : evaluate(board, dims, aiPlayer, placement);
+    board.delete(key);
+
+    if (score > bestScore + 1e-9) {
+      bestScore = score;
+      tied.length = 0;
+      tied.push(cell);
+    } else if (Math.abs(score - bestScore) <= 1e-9) {
+      tied.push(cell);
+    }
+  }
+
+  return pickRandom(tied, rng);
 }
 
 type SearchResult = { score: number; move: CellCoord | null; aborted: boolean };
@@ -338,7 +411,11 @@ function minimax(
   }
 
   if (depthLeft === 0) {
-    return { score: evaluate(board, dims, ctx.aiPlayer), move: null, aborted: false };
+    return {
+      score: evaluate(board, dims, ctx.aiPlayer, ctx.placement),
+      move: null,
+      aborted: false,
+    };
   }
 
   const maximizing = toMove === ctx.aiPlayer;
@@ -431,6 +508,12 @@ function searchMove(
   const forced = forcedTacticalMove(board, dims, aiPlayer, empties, placement);
   if (forced) return forced;
 
+  // Early game: shallow α-β + window-window counts overvalue corners (esp. Drop).
+  // Trust center/column quiet eval for the opening instead.
+  if (occupiedCount <= 2) {
+    return bestQuietMove(board, dims, aiPlayer, empties, placement, rng);
+  }
+
   const total = cellCount(dims);
   const defaultCap = defaultMaxDepth(dims, difficulty);
   const maxDepth = Math.min(options.maxDepth ?? defaultCap, total - occupiedCount);
@@ -452,7 +535,7 @@ function searchMove(
     useTt,
   };
 
-  let best = pickRandom(empties, rng);
+  let best = bestQuietMove(board, dims, aiPlayer, empties, placement, rng);
   for (let depth = 1; depth <= maxDepth; depth++) {
     if (performance.now() >= deadline) break;
     ctx.rootDepth = depth;
@@ -478,7 +561,7 @@ function mediumMove(
   if (forced) return forced;
   const threat = findThreatMove(board, dims, aiPlayer, empties, placement, rng);
   if (threat) return threat;
-  return pickRandom(empties, rng);
+  return bestQuietMove(board, dims, aiPlayer, empties, placement, rng);
 }
 
 function easyMove(
@@ -518,7 +601,17 @@ export function pickAiMove(
     case "medium":
       return mediumMove(board, dims, aiPlayer, empties, placement, rng);
     case "hard":
-      return searchMove(board, dims, aiPlayer, empties, occupiedCount, placement, options, rng, "hard");
+      return searchMove(
+        board,
+        dims,
+        aiPlayer,
+        empties,
+        occupiedCount,
+        placement,
+        options,
+        rng,
+        "hard",
+      );
     case "extreme":
       return searchMove(
         board,

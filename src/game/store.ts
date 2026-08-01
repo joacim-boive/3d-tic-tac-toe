@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import { pickAiMove } from "./ai";
+import { pickAiPowerUpSpend } from "./aiPowerUps";
 import {
   cellKey,
   checkWin,
@@ -37,7 +38,6 @@ import {
   canTipPreset,
   eulerForTipDown,
   tipBoardFromEuler,
-  tipChoices,
   tipDownFromEuler,
   type TipDown,
   type TipEuler,
@@ -249,11 +249,7 @@ type GameState = {
     clearAxis?: Axis;
     cursor?: CellCoord;
   }) => void;
-  applyRemoteTipAim: (msg: {
-    by: PlayerId;
-    active: boolean;
-    toDown?: TipDown | null;
-  }) => void;
+  applyRemoteTipAim: (msg: { by: PlayerId; active: boolean; toDown?: TipDown | null }) => void;
   applyRemoteTipCommit: (msg: { by: PlayerId; tipEuler: TipEuler }) => void;
   applyRemoteSwarm: (plan: SwarmPlan) => void;
   applyRemoteSwarmResult: (
@@ -292,12 +288,7 @@ let localPowerUpNotifyPublisher:
   | ((kind: PowerUpId, by: PlayerId, phase: "activate" | "cancel" | "confirm") => void)
   | null = null;
 let localClearAimPublisher:
-  | ((msg: {
-      by: PlayerId;
-      active: boolean;
-      clearAxis?: Axis;
-      cursor?: CellCoord;
-    }) => void)
+  | ((msg: { by: PlayerId; active: boolean; clearAxis?: Axis; cursor?: CellCoord }) => void)
   | null = null;
 let localTipAimPublisher:
   | ((msg: { by: PlayerId; active: boolean; toDown?: TipDown | null }) => void)
@@ -332,12 +323,7 @@ export function setLocalPowerUpNotifyPublisher(
 
 export function setLocalClearAimPublisher(
   fn:
-    | ((msg: {
-        by: PlayerId;
-        active: boolean;
-        clearAxis?: Axis;
-        cursor?: CellCoord;
-      }) => void)
+    | ((msg: { by: PlayerId; active: boolean; clearAxis?: Axis; cursor?: CellCoord }) => void)
     | null,
 ): void {
   localClearAimPublisher = fn;
@@ -469,41 +455,38 @@ function scheduleAiMove(get: () => GameState, set: (partial: Partial<GameState>)
   }, thinkDelay);
 }
 
-/** AI may spend a banked power-up before placing (simple luck heuristics). */
-function maybeAiSpendPowerUp(
-  get: () => GameState,
-  set: (partial: Partial<GameState>) => void,
-) {
+/** AI spends banked power-ups with board-aware heuristics (not RNG). */
+function maybeAiSpendPowerUp(get: () => GameState, set: (partial: Partial<GameState>) => void) {
   const state = get();
   if (!state.powerUpsEnabled) return;
-  const counts = state.inventory.b;
-  const rng = createPowerUpRng(randomSeed() ^ (state.occupiedCount * 997));
-
   const dims = getPreset(state.presetId).dims;
 
-  if (canSpend(counts, "extra-turn") && state.bonusPlacesRemaining === 0 && rng() < 0.28) {
+  const decision = pickAiPowerUpSpend({
+    board: state.board,
+    dims,
+    aiPlayer: AI_PLAYER,
+    inventory: state.inventory.b,
+    placement: state.placement,
+    difficulty: state.aiDifficulty,
+    bonusPlacesRemaining: state.bonusPlacesRemaining,
+  });
+
+  if (decision.action === "extra-turn") {
     get().activatePowerUp("extra-turn");
     return;
   }
 
-  if (canSpend(counts, "clear-row") && rng() < 0.12) {
-    const spent = spendPowerUp(counts, "clear-row");
+  if (decision.action === "clear-row") {
+    const spent = spendPowerUp(state.inventory.b, "clear-row");
     if (!spent) return;
-    const axis: Axis = (["x", "y", "z"] as const)[Math.floor(rng() * 3)]!;
-    const aMax = axis === "x" ? dims.y : axis === "y" ? dims.x : dims.x;
-    const bMax = axis === "x" ? dims.z : axis === "y" ? dims.z : dims.y;
-    const a = Math.floor(rng() * aMax);
-    const b = Math.floor(rng() * bMax);
-    let board = clearAxisLine(state.board, dims, axis, a, b);
+    let board = clearAxisLine(state.board, dims, decision.axis, decision.a, decision.b);
     if (state.placement === "drop") board = repackDrop(board, dims);
     finishPowerUpBoard(get, set, board, AI_PLAYER, spent, "Cyan cleared a row");
     return;
   }
 
-  if (canSpend(counts, "tip") && canTipPreset(dims) && rng() < 0.1) {
-    const choices = tipChoices();
-    const toDown = choices[Math.floor(rng() * choices.length)]!;
-    const tipEuler = eulerForTipDown(toDown);
+  if (decision.action === "tip") {
+    const tipEuler = eulerForTipDown(decision.toDown);
     // Same rotate → ball-drop playback as an online opponent commit.
     // Toast after settle (finishPowerUpBoard); status shows "Cyan tipping…" meanwhile.
     set({
@@ -535,8 +518,7 @@ function finishPowerUpBoard(
   const win = checkWinAny(board, dims);
   const nextPlayer = opponentOf(by);
 
-  const opponentToast =
-    state.playMode === "ai" && by === AI_PLAYER && _toast ? _toast : null;
+  const opponentToast = state.playMode === "ai" && by === AI_PLAYER && _toast ? _toast : null;
 
   const tipReset = {
     tipFalling: false,
