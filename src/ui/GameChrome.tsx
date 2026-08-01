@@ -164,13 +164,13 @@ export function GameChrome({ children }: GameChromeProps) {
                 <kbd>drag</kbd> aim
               </li>
               <li>
-                <kbd>drag up</kbd> deeper
+                <kbd>drag up</kbd> depth
+              </li>
+              <li>
+                <kbd>tap</kbd> on plane
               </li>
               <li>
                 <kbd>2 fingers</kbd> orbit
-              </li>
-              <li>
-                <kbd>pinch</kbd> zoom
               </li>
               <li>
                 <kbd>{placement === "drop" ? "Drop" : "Place"}</kbd> commit
@@ -182,9 +182,6 @@ export function GameChrome({ children }: GameChromeProps) {
                 <kbd>drag</kbd> orbit
               </li>
               <li>
-                <kbd>pinch</kbd> zoom
-              </li>
-              <li>
                 <kbd>Shift</kbd> + move aim
               </li>
               <li>
@@ -193,11 +190,9 @@ export function GameChrome({ children }: GameChromeProps) {
               <li>
                 <kbd>WASD</kbd> {placement === "drop" ? "column" : "nudge"}
               </li>
-              {placement === "free" ? (
-                <li>
-                  <kbd>Q</kbd>/<kbd>E</kbd> depth
-                </li>
-              ) : null}
+              <li>
+                <kbd>Q</kbd>/<kbd>E</kbd> depth
+              </li>
               <li>
                 <kbd>Space</kbd> / click {placement === "drop" ? "drop" : "place"}
               </li>

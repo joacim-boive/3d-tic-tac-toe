@@ -1,12 +1,11 @@
 "use client";
 
-import { useFrame, useThree } from "@react-three/fiber";
-import { useMemo, useRef } from "react";
+import { useMemo } from "react";
 import { BufferGeometry, DoubleSide, Float32BufferAttribute } from "three";
 import { cellToWorld } from "@/game/board";
 import { useGameStore } from "@/game/store";
 import type { BoardDims } from "@/game/types";
-import { sliceThroughCursor, type SliceAxis } from "./facingSliceAxis";
+import type { SliceAxis } from "./facingSliceAxis";
 import { useSliceHighlightStore } from "./sliceHighlightStore";
 
 type ActiveSliceProps = {
@@ -114,47 +113,13 @@ function planeLayout(
   };
 }
 
-function sameSlice(
-  a: { axis: SliceAxis; index: number } | null,
-  b: { axis: SliceAxis; index: number },
-): boolean {
-  return a !== null && a.axis === b.axis && a.index === b.index;
-}
-
 /**
- * Face-on slice through the aimed cell’s depth.
- * Tracks the cursor while aiming; stays put while orbiting until the next aim.
+ * Face-on sticky depth plane. SelectionCursor owns updates; this only renders.
+ * Stays visible after aim ends until the next game / axis change.
  */
 export function ActiveSlice({ dims, spacing = 1 }: ActiveSliceProps) {
-  const camera = useThree((s) => s.camera);
   const phase = useGameStore((s) => s.phase);
-  const aiming = useGameStore((s) => s.aiming);
-  const cursor = useGameStore((s) => s.cursor);
-  const placement = useGameStore((s) => s.placement);
   const slice = useSliceHighlightStore((s) => s.slice);
-  const setSlice = useSliceHighlightStore((s) => s.setSlice);
-  const clearSlice = useSliceHighlightStore((s) => s.clearSlice);
-
-  const wasAimingRef = useRef(false);
-
-  useFrame(() => {
-    if (phase !== "playing") {
-      if (slice !== null) clearSlice();
-      wasAimingRef.current = false;
-      return;
-    }
-
-    if (!aiming) {
-      wasAimingRef.current = false;
-      return;
-    }
-
-    const next = sliceThroughCursor(camera.position, cursor, dims, placement);
-    if (!wasAimingRef.current || !sameSlice(slice, next)) {
-      setSlice(next);
-    }
-    wasAimingRef.current = true;
-  });
 
   const layout = useMemo(() => {
     if (!slice) return null;

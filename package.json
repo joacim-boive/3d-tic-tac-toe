@@ -22,6 +22,7 @@
     "check:selfplay": "npx tsx src/game/selfPlay.selftest.ts",
     "check:prefs": "npx tsx src/game/setupPrefs.selftest.ts",
     "check:slice": "npx tsx src/scene/facingSliceAxis.selftest.ts",
+    "check:sticky": "npx tsx src/scene/stickyDepth.selftest.ts",
     "eval:selfplay": "npx tsx src/game/selfPlay.cli.ts"
   },
   "dependencies": {

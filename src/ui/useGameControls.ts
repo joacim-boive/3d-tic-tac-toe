@@ -61,20 +61,6 @@ export function useGameControls() {
           e.preventDefault();
           nudgeCursor(0, -1, 0);
           break;
-        case "q":
-        case "Q":
-        case "[":
-          if (status !== "playing") break;
-          e.preventDefault();
-          nudgeCursor(0, 0, -1);
-          break;
-        case "e":
-        case "E":
-        case "]":
-          if (status !== "playing") break;
-          e.preventDefault();
-          nudgeCursor(0, 0, 1);
-          break;
         case "Escape":
           if (playMode === "online") {
             void leaveOnlineSession();
