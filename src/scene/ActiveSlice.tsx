@@ -85,17 +85,17 @@ export function ActiveSlice({ dims, spacing = 1 }: ActiveSliceProps) {
         <meshBasicMaterial
           color="#6eb8d4"
           transparent
-          opacity={0.075}
+          opacity={0.11}
           depthWrite={false}
           side={DoubleSide}
           fog={false}
         />
       </mesh>
       <lineSegments geometry={lattice} renderOrder={2}>
-        <lineBasicMaterial color="#9fd4e8" transparent opacity={0.5} depthWrite={false} fog={false} />
+        <lineBasicMaterial color="#9fd4e8" transparent opacity={0.58} depthWrite={false} fog={false} />
       </lineSegments>
       <lineSegments geometry={border} renderOrder={2}>
-        <lineBasicMaterial color="#b8e4f2" transparent opacity={0.78} depthWrite={false} fog={false} />
+        <lineBasicMaterial color="#b8e4f2" transparent opacity={0.85} depthWrite={false} fog={false} />
       </lineSegments>
     </group>
   );

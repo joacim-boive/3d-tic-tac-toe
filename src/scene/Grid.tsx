@@ -74,9 +74,9 @@ export function Grid({ dims, spacing = 1 }: GridProps) {
   }, [dims.x, dims.y, dims.z, spacing]);
 
   const maxDim = Math.max(dims.x, dims.y, dims.z) * spacing;
-  const fadeNear = maxDim * 0.4;
-  const fadeFar = maxDim * 2.05;
-  const sliceFalloff = spacing * 2.4;
+  const fadeNear = maxDim * 0.45;
+  const fadeFar = maxDim * 2.35;
+  const sliceFalloff = spacing * 1.75;
   const [, , sliceZ] = cellToWorld(cursor, dims, spacing);
   const sliceActive = status === "playing" ? 1 : 0;
 
@@ -117,7 +117,8 @@ export function Grid({ dims, spacing = 1 }: GridProps) {
            vDepthFade = 1.0 - smoothstep( uNear, uFar, dist );
            float sliceDist = abs( worldPos.z - uSliceZ );
            float sliceKeep = 1.0 - smoothstep( 0.0, uSliceFalloff, sliceDist );
-           vSliceFade = mix( 1.0, mix( 0.28, 1.0, sliceKeep ), uSliceActive );`,
+           // Prefer the active layer; keep the rest of the box clearly readable.
+           vSliceFade = mix( 1.0, mix( 0.7, 1.0, sliceKeep ), uSliceActive );`,
         );
 
       shader.fragmentShader = shader.fragmentShader
@@ -130,7 +131,7 @@ export function Grid({ dims, spacing = 1 }: GridProps) {
         .replace(
           "#include <color_fragment>",
           `#include <color_fragment>
-           float depthKeep = mix( 0.18, 1.0, vDepthFade );
+           float depthKeep = mix( 0.32, 1.0, vDepthFade );
            diffuseColor.a *= depthKeep * vSliceFade;`,
         );
     };
@@ -162,7 +163,7 @@ export function Grid({ dims, spacing = 1 }: GridProps) {
         ref={materialRef}
         color="#8a9bab"
         transparent
-        opacity={0.52}
+        opacity={0.48}
         depthWrite={false}
       />
     </lineSegments>
