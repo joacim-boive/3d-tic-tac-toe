@@ -216,22 +216,6 @@ export function GameChrome({ children }: GameChromeProps) {
                 <kbd>pinch</kbd> zoom
               </li>
             </>
-          ) : powerUpMode === "tip" || tipFalling ? (
-            tipFalling ? (
-              <li>Balls falling…</li>
-            ) : (
-              <>
-                <li>
-                  <kbd>left/right</kbd> spin
-                </li>
-                <li>
-                  <kbd>up/down</kbd> flip
-                </li>
-                <li>
-                  <kbd>Commit</kbd> drop balls
-                </li>
-              </>
-            )
           ) : powerUpMode === "clear-row" ? (
             touchUi ? (
               <>
