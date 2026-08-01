@@ -3,7 +3,6 @@
 import { useFrame, useThree } from "@react-three/fiber";
 import { useMemo, useRef } from "react";
 import { BufferGeometry, DoubleSide, Float32BufferAttribute } from "three";
-import { cellToWorld } from "@/game/board";
 import { useGameStore } from "@/game/store";
 import type { BoardDims } from "@/game/types";
 import { facingOuterSlice, type SliceAxis } from "./facingSliceAxis";
@@ -82,17 +81,15 @@ function planeLayout(
   widthCells: number;
   heightCells: number;
 } {
-  const cell =
-    axis === "x"
-      ? { x: index, y: 0, z: 0 }
-      : axis === "y"
-        ? { x: 0, y: index, z: 0 }
-        : { x: 0, y: 0, z: index };
-  const [cx, cy, cz] = cellToWorld(cell, dims, spacing);
+  // Sit on the outer lattice boundary (not the outer cell center) so nothing
+  // draws in front of the "front facing side."
+  const hx = (dims.x * spacing) / 2;
+  const hy = (dims.y * spacing) / 2;
+  const hz = (dims.z * spacing) / 2;
 
   if (axis === "x") {
     return {
-      position: [cx, 0, 0],
+      position: [index === 0 ? -hx : hx, 0, 0],
       rotation: [0, Math.PI / 2, 0],
       widthCells: dims.z,
       heightCells: dims.y,
@@ -100,14 +97,14 @@ function planeLayout(
   }
   if (axis === "y") {
     return {
-      position: [0, cy, 0],
+      position: [0, index === 0 ? -hy : hy, 0],
       rotation: [-Math.PI / 2, 0, 0],
       widthCells: dims.x,
       heightCells: dims.z,
     };
   }
   return {
-    position: [0, 0, cz],
+    position: [0, 0, index === 0 ? -hz : hz],
     rotation: [0, 0, 0],
     widthCells: dims.x,
     heightCells: dims.y,
