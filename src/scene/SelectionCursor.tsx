@@ -7,6 +7,8 @@ import { cellKey, cellToWorld } from "@/game/board";
 import { useGameStore } from "@/game/store";
 import { PLAYER_COLORS, type BoardDims } from "@/game/types";
 import { pickCellAlongRay } from "./pickCellAlongRay";
+import { facingOuterSlice } from "./facingSliceAxis";
+import { useSliceHighlightStore } from "./sliceHighlightStore";
 
 type SelectionCursorProps = {
   dims: BoardDims;
@@ -34,6 +36,7 @@ export function SelectionCursor({ dims, spacing = 1 }: SelectionCursorProps) {
   const currentPlayer = useGameStore((s) => s.currentPlayer);
   const board = useGameStore((s) => s.board);
   const setCursor = useGameStore((s) => s.setCursor);
+  const setAiming = useGameStore((s) => s.setAiming);
   const placeAtCursor = useGameStore((s) => s.placeAtCursor);
   const placement = useGameStore((s) => s.placement);
   const dropBusy = useGameStore((s) => s.dropBusy);
@@ -93,6 +96,7 @@ export function SelectionCursor({ dims, spacing = 1 }: SelectionCursorProps) {
   useEffect(() => {
     if (status !== "playing") {
       setTouchAiming(false);
+      setAiming(false);
       return;
     }
 
@@ -116,10 +120,17 @@ export function SelectionCursor({ dims, spacing = 1 }: SelectionCursorProps) {
       });
     };
 
+    const highlightFrontFace = () => {
+      useSliceHighlightStore.getState().setSlice(facingOuterSlice(camera.position, dims));
+    };
+
     const aimAt = (clientX: number, clientY: number) => {
       if (status !== "playing") return;
       const cell = clientToCell(clientX, clientY);
-      if (cell) setCursor(cell);
+      if (cell) {
+        setCursor(cell);
+        highlightFrontFace();
+      }
     };
 
     const clearAimDelay = () => {
@@ -140,12 +151,14 @@ export function SelectionCursor({ dims, spacing = 1 }: SelectionCursorProps) {
         y: 0,
       };
       setTouchAiming(false);
+      setAiming(false);
     };
 
     const beginTouchAim = () => {
       if (dragRef.current.multi || pointersRef.current.size !== 1) return;
       dragRef.current.touchAim = true;
       setTouchAiming(true);
+      setAiming(true);
       aimAt(pendingAimRef.current.x, pendingAimRef.current.y);
     };
 
@@ -167,6 +180,7 @@ export function SelectionCursor({ dims, spacing = 1 }: SelectionCursorProps) {
         dragRef.current.touchAim = false;
         dragRef.current.moved = true;
         setTouchAiming(false);
+        setAiming(false);
         return;
       }
 
@@ -231,6 +245,7 @@ export function SelectionCursor({ dims, spacing = 1 }: SelectionCursorProps) {
         dragRef.current.touchAim = false;
         dragRef.current.multi = false;
         setTouchAiming(false);
+        setAiming(false);
       }
 
       // Touch never auto-places — Place button commits after preview.
@@ -251,7 +266,7 @@ export function SelectionCursor({ dims, spacing = 1 }: SelectionCursorProps) {
       el.removeEventListener("pointerup", onUp);
       el.removeEventListener("pointercancel", onUp);
     };
-  }, [gl, camera, dims, spacing, placeAtCursor, setCursor, status, raycaster, ndc, point, center]);
+  }, [gl, camera, dims, spacing, placeAtCursor, setCursor, setAiming, status, raycaster, ndc, point, center]);
 
   if (status !== "playing") return null;
 

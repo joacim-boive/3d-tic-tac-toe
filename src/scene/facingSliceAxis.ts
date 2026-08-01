@@ -11,7 +11,7 @@ export type SliceHighlight = {
 
 /**
  * Outer board face most toward the camera (largest |cam| axis, near side).
- * Used so a place always shows a face-on side, never an edge-on internal cut.
+ * Chosen when aiming starts so the front side is highlighted before place/drop.
  */
 export function facingOuterSlice(camPos: Vector3, dims: BoardDims): SliceHighlight {
   const ax = Math.abs(camPos.x);

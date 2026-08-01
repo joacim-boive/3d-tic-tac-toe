@@ -111,39 +111,46 @@ function planeLayout(
   };
 }
 
+function sameSlice(
+  a: { axis: SliceAxis; index: number } | null,
+  b: { axis: SliceAxis; index: number },
+): boolean {
+  return a !== null && a.axis === b.axis && a.index === b.index;
+}
+
 /**
- * Soft fill + lattice on the cube face toward the camera at place time.
- * Locked until the next place — does not follow aim or orbit.
+ * Highlights the outer cube face toward the camera while aiming.
+ * Updates as soon as aim starts (Shift / touch drag) — not on place/drop.
+ * Stays put while orbiting until the next aim.
  */
 export function ActiveSlice({ dims, spacing = 1 }: ActiveSliceProps) {
   const camera = useThree((s) => s.camera);
-  const occupiedCount = useGameStore((s) => s.occupiedCount);
   const phase = useGameStore((s) => s.phase);
+  const aiming = useGameStore((s) => s.aiming);
   const slice = useSliceHighlightStore((s) => s.slice);
   const setSlice = useSliceHighlightStore((s) => s.setSlice);
   const clearSlice = useSliceHighlightStore((s) => s.clearSlice);
 
-  const lastCountRef = useRef(0);
+  const wasAimingRef = useRef(false);
 
-  // Capture on the place frame so the camera matrix matches what the player saw.
   useFrame(() => {
     if (phase !== "playing") {
-      if (lastCountRef.current !== 0 || slice !== null) {
-        lastCountRef.current = 0;
-        clearSlice();
-      }
+      if (slice !== null) clearSlice();
+      wasAimingRef.current = false;
       return;
     }
-    if (occupiedCount === 0) {
-      if (lastCountRef.current !== 0 || slice !== null) {
-        lastCountRef.current = 0;
-        clearSlice();
-      }
+
+    if (!aiming) {
+      wasAimingRef.current = false;
       return;
     }
-    if (occupiedCount === lastCountRef.current) return;
-    lastCountRef.current = occupiedCount;
-    setSlice(facingOuterSlice(camera.position, dims));
+
+    const next = facingOuterSlice(camera.position, dims);
+    // Refresh on aim start and while aiming if the front face changes.
+    if (!wasAimingRef.current || !sameSlice(slice, next)) {
+      setSlice(next);
+    }
+    wasAimingRef.current = true;
   });
 
   const layout = useMemo(() => {

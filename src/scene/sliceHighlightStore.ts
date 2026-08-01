@@ -9,7 +9,7 @@ type SliceHighlightState = {
   clearSlice: () => void;
 };
 
-/** Locked placement-plane highlight — updated only when a marker is placed. */
+/** Locked front-face highlight — refreshed when aiming starts / while aiming. */
 export const useSliceHighlightStore = create<SliceHighlightState>((set) => ({
   slice: null,
   setSlice: (slice) => set({ slice }),
