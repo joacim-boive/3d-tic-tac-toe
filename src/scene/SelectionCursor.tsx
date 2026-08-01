@@ -6,15 +6,16 @@ import { BoxGeometry, EdgesGeometry, Raycaster, Vector2, Vector3 } from "three";
 import { cellKey, cellToWorld } from "@/game/board";
 import { useGameStore } from "@/game/store";
 import { PLAYER_COLORS, type BoardDims } from "@/game/types";
-import { deepDirection, type SliceAxis } from "./facingSliceAxis";
+import type { SliceAxis } from "./facingSliceAxis";
+import { deepDirection } from "./facingSliceAxis";
 import { pickCellOnDepthPlane } from "./pickCellOnDepthPlane";
 import { useSliceHighlightStore } from "./sliceHighlightStore";
 import {
-  classifyAimGesture,
   clampDepthIndex,
+  depthStepsFromSpreadDelta,
+  pointerSpread,
   reconcileStickyDepth,
   stepStickyDepth,
-  type AimGesture,
 } from "./stickyDepth";
 
 type SelectionCursorProps = {
@@ -24,11 +25,8 @@ type SelectionCursorProps = {
 
 const DRAG_PX = 10;
 const MULTI_WAIT_MS = 120;
-const GESTURE_LOCK_PX = 28;
-const GESTURE_DOMINANCE = 1.25;
-const TOUCH_DEPTH_PX = 42;
-const DESKTOP_DEPTH_NDC = 0.12;
-const DESKTOP_LOCK_NDC = 0.045;
+/** 3-finger pinch: pixels of spread change per depth layer. */
+const TRI_SPREAD_PX = 48;
 
 function isTouchPointer(type: string): boolean {
   return type === "touch" || type === "pen";
@@ -36,20 +34,20 @@ function isTouchPointer(type: string): boolean {
 
 type AimSession = {
   axis: SliceAxis;
-  deepDir: 1 | -1;
   depth: number;
-  startX: number;
-  startY: number;
-  gesture: AimGesture;
-  depthAnchorY: number;
-  depthAtAnchor: number;
   mode: "touch" | "desktop";
+};
+
+type TriDepthSession = {
+  startSpread: number;
+  startDepth: number;
+  axis: SliceAxis;
 };
 
 /**
  * Sticky-depth aim cursor.
- * Lateral move / tap picks only on the sticky plane; depth changes only on a
- * clearly vertical drag (up = deeper) or Q/E.
+ * 1-finger / Shift+move: pick freely on the sticky plane (including up/down).
+ * 3-finger pinch: change depth (pinch in = deeper). Q/E or Shift+wheel on desktop.
  */
 export function SelectionCursor({ dims, spacing = 1 }: SelectionCursorProps) {
   const { camera, gl } = useThree();
@@ -82,11 +80,11 @@ export function SelectionCursor({ dims, spacing = 1 }: SelectionCursorProps) {
     x: 0,
     y: 0,
   });
-  const pointersRef = useRef(new Set<number>());
+  const pointersRef = useRef(new Map<number, { x: number; y: number }>());
   const aimDelayRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pendingAimRef = useRef({ x: 0, y: 0 });
   const aimSessionRef = useRef<AimSession | null>(null);
-  const prevGestureRef = useRef<AimGesture>("pending");
+  const triDepthRef = useRef<TriDepthSession | null>(null);
   const dropBusyRef = useRef(dropBusy);
   dropBusyRef.current = dropBusy;
   const cursorRef = useRef(cursor);
@@ -123,6 +121,12 @@ export function SelectionCursor({ dims, spacing = 1 }: SelectionCursorProps) {
     return next;
   };
 
+  const applyStickyToCursor = (axis: SliceAxis, depth: number) => {
+    const cur = cursorRef.current;
+    if (cur[axis] === depth) return;
+    setCursor({ ...cur, [axis]: depth });
+  };
+
   const pickOnDepth = (clientX: number, clientY: number, axis: SliceAxis, depth: number) => {
     const rect = gl.domElement.getBoundingClientRect();
     if (rect.width <= 0 || rect.height <= 0) return;
@@ -147,140 +151,61 @@ export function SelectionCursor({ dims, spacing = 1 }: SelectionCursorProps) {
     }
   };
 
-  const pickOnDepthNdc = (axis: SliceAxis, depth: number) => {
-    raycaster.setFromCamera(ndc, camera);
-    const hit = pickCellOnDepthPlane({
-      origin: raycaster.ray.origin,
-      dir: raycaster.ray.direction,
-      dims,
-      axis,
-      depthIndex: depth,
-      spacing,
-      point,
-    });
-    if (!hit) return;
-    const cur = cursorRef.current;
-    if (hit.x !== cur.x || hit.y !== cur.y || hit.z !== cur.z) {
-      setCursor(hit);
-    }
-  };
-
-  const beginTouchSession = (startX: number, startY: number): AimSession => {
+  const beginAimSession = (mode: "touch" | "desktop"): AimSession => {
     const stickyNow = ensureSticky();
     const session: AimSession = {
       axis: stickyNow.axis,
-      deepDir: deepDirection(camera.position, stickyNow.axis),
       depth: stickyNow.index,
-      startX,
-      startY,
-      gesture: "pending",
-      depthAnchorY: startY,
-      depthAtAnchor: stickyNow.index,
-      mode: "touch",
+      mode,
     };
     aimSessionRef.current = session;
-    prevGestureRef.current = "pending";
-    pickOnDepth(startX, startY, session.axis, session.depth);
     return session;
   };
 
-  const applyTouchMove = (clientX: number, clientY: number, session: AimSession) => {
-    const dx = clientX - session.startX;
-    const upPositive = session.startY - clientY;
-    const prev = session.gesture;
-    session.gesture = classifyAimGesture(
-      session.gesture,
-      dx,
-      upPositive,
-      GESTURE_LOCK_PX,
-      GESTURE_DOMINANCE,
-    );
-    if (prev !== "depth" && session.gesture === "depth") {
-      session.depthAnchorY = clientY;
-      session.depthAtAnchor = session.depth;
-    }
-    if (session.gesture === "depth") {
-      const steps = Math.round((session.depthAnchorY - clientY) / TOUCH_DEPTH_PX);
-      session.depth = clampDepthIndex(
-        session.depthAtAnchor + steps * session.deepDir,
-        session.axis,
-        dims,
-      );
-      publishSticky(session.axis, session.depth);
-    }
-    pickOnDepth(clientX, clientY, session.axis, session.depth);
-  };
-
-  const beginTouchSessionRef = useRef(beginTouchSession);
-  beginTouchSessionRef.current = beginTouchSession;
-  const applyTouchMoveRef = useRef(applyTouchMove);
-  applyTouchMoveRef.current = applyTouchMove;
+  const beginAimSessionRef = useRef(beginAimSession);
+  beginAimSessionRef.current = beginAimSession;
   const pickOnDepthRef = useRef(pickOnDepth);
   pickOnDepthRef.current = pickOnDepth;
   const ensureStickyRef = useRef(ensureSticky);
   ensureStickyRef.current = ensureSticky;
   const publishStickyRef = useRef(publishSticky);
   publishStickyRef.current = publishSticky;
+  const applyStickyToCursorRef = useRef(applyStickyToCursor);
+  applyStickyToCursorRef.current = applyStickyToCursor;
 
-  // Desktop Shift-aim with sticky depth + dominant-axis lock.
+  // Desktop Shift-aim: free 2D pick on sticky plane (up/down moves on-plane).
   useFrame((state) => {
     if (!aiming || status !== "playing") {
-      if (!touchAiming) {
-        aimSessionRef.current = null;
-        prevGestureRef.current = "pending";
-      }
+      if (!touchAiming) aimSessionRef.current = null;
       return;
     }
-    if (touchAiming) return;
+    if (touchAiming || triDepthRef.current) return;
 
     let session = aimSessionRef.current;
     if (!session || session.mode !== "desktop") {
-      const stickyNow = ensureSticky();
-      session = {
-        axis: stickyNow.axis,
-        deepDir: deepDirection(camera.position, stickyNow.axis),
-        depth: stickyNow.index,
-        startX: state.pointer.x,
-        startY: state.pointer.y,
-        gesture: "pending",
-        depthAnchorY: state.pointer.y,
-        depthAtAnchor: stickyNow.index,
-        mode: "desktop",
-      };
-      aimSessionRef.current = session;
-      prevGestureRef.current = "pending";
+      session = beginAimSession("desktop");
     }
-
-    const dx = state.pointer.x - session.startX;
-    const upPositive = state.pointer.y - session.startY;
-    const prev = session.gesture;
-    session.gesture = classifyAimGesture(
-      session.gesture,
-      dx,
-      upPositive,
-      DESKTOP_LOCK_NDC,
-      GESTURE_DOMINANCE,
-    );
-    if (prev !== "depth" && session.gesture === "depth") {
-      session.depthAnchorY = state.pointer.y;
-      session.depthAtAnchor = session.depth;
+    // Keep session depth synced with sticky (Q/E / wheel may have changed it).
+    const stickyNow = stickyRef.current;
+    if (stickyNow) {
+      session.axis = stickyNow.axis;
+      session.depth = stickyNow.index;
     }
-
-    if (session.gesture === "depth") {
-      const steps = Math.round((state.pointer.y - session.depthAnchorY) / DESKTOP_DEPTH_NDC);
-      const nextDepth = clampDepthIndex(
-        session.depthAtAnchor + steps * session.deepDir,
-        session.axis,
-        dims,
-      );
-      if (nextDepth !== session.depth) {
-        session.depth = nextDepth;
-        publishSticky(session.axis, session.depth);
-      }
-    }
-
     ndc.copy(state.pointer);
-    pickOnDepthNdc(session.axis, session.depth);
+    raycaster.setFromCamera(ndc, camera);
+    const hit = pickCellOnDepthPlane({
+      origin: raycaster.ray.origin,
+      dir: raycaster.ray.direction,
+      dims,
+      axis: session.axis,
+      depthIndex: session.depth,
+      spacing,
+      point,
+    });
+    if (!hit) return;
+    if (hit.x !== cursor.x || hit.y !== cursor.y || hit.z !== cursor.z) {
+      setCursor(hit);
+    }
   });
 
   // New board → clear sticky depth.
@@ -299,9 +224,18 @@ export function SelectionCursor({ dims, spacing = 1 }: SelectionCursorProps) {
     if (along !== s.index) publishStickyRef.current(s.axis, along);
   }, [cursor]);
 
-  // Q/E = shallower / deeper on the sticky (camera-facing) axis.
+  // Q/E + Shift+wheel = depth on desktop.
   useEffect(() => {
     if (status !== "playing") return;
+
+    const stepDepth = (deeper: 1 | -1) => {
+      const stickyNow = ensureStickyRef.current();
+      const next = stepStickyDepth(stickyNow, camera.position, dims, deeper);
+      publishStickyRef.current(next.axis, next.index);
+      if (aimSessionRef.current) aimSessionRef.current.depth = next.index;
+      applyStickyToCursorRef.current(next.axis, next.index);
+    };
+
     const onKeyDown = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement | null;
       if (target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA")) return;
@@ -312,25 +246,31 @@ export function SelectionCursor({ dims, spacing = 1 }: SelectionCursorProps) {
       if (deeper === 0) return;
       e.preventDefault();
       e.stopImmediatePropagation();
-
-      const stickyNow = ensureStickyRef.current();
-      const next = stepStickyDepth(stickyNow, camera.position, dims, deeper);
-      publishStickyRef.current(next.axis, next.index);
-      if (aimSessionRef.current) {
-        aimSessionRef.current.depth = next.index;
-        aimSessionRef.current.depthAtAnchor = next.index;
-      }
-      setCursor({ ...cursorRef.current, [next.axis]: next.index });
+      stepDepth(deeper);
     };
+
+    const onWheel = (e: WheelEvent) => {
+      if (!useGameStore.getState().aiming) return;
+      e.preventDefault();
+      if (e.deltaY === 0) return;
+      // Scroll up → deeper (into the board), scroll down → shallower.
+      stepDepth(e.deltaY < 0 ? 1 : -1);
+    };
+
     window.addEventListener("keydown", onKeyDown, true);
-    return () => window.removeEventListener("keydown", onKeyDown, true);
-  }, [status, camera, dims, setCursor]);
+    gl.domElement.addEventListener("wheel", onWheel, { passive: false });
+    return () => {
+      window.removeEventListener("keydown", onKeyDown, true);
+      gl.domElement.removeEventListener("wheel", onWheel);
+    };
+  }, [status, camera, dims, gl]);
 
   useEffect(() => {
     if (status !== "playing") {
       setTouchAiming(false);
       setAiming(false);
       aimSessionRef.current = null;
+      triDepthRef.current = null;
       clearSticky();
       return;
     }
@@ -341,6 +281,38 @@ export function SelectionCursor({ dims, spacing = 1 }: SelectionCursorProps) {
       if (aimDelayRef.current === null) return;
       clearTimeout(aimDelayRef.current);
       aimDelayRef.current = null;
+    };
+
+    const listPointerPoints = () => [...pointersRef.current.values()];
+
+    const endTriDepth = () => {
+      triDepthRef.current = null;
+    };
+
+    const beginTriDepth = () => {
+      const stickyNow = ensureStickyRef.current();
+      const spread = pointerSpread(listPointerPoints());
+      triDepthRef.current = {
+        startSpread: spread,
+        startDepth: stickyNow.index,
+        axis: stickyNow.axis,
+      };
+      // Pause orbit while changing depth.
+      setAiming(true);
+      setTouchAiming(false);
+      aimSessionRef.current = null;
+      dragRef.current.touchAim = false;
+    };
+
+    const updateTriDepth = () => {
+      const session = triDepthRef.current;
+      if (!session) return;
+      const spread = pointerSpread(listPointerPoints());
+      const steps = depthStepsFromSpreadDelta(spread - session.startSpread, TRI_SPREAD_PX);
+      const dir = deepDirection(camera.position, session.axis);
+      const depth = clampDepthIndex(session.startDepth + steps * dir, session.axis, dims);
+      publishStickyRef.current(session.axis, depth);
+      applyStickyToCursorRef.current(session.axis, depth);
     };
 
     const resetGestureState = () => {
@@ -355,16 +327,24 @@ export function SelectionCursor({ dims, spacing = 1 }: SelectionCursorProps) {
         y: 0,
       };
       aimSessionRef.current = null;
+      endTriDepth();
       setTouchAiming(false);
       setAiming(false);
     };
 
     const beginTouchAim = () => {
       if (dragRef.current.multi || pointersRef.current.size !== 1) return;
+      if (triDepthRef.current) return;
       dragRef.current.touchAim = true;
       setTouchAiming(true);
       setAiming(true);
-      beginTouchSessionRef.current(pendingAimRef.current.x, pendingAimRef.current.y);
+      const session = beginAimSessionRef.current("touch");
+      pickOnDepthRef.current(
+        pendingAimRef.current.x,
+        pendingAimRef.current.y,
+        session.axis,
+        session.depth,
+      );
     };
 
     const onDown = (e: PointerEvent) => {
@@ -372,16 +352,29 @@ export function SelectionCursor({ dims, spacing = 1 }: SelectionCursorProps) {
         resetGestureState();
       }
 
-      pointersRef.current.add(e.pointerId);
+      pointersRef.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
       const touch = isTouchPointer(e.pointerType);
       const count = pointersRef.current.size;
 
-      if (count > 1) {
+      if (count >= 3) {
         clearAimDelay();
         dragRef.current.multi = true;
         dragRef.current.touchAim = false;
         dragRef.current.moved = true;
         aimSessionRef.current = null;
+        setTouchAiming(false);
+        beginTriDepth();
+        return;
+      }
+
+      if (count === 2) {
+        // Two-finger orbit / pinch — yield to OrbitControls.
+        clearAimDelay();
+        dragRef.current.multi = true;
+        dragRef.current.touchAim = false;
+        dragRef.current.moved = true;
+        aimSessionRef.current = null;
+        endTriDepth();
         setTouchAiming(false);
         setAiming(false);
         return;
@@ -407,6 +400,16 @@ export function SelectionCursor({ dims, spacing = 1 }: SelectionCursorProps) {
     };
 
     const onMove = (e: PointerEvent) => {
+      if (pointersRef.current.has(e.pointerId)) {
+        pointersRef.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      }
+
+      if (pointersRef.current.size >= 3) {
+        if (!triDepthRef.current) beginTriDepth();
+        updateTriDepth();
+        return;
+      }
+
       if (!dragRef.current.active) return;
       pendingAimRef.current = { x: e.clientX, y: e.clientY };
 
@@ -428,7 +431,12 @@ export function SelectionCursor({ dims, spacing = 1 }: SelectionCursorProps) {
       if (dragRef.current.touchAim && pointersRef.current.size === 1 && !dragRef.current.multi) {
         const session = aimSessionRef.current;
         if (session?.mode === "touch") {
-          applyTouchMoveRef.current(e.clientX, e.clientY, session);
+          const stickyNow = stickyRef.current;
+          if (stickyNow) {
+            session.axis = stickyNow.axis;
+            session.depth = stickyNow.index;
+          }
+          pickOnDepthRef.current(e.clientX, e.clientY, session.axis, session.depth);
         }
       }
     };
@@ -437,12 +445,36 @@ export function SelectionCursor({ dims, spacing = 1 }: SelectionCursorProps) {
       const { active, moved, touchAim, multi } = dragRef.current;
       const touch = isTouchPointer(e.pointerType);
       pointersRef.current.delete(e.pointerId);
+      const remaining = pointersRef.current.size;
 
-      if (pointersRef.current.size === 0) {
+      if (remaining >= 3) {
+        // Still in tri-depth — refresh anchor so lifting one finger doesn't jump.
+        const stickyNow = ensureStickyRef.current();
+        triDepthRef.current = {
+          startSpread: pointerSpread(listPointerPoints()),
+          startDepth: stickyNow.index,
+          axis: stickyNow.axis,
+        };
+        return;
+      }
+
+      if (remaining === 2) {
+        // Dropped to orbit — hand off to OrbitControls.
+        endTriDepth();
+        setAiming(false);
+        setTouchAiming(false);
+        aimSessionRef.current = null;
+        dragRef.current.touchAim = false;
+        dragRef.current.multi = true;
+        return;
+      }
+
+      if (remaining === 0) {
+        const wasTri = triDepthRef.current !== null;
+        endTriDepth();
         const pendingAim = aimDelayRef.current !== null;
         clearAimDelay();
-        // Quick tap: pick on sticky plane only — never changes depth.
-        if (touch && active && !multi && !touchAim && pendingAim) {
+        if (touch && active && !multi && !touchAim && pendingAim && !wasTri) {
           const stickyNow = ensureStickyRef.current();
           pickOnDepthRef.current(
             pendingAimRef.current.x,
@@ -457,6 +489,13 @@ export function SelectionCursor({ dims, spacing = 1 }: SelectionCursorProps) {
         aimSessionRef.current = null;
         setTouchAiming(false);
         setAiming(false);
+      } else if (remaining === 1) {
+        endTriDepth();
+        setAiming(false);
+        setTouchAiming(false);
+        aimSessionRef.current = null;
+        dragRef.current.multi = false;
+        dragRef.current.touchAim = false;
       }
 
       if (!active || moved || touchAim || multi) return;

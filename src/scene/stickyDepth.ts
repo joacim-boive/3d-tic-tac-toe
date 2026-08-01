@@ -46,25 +46,30 @@ export function stepStickyDepth(
   };
 }
 
-export type AimGesture = "pending" | "lateral" | "depth";
+/** Mean distance of points from their centroid — used for 3-finger pinch depth. */
+export function pointerSpread(points: ReadonlyArray<{ x: number; y: number }>): number {
+  if (points.length < 2) return 0;
+  let cx = 0;
+  let cy = 0;
+  for (const p of points) {
+    cx += p.x;
+    cy += p.y;
+  }
+  cx /= points.length;
+  cy /= points.length;
+  let sum = 0;
+  for (const p of points) {
+    sum += Math.hypot(p.x - cx, p.y - cy);
+  }
+  return sum / points.length;
+}
 
 /**
- * Lock a drag to lateral or depth once movement is clearly dominant.
- * `upPositive` should be larger when the pointer moves up on screen.
+ * Map a change in finger spread to depth steps.
+ * Pinch in (negative delta) → deeper; spread out → shallower.
  */
-export function classifyAimGesture(
-  current: AimGesture,
-  dx: number,
-  upPositive: number,
-  lockPx: number,
-  dominance: number,
-): AimGesture {
-  if (current !== "pending") return current;
-  const ax = Math.abs(dx);
-  const ay = Math.abs(upPositive);
-  if (ax < lockPx && ay < lockPx) return "pending";
-  if (ay > ax * dominance) return "depth";
-  if (ax >= ay * dominance) return "lateral";
-  // Ambiguous diagonal — prefer lateral so depth stays sticky.
-  return "lateral";
+export function depthStepsFromSpreadDelta(deltaSpread: number, pxPerStep: number): number {
+  if (pxPerStep <= 0) return 0;
+  // Negative deltaSpread (pinch) → positive deeper steps.
+  return Math.round(-deltaSpread / pxPerStep);
 }

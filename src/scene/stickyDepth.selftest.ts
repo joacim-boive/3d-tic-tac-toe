@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import {
-  classifyAimGesture,
+  depthStepsFromSpreadDelta,
+  pointerSpread,
   reconcileStickyDepth,
   stepStickyDepth,
 } from "./stickyDepth";
@@ -29,10 +30,13 @@ assert.deepEqual(
   { axis: "z", index: 3 },
 );
 
-assert.equal(classifyAimGesture("pending", 5, 40, 28, 1.25), "depth");
-assert.equal(classifyAimGesture("pending", 40, 5, 28, 1.25), "lateral");
-assert.equal(classifyAimGesture("pending", 10, 10, 28, 1.25), "pending");
-assert.equal(classifyAimGesture("pending", 30, 30, 28, 1.25), "lateral");
-assert.equal(classifyAimGesture("depth", 40, 5, 28, 1.25), "depth");
+assert.ok(pointerSpread([
+  { x: 0, y: 0 },
+  { x: 10, y: 0 },
+  { x: 0, y: 10 },
+]) > 0);
+assert.equal(depthStepsFromSpreadDelta(-50, 50), 1);
+assert.equal(depthStepsFromSpreadDelta(50, 50), -1);
+assert.equal(depthStepsFromSpreadDelta(-20, 50), 0);
 
 console.log("stickyDepth.selftest: ok");
