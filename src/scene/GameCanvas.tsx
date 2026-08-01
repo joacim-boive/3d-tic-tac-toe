@@ -7,6 +7,7 @@ import { Suspense, useEffect, useState } from "react";
 import { MathUtils, TOUCH } from "three";
 import { getPreset } from "@/game/presets";
 import { useGameStore } from "@/game/store";
+import { ActiveSlice } from "./ActiveSlice";
 import { BoardColliders, DROP_GRAVITY } from "./BoardColliders";
 import { Grid } from "./Grid";
 import { Markers } from "./Markers";
@@ -73,6 +74,7 @@ function SceneContent() {
       <directionalLight position={[-dims.x, -dims.y * 0.4, -dims.z]} intensity={0.35} />
 
       <Grid dims={dims} />
+      <ActiveSlice dims={dims} />
       <SelectionCursor dims={dims} />
 
       {dropMode ? (

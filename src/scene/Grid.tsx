@@ -1,7 +1,16 @@
 "use client";
 
-import { useMemo } from "react";
-import { BufferGeometry, Float32BufferAttribute } from "three";
+import { useFrame } from "@react-three/fiber";
+import { useLayoutEffect, useMemo, useRef } from "react";
+import {
+  BufferGeometry,
+  Float32BufferAttribute,
+  LineBasicMaterial,
+  Vector3,
+  type WebGLProgramParametersWithUniforms,
+} from "three";
+import { cellToWorld } from "@/game/board";
+import { useGameStore } from "@/game/store";
 import type { BoardDims } from "@/game/types";
 
 type GridProps = {
@@ -9,11 +18,29 @@ type GridProps = {
   spacing?: number;
 };
 
+type DepthUniforms = {
+  uCamPos: { value: Vector3 };
+  uNear: { value: number };
+  uFar: { value: number };
+  uSliceZ: { value: number };
+  uSliceActive: { value: number };
+  uSliceFalloff: { value: number };
+};
+
 /**
  * Cell-boundary lattice (N+1 planes per axis) so an N³ board reads as N cells,
  * not N−1.
+ *
+ * Opacity falls off with camera distance and softens away from the active Z
+ * slice so large boards keep near structure readable.
  */
 export function Grid({ dims, spacing = 1 }: GridProps) {
+  const materialRef = useRef<LineBasicMaterial>(null);
+  const depthUniformsRef = useRef<DepthUniforms | null>(null);
+  const camWorld = useMemo(() => new Vector3(), []);
+  const cursor = useGameStore((s) => s.cursor);
+  const status = useGameStore((s) => s.status);
+
   const geometry = useMemo(() => {
     const positions: number[] = [];
     const hx = (dims.x * spacing) / 2;
@@ -46,9 +73,98 @@ export function Grid({ dims, spacing = 1 }: GridProps) {
     return geo;
   }, [dims.x, dims.y, dims.z, spacing]);
 
+  const maxDim = Math.max(dims.x, dims.y, dims.z) * spacing;
+  const fadeNear = maxDim * 0.4;
+  const fadeFar = maxDim * 2.05;
+  const sliceFalloff = spacing * 2.4;
+  const [, , sliceZ] = cellToWorld(cursor, dims, spacing);
+  const sliceActive = status === "playing" ? 1 : 0;
+
+  useLayoutEffect(() => {
+    const mat = materialRef.current;
+    if (!mat) return;
+
+    mat.onBeforeCompile = (shader: WebGLProgramParametersWithUniforms) => {
+      const depthUniforms: DepthUniforms = {
+        uCamPos: { value: new Vector3() },
+        uNear: { value: fadeNear },
+        uFar: { value: fadeFar },
+        uSliceZ: { value: 0 },
+        uSliceActive: { value: 0 },
+        uSliceFalloff: { value: sliceFalloff },
+      };
+      Object.assign(shader.uniforms, depthUniforms);
+      depthUniformsRef.current = depthUniforms;
+
+      shader.vertexShader = shader.vertexShader
+        .replace(
+          "#include <common>",
+          `#include <common>
+           uniform vec3 uCamPos;
+           uniform float uNear;
+           uniform float uFar;
+           uniform float uSliceZ;
+           uniform float uSliceActive;
+           uniform float uSliceFalloff;
+           varying float vDepthFade;
+           varying float vSliceFade;`,
+        )
+        .replace(
+          "#include <begin_vertex>",
+          `#include <begin_vertex>
+           vec4 worldPos = modelMatrix * vec4( transformed, 1.0 );
+           float dist = distance( worldPos.xyz, uCamPos );
+           vDepthFade = 1.0 - smoothstep( uNear, uFar, dist );
+           float sliceDist = abs( worldPos.z - uSliceZ );
+           float sliceKeep = 1.0 - smoothstep( 0.0, uSliceFalloff, sliceDist );
+           vSliceFade = mix( 1.0, mix( 0.28, 1.0, sliceKeep ), uSliceActive );`,
+        );
+
+      shader.fragmentShader = shader.fragmentShader
+        .replace(
+          "#include <common>",
+          `#include <common>
+           varying float vDepthFade;
+           varying float vSliceFade;`,
+        )
+        .replace(
+          "#include <color_fragment>",
+          `#include <color_fragment>
+           float depthKeep = mix( 0.18, 1.0, vDepthFade );
+           diffuseColor.a *= depthKeep * vSliceFade;`,
+        );
+    };
+    mat.needsUpdate = true;
+
+    return () => {
+      mat.onBeforeCompile = () => {};
+      depthUniformsRef.current = null;
+      mat.needsUpdate = true;
+    };
+    // Recompile only when board scale changes — slice/camera uniforms update in useFrame.
+  }, [fadeNear, fadeFar, sliceFalloff]);
+
+  useFrame(({ camera }) => {
+    const uniforms = depthUniformsRef.current;
+    if (!uniforms) return;
+    camera.getWorldPosition(camWorld);
+    uniforms.uCamPos.value.copy(camWorld);
+    uniforms.uNear.value = fadeNear;
+    uniforms.uFar.value = fadeFar;
+    uniforms.uSliceZ.value = sliceZ;
+    uniforms.uSliceActive.value = sliceActive;
+    uniforms.uSliceFalloff.value = sliceFalloff;
+  });
+
   return (
     <lineSegments geometry={geometry}>
-      <lineBasicMaterial color="#8a9bab" transparent opacity={0.4} depthWrite={false} />
+      <lineBasicMaterial
+        ref={materialRef}
+        color="#8a9bab"
+        transparent
+        opacity={0.52}
+        depthWrite={false}
+      />
     </lineSegments>
   );
 }
