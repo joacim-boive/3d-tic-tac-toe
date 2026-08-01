@@ -1057,41 +1057,17 @@ export const useGameStore = create<GameState>((set, get) => ({
 
     const locked = { ...state.tipTargetEuler };
     const toDown = tipDownFromEuler(locked);
+    // Must actually tip off the current floor — then balls drop once on commit.
+    if (toDown === "-y") return false;
 
-    // Still tipped — start the fall (same as auto after drag).
-    if (toDown !== "-y") {
-      set({
-        tipEuler: locked,
-        tipTargetEuler: locked,
-        tipFalling: true,
-        powerUpToast: null,
-        aiming: false,
-      });
-      if (state.playMode === "online") publishTipAim(get);
-      return true;
-    }
-
-    // Upright after at least one settle — Done spends and exits.
-    if (!state.tipDirty) {
-      set({ powerUpToast: null });
-      return false;
-    }
-
-    const spent = spendPowerUp(state.inventory[by], "tip");
-    if (!spent) return false;
-    const label = state.displayName(by);
-    if (state.playMode === "online") {
-      publishPowerUpNotify("tip", by, "confirm");
-      publishTipAimEnd(by);
-    }
     set({
-      tipFalling: false,
-      tipEuler: { ...IDENTITY_TIP_EULER },
-      tipTargetEuler: { ...IDENTITY_TIP_EULER },
-      tipCheckpoint: null,
-      tipDirty: false,
+      tipEuler: locked,
+      tipTargetEuler: locked,
+      tipFalling: true,
+      powerUpToast: null,
+      aiming: false,
     });
-    finishPowerUpBoard(get, set, state.board, by, spent, `${label} tipped the field`);
+    if (state.playMode === "online") publishTipAim(get);
     return true;
   },
 
@@ -1133,51 +1109,33 @@ export const useGameStore = create<GameState>((set, get) => ({
       set({ tipFalling: false });
       return;
     }
-    // Rebase board to the new floor; stay in tip mode so you can tip again or Done.
+    // One tip per spend: rebase, spend, exit — no chaining extra flips.
     const board = tipBoard(state.board, dims, toDown);
-    const win = checkWinAny(board, dims);
-    if (win) {
-      // Completing a tip that wins — spend and end the match.
-      const by = state.currentPlayer;
-      const spent = spendPowerUp(state.inventory[by], "tip");
-      if (!spent) {
-        set({
-          tipFalling: false,
-          tipEuler: { ...IDENTITY_TIP_EULER },
-          tipTargetEuler: { ...IDENTITY_TIP_EULER },
-          tipCheckpoint: null,
-          tipDirty: false,
-          powerUpMode: null,
-        });
-        return;
-      }
-      if (state.playMode === "online") {
-        publishPowerUpNotify("tip", by, "confirm");
-        publishTipAimEnd(by);
-      }
+    const by = state.currentPlayer;
+    const spent = spendPowerUp(state.inventory[by], "tip");
+    if (!spent) {
       set({
         tipFalling: false,
         tipEuler: { ...IDENTITY_TIP_EULER },
         tipTargetEuler: { ...IDENTITY_TIP_EULER },
         tipCheckpoint: null,
         tipDirty: false,
+        powerUpMode: null,
       });
-      finishPowerUpBoard(get, set, board, by, spent, `${state.displayName(by)} tipped the field`);
       return;
     }
+    if (state.playMode === "online") {
+      publishPowerUpNotify("tip", by, "confirm");
+      publishTipAimEnd(by);
+    }
     set({
-      board,
-      occupiedCount: board.size,
       tipFalling: false,
       tipEuler: { ...IDENTITY_TIP_EULER },
       tipTargetEuler: { ...IDENTITY_TIP_EULER },
-      tipDirty: true,
-      powerUpToast: null,
+      tipCheckpoint: null,
+      tipDirty: false,
     });
-    if (state.playMode === "online") {
-      publishTipAim(get);
-      localStateSyncPublisher?.();
-    }
+    finishPowerUpBoard(get, set, board, by, spent, `${state.displayName(by)} tipped the field`);
   },
 
   catchSwarmPackage: (index, by) => {

@@ -58,7 +58,6 @@ export function GameChrome({ children }: GameChromeProps) {
   const cancelPowerUpMode = useGameStore((s) => s.cancelPowerUpMode);
   const confirmTip = useGameStore((s) => s.confirmTip);
   const tipTargetEuler = useGameStore((s) => s.tipTargetEuler);
-  const tipDirty = useGameStore((s) => s.tipDirty);
   const displayName = useGameStore((s) => s.displayName);
 
   const preset = getPreset(presetId);
@@ -89,7 +88,7 @@ export function GameChrome({ children }: GameChromeProps) {
   } else if (powerUpMode === "clear-row") {
     statusText = "Clear — aim · tap to switch axis";
   } else if (powerUpMode === "tip") {
-    statusText = "Tip — spin on bottom · flip forward/back";
+    statusText = "Tip — orient · ghosts show where balls land";
   } else if (bonusPlacesRemaining > 0) {
     statusText = `${displayName(currentPlayer)} — extra place`;
   } else if (playMode === "ai" && currentPlayer === "b") {
@@ -147,12 +146,16 @@ export function GameChrome({ children }: GameChromeProps) {
               <button
                 type="button"
                 className="chrome__btn chrome__btn--accent"
-                disabled={
-                  tipDownFromEuler(tipTargetEuler) === "-y" ? !tipDirty : false
-                }
+                disabled={tipDownFromEuler(tipTargetEuler) === "-y"}
                 onClick={() => confirmTip()}
               >
-                {tipDirty && tipDownFromEuler(tipTargetEuler) === "-y" ? "Done" : "Drop"}
+                Commit
+                {!touchUi && (
+                  <>
+                    {" "}
+                    <kbd>Space</kbd>
+                  </>
+                )}
               </button>
               <button type="button" className="chrome__btn" onClick={cancelPowerUpMode}>
                 Cancel
@@ -218,13 +221,13 @@ export function GameChrome({ children }: GameChromeProps) {
             ) : (
               <>
                 <li>
-                  <kbd>left/right</kbd> spin on bottom
+                  <kbd>left/right</kbd> spin
                 </li>
                 <li>
                   <kbd>up/down</kbd> flip
                 </li>
                 <li>
-                  <kbd>Done</kbd> when finished
+                  <kbd>Commit</kbd> drop balls
                 </li>
               </>
             )

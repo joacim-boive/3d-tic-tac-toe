@@ -23,6 +23,7 @@ export function useGameControls() {
   // Tip: no keyboard play. Clear: only aim / cycle / confirm (not place).
   const playLocked = swarmBusy || tipLocked;
   const confirmClearRow = useGameStore((s) => s.confirmClearRow);
+  const confirmTip = useGameStore((s) => s.confirmTip);
   const cancelPowerUpMode = useGameStore((s) => s.cancelPowerUpMode);
   const clearAxis = useGameStore((s) => s.clearAxis);
   const cursor = useGameStore((s) => s.cursor);
@@ -45,7 +46,12 @@ export function useGameControls() {
         case " ":
         case "Enter":
           e.preventDefault();
-          if (status !== "playing" || playLocked) break;
+          if (status !== "playing") break;
+          if (powerUpMode === "tip" && !tipFalling) {
+            confirmTip();
+            break;
+          }
+          if (playLocked) break;
           if (clearMode) {
             const fixed = clearFixedFromCursor(clearAxis, cursor);
             confirmClearRow(fixed.a, fixed.b);
@@ -154,6 +160,7 @@ export function useGameControls() {
     nudgeCursor,
     placeAtCursor,
     confirmClearRow,
+    confirmTip,
     cancelPowerUpMode,
     cycleClearAxis,
     returnToSetup,
