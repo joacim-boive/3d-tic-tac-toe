@@ -90,8 +90,6 @@ export function GameChrome({ children }: GameChromeProps) {
     statusText = `${displayName(watchPowerUp.by)} tipping…`;
   } else if (powerUpMode === "clear-row") {
     statusText = "Clear — aim · tap to switch axis";
-  } else if (powerUpMode === "tip") {
-    statusText = "Tip — spin on bottom · flip forward/back";
   } else if (bonusPlacesRemaining > 0) {
     statusText = `${displayName(currentPlayer)} — extra place`;
   } else if (playMode === "ai" && currentPlayer === "b") {
