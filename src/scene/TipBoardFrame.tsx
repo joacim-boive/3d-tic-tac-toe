@@ -118,6 +118,8 @@ export function TipBoardFrame({ dims, dropMode }: TipBoardFrameProps) {
   const targetQuat = useRef(new Quaternion());
   /** Once commit fall starts, stay upright until tip UI fully exits — no re-aim snap. */
   const uprightHoldRef = useRef(false);
+  /** Wall-clock start of spectator/AI rotate playback — null until playback actually begins. */
+  const playbackStartedAt = useRef<number | null>(null);
 
   const fallEntries = useMemo(() => {
     if (!tipFalling) return [] as TipRemapEntry[];
@@ -153,10 +155,24 @@ export function TipBoardFrame({ dims, dropMode }: TipBoardFrameProps) {
   useLayoutEffect(() => {
     if (tipFalling || tipVisual) return;
     uprightHoldRef.current = false;
+    playbackStartedAt.current = null;
     displayQuat.current.identity();
     targetQuat.current.identity();
     if (groupRef.current) groupRef.current.quaternion.identity();
   }, [tipFalling, tipVisual]);
+
+  // Opponent / AI commit playback must start upright even if a prior tip left the hold latch set.
+  useLayoutEffect(() => {
+    if (!watchTipPlayback || tipFalling) {
+      if (!watchTipPlayback) playbackStartedAt.current = null;
+      return;
+    }
+    uprightHoldRef.current = false;
+    displayQuat.current.identity();
+    targetQuat.current.identity();
+    if (groupRef.current) groupRef.current.quaternion.identity();
+    playbackStartedAt.current = performance.now();
+  }, [watchTipPlayback, tipFalling]);
 
   useFrame((_, dt) => {
     const g = groupRef.current;
@@ -168,7 +184,8 @@ export function TipBoardFrame({ dims, dropMode }: TipBoardFrameProps) {
     const playbackRotate = state.watchTipPlayback && !falling;
 
     // Fall + post-fall hold: never re-apply the pre-commit tip pose.
-    if (falling || uprightHoldRef.current) {
+    // Playback rotate must win over a stale upright hold from an earlier tip.
+    if (falling || (uprightHoldRef.current && !playbackRotate)) {
       displayQuat.current.identity();
       targetQuat.current.identity();
       g.quaternion.identity();
@@ -179,16 +196,33 @@ export function TipBoardFrame({ dims, dropMode }: TipBoardFrameProps) {
     }
 
     if (aiming || playbackRotate) {
+      if (playbackRotate) {
+        uprightHoldRef.current = false;
+        // useFrame can observe watchTipPlayback before layout effect stamps the start time.
+        if (playbackStartedAt.current == null) {
+          playbackStartedAt.current = performance.now();
+          displayQuat.current.identity();
+          g.quaternion.identity();
+        }
+      }
       targetQuat.current.copy(eulerToQuat(state.tipTargetEuler));
       displayQuat.current.slerp(targetQuat.current, 1 - Math.exp(-TIP_ANIM_SPEED * dt));
       g.quaternion.copy(displayQuat.current);
 
-      if (
-        displayQuat.current.angleTo(targetQuat.current) < 0.015 &&
-        (state.tipEuler.x !== state.tipTargetEuler.x ||
-          state.tipEuler.y !== state.tipTargetEuler.y ||
-          state.tipEuler.z !== state.tipTargetEuler.z)
-      ) {
+      const angledIn = displayQuat.current.angleTo(targetQuat.current) < 0.015;
+      const eulerDirty =
+        state.tipEuler.x !== state.tipTargetEuler.x ||
+        state.tipEuler.y !== state.tipTargetEuler.y ||
+        state.tipEuler.z !== state.tipTargetEuler.z;
+      const startedAt = playbackStartedAt.current;
+      const elapsed = startedAt == null ? 0 : performance.now() - startedAt;
+      const minPlaybackMs = 520;
+      const playedLongEnough = startedAt != null && elapsed >= minPlaybackMs;
+      // Safety only after a real start timestamp — never treat unset (null) as epoch 0.
+      const forcePlaybackFall =
+        state.watchTipPlayback && startedAt != null && elapsed >= 1200 && eulerDirty;
+
+      if ((angledIn && eulerDirty && playedLongEnough) || forcePlaybackFall) {
         commitTipEuler(state.tipTargetEuler);
         if (state.watchTipPlayback) beginTipFall();
       }

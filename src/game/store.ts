@@ -35,7 +35,7 @@ import { readSetupPrefsFromStorage, writeSetupPrefsToStorage, type SetupPrefs } 
 import {
   IDENTITY_TIP_EULER,
   canTipPreset,
-  tipBoard,
+  eulerForTipDown,
   tipBoardFromEuler,
   tipChoices,
   tipDownFromEuler,
@@ -437,7 +437,8 @@ function scheduleAiMove(get: () => GameState, set: (partial: Partial<GameState>)
     const state = get();
     if (state.status !== "playing" || state.playMode !== "ai") return;
     if (state.currentPlayer !== AI_PLAYER) return;
-    if (state.dropBusy || state.swarmBusy) {
+    // Tip playback / fall must finish before the AI places (or retries).
+    if (state.dropBusy || state.swarmBusy || state.tipFalling || state.watchTipPlayback) {
       scheduleAiMove(get, set);
       return;
     }
@@ -446,6 +447,8 @@ function scheduleAiMove(get: () => GameState, set: (partial: Partial<GameState>)
 
     const afterSpend = get();
     if (afterSpend.currentPlayer !== AI_PLAYER || afterSpend.status !== "playing") return;
+    // Tip starts rotate→fall playback; turn ends after settle — don't place now.
+    if (afterSpend.watchTipPlayback || afterSpend.tipFalling) return;
     if (afterSpend.swarmBusy || afterSpend.dropBusy) {
       scheduleAiMove(get, set);
       return;
@@ -476,12 +479,13 @@ function maybeAiSpendPowerUp(
   const counts = state.inventory.b;
   const rng = createPowerUpRng(randomSeed() ^ (state.occupiedCount * 997));
 
+  const dims = getPreset(state.presetId).dims;
+
   if (canSpend(counts, "extra-turn") && state.bonusPlacesRemaining === 0 && rng() < 0.28) {
     get().activatePowerUp("extra-turn");
     return;
   }
 
-  const dims = getPreset(state.presetId).dims;
   if (canSpend(counts, "clear-row") && rng() < 0.12) {
     const spent = spendPowerUp(counts, "clear-row");
     if (!spent) return;
@@ -497,12 +501,21 @@ function maybeAiSpendPowerUp(
   }
 
   if (canSpend(counts, "tip") && canTipPreset(dims) && rng() < 0.1) {
-    const spent = spendPowerUp(counts, "tip");
-    if (!spent) return;
     const choices = tipChoices();
     const toDown = choices[Math.floor(rng() * choices.length)]!;
-    const board = tipBoard(state.board, dims, toDown);
-    finishPowerUpBoard(get, set, board, AI_PLAYER, spent, "Cyan tipped the field");
+    const tipEuler = eulerForTipDown(toDown);
+    // Same rotate → ball-drop playback as an online opponent commit.
+    // Toast after settle (finishPowerUpBoard); status shows "Cyan tipping…" meanwhile.
+    set({
+      powerUpToast: null,
+      watchPowerUp: null,
+      watchTipPlayback: true,
+      pendingTipSync: null,
+      tipEuler: { ...IDENTITY_TIP_EULER },
+      tipTargetEuler: { ...tipEuler },
+      tipFalling: false,
+      aiming: false,
+    });
   }
 }
 
@@ -750,6 +763,10 @@ function applyPlace(
       powerUpMode: null,
       pendingSwarmEarner: player,
     });
+    // AI Extra: this place consumed the bonus; schedule the real follow-up place.
+    if (!dropAnim && state.playMode === "ai" && player === AI_PLAYER) {
+      scheduleAiMove(get, set);
+    }
     return true;
   }
 
@@ -944,7 +961,9 @@ export const useGameStore = create<GameState>((set, get) => ({
     if (!state.powerUpsEnabled || state.status !== "playing" || state.phase !== "playing") {
       return false;
     }
-    if (state.dropBusy || state.swarmBusy) return false;
+    if (state.dropBusy || state.swarmBusy || state.tipFalling || state.watchTipPlayback) {
+      return false;
+    }
     if (state.powerUpMode) return false;
     if (state.playMode === "online") {
       if (state.onlineStatus !== "playing") return false;
@@ -1162,7 +1181,7 @@ export const useGameStore = create<GameState>((set, get) => ({
     const dims = getPreset(state.presetId).dims;
     const toDown = tipDownFromEuler(state.tipEuler);
 
-    // Spectator replay of opponent's commit — apply board (or pending sync) and exit.
+    // Spectator / AI replay of a Tip commit — apply board (or pending sync) and exit.
     if (state.watchTipPlayback) {
       const pending = state.pendingTipSync;
       if (pending) {
@@ -1202,6 +1221,25 @@ export const useGameStore = create<GameState>((set, get) => ({
         return;
       }
       const board = tipBoardFromEuler(state.board, dims, state.tipEuler);
+      // AI tip: spend + hand off turn after the human has watched the fall.
+      if (state.playMode === "ai" && state.currentPlayer === AI_PLAYER) {
+        const spent = spendPowerUp(state.inventory[AI_PLAYER], "tip");
+        if (!spent) {
+          set({
+            tipFalling: false,
+            tipEuler: { ...IDENTITY_TIP_EULER },
+            tipTargetEuler: { ...IDENTITY_TIP_EULER },
+            tipCheckpoint: null,
+            tipDirty: false,
+            watchTipPlayback: false,
+            powerUpMode: null,
+          });
+          return;
+        }
+        finishPowerUpBoard(get, set, board, AI_PLAYER, spent, "Cyan tipped the field");
+        return;
+      }
+      // Online spectator fallback if state sync never arrived.
       set({
         board,
         occupiedCount: board.size,
