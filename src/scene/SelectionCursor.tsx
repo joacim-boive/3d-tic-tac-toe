@@ -297,7 +297,7 @@ export function SelectionCursor({ dims, spacing = 1 }: SelectionCursorProps) {
     if (!s) return;
     const along = cursor[s.axis];
     if (along !== s.index) publishStickyRef.current(s.axis, along);
-  }, [cursor.x, cursor.y, cursor.z]);
+  }, [cursor]);
 
   // Q/E = shallower / deeper on the sticky (camera-facing) axis.
   useEffect(() => {
