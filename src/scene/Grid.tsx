@@ -9,6 +9,7 @@ import {
   Vector3,
   type WebGLProgramParametersWithUniforms,
 } from "three";
+import { cellToWorld } from "@/game/board";
 import type { BoardDims } from "@/game/types";
 import type { SliceAxis } from "./facingSliceAxis";
 import { useSliceHighlightStore } from "./sliceHighlightStore";
@@ -40,9 +41,16 @@ function sliceWorldPos(
   dims: BoardDims,
   spacing: number,
 ): number {
-  // Match ActiveSlice: fade around the outer lattice boundary.
-  const half = (dims[axis] * spacing) / 2;
-  return index === 0 ? -half : half;
+  const cell =
+    axis === "x"
+      ? { x: index, y: 0, z: 0 }
+      : axis === "y"
+        ? { x: 0, y: index, z: 0 }
+        : { x: 0, y: 0, z: index };
+  const [cx, cy, cz] = cellToWorld(cell, dims, spacing);
+  if (axis === "x") return cx;
+  if (axis === "y") return cy;
+  return cz;
 }
 
 /**

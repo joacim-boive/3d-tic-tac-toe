@@ -14,6 +14,7 @@
     "check": "tsgo --noEmit && oxlint && oxfmt --check",
     "check:win": "npx tsx src/game/winCheck.selftest.ts",
     "check:pick": "npx tsx src/scene/pickCellAlongRay.selftest.ts",
+    "check:depth": "npx tsx src/scene/pickCellOnDepthPlane.selftest.ts",
     "check:ai": "npx tsx src/game/ai.selftest.ts",
     "check:room": "npx tsx src/game/roomCode.selftest.ts",
     "check:notify": "npx tsx src/online/notify.selftest.ts",

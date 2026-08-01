@@ -9,7 +9,7 @@ type SliceHighlightState = {
   clearSlice: () => void;
 };
 
-/** Locked front-face highlight — refreshed when aiming starts / while aiming. */
+/** Aim-depth slice highlight — refreshed while aiming to follow cursor depth. */
 export const useSliceHighlightStore = create<SliceHighlightState>((set) => ({
   slice: null,
   setSlice: (slice) => set({ slice }),

@@ -164,6 +164,9 @@ export function GameChrome({ children }: GameChromeProps) {
                 <kbd>drag</kbd> aim
               </li>
               <li>
+                <kbd>drag up</kbd> deeper
+              </li>
+              <li>
                 <kbd>2 fingers</kbd> orbit
               </li>
               <li>
@@ -183,6 +186,9 @@ export function GameChrome({ children }: GameChromeProps) {
               </li>
               <li>
                 <kbd>Shift</kbd> + move aim
+              </li>
+              <li>
+                <kbd>Shift</kbd> + up/down depth
               </li>
               <li>
                 <kbd>WASD</kbd> {placement === "drop" ? "column" : "nudge"}

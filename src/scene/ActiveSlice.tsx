@@ -3,9 +3,10 @@
 import { useFrame, useThree } from "@react-three/fiber";
 import { useMemo, useRef } from "react";
 import { BufferGeometry, DoubleSide, Float32BufferAttribute } from "three";
+import { cellToWorld } from "@/game/board";
 import { useGameStore } from "@/game/store";
 import type { BoardDims } from "@/game/types";
-import { facingOuterSlice, type SliceAxis } from "./facingSliceAxis";
+import { sliceThroughCursor, type SliceAxis } from "./facingSliceAxis";
 import { useSliceHighlightStore } from "./sliceHighlightStore";
 
 type ActiveSliceProps = {
@@ -81,15 +82,17 @@ function planeLayout(
   widthCells: number;
   heightCells: number;
 } {
-  // Sit on the outer lattice boundary (not the outer cell center) so nothing
-  // draws in front of the "front facing side."
-  const hx = (dims.x * spacing) / 2;
-  const hy = (dims.y * spacing) / 2;
-  const hz = (dims.z * spacing) / 2;
+  const cell =
+    axis === "x"
+      ? { x: index, y: 0, z: 0 }
+      : axis === "y"
+        ? { x: 0, y: index, z: 0 }
+        : { x: 0, y: 0, z: index };
+  const [cx, cy, cz] = cellToWorld(cell, dims, spacing);
 
   if (axis === "x") {
     return {
-      position: [index === 0 ? -hx : hx, 0, 0],
+      position: [cx, 0, 0],
       rotation: [0, Math.PI / 2, 0],
       widthCells: dims.z,
       heightCells: dims.y,
@@ -97,14 +100,14 @@ function planeLayout(
   }
   if (axis === "y") {
     return {
-      position: [0, index === 0 ? -hy : hy, 0],
+      position: [0, cy, 0],
       rotation: [-Math.PI / 2, 0, 0],
       widthCells: dims.x,
       heightCells: dims.z,
     };
   }
   return {
-    position: [0, 0, index === 0 ? -hz : hz],
+    position: [0, 0, cz],
     rotation: [0, 0, 0],
     widthCells: dims.x,
     heightCells: dims.y,
@@ -119,14 +122,15 @@ function sameSlice(
 }
 
 /**
- * Highlights the outer cube face toward the camera while aiming.
- * Updates as soon as aim starts (Shift / touch drag) — not on place/drop.
- * Stays put while orbiting until the next aim.
+ * Face-on slice through the aimed cell’s depth.
+ * Tracks the cursor while aiming; stays put while orbiting until the next aim.
  */
 export function ActiveSlice({ dims, spacing = 1 }: ActiveSliceProps) {
   const camera = useThree((s) => s.camera);
   const phase = useGameStore((s) => s.phase);
   const aiming = useGameStore((s) => s.aiming);
+  const cursor = useGameStore((s) => s.cursor);
+  const placement = useGameStore((s) => s.placement);
   const slice = useSliceHighlightStore((s) => s.slice);
   const setSlice = useSliceHighlightStore((s) => s.setSlice);
   const clearSlice = useSliceHighlightStore((s) => s.clearSlice);
@@ -145,8 +149,7 @@ export function ActiveSlice({ dims, spacing = 1 }: ActiveSliceProps) {
       return;
     }
 
-    const next = facingOuterSlice(camera.position, dims);
-    // Refresh on aim start and while aiming if the front face changes.
+    const next = sliceThroughCursor(camera.position, cursor, dims, placement);
     if (!wasAimingRef.current || !sameSlice(slice, next)) {
       setSlice(next);
     }

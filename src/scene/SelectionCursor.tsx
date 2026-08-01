@@ -6,9 +6,13 @@ import { BoxGeometry, EdgesGeometry, Raycaster, Vector2, Vector3 } from "three";
 import { cellKey, cellToWorld } from "@/game/board";
 import { useGameStore } from "@/game/store";
 import { PLAYER_COLORS, type BoardDims } from "@/game/types";
-import { pickCellAlongRay } from "./pickCellAlongRay";
-import { facingOuterSlice } from "./facingSliceAxis";
-import { useSliceHighlightStore } from "./sliceHighlightStore";
+import {
+  deepDirection,
+  facingAxis,
+  nearDepthIndex,
+  type SliceAxis,
+} from "./facingSliceAxis";
+import { pickCellOnDepthPlane } from "./pickCellOnDepthPlane";
 
 type SelectionCursorProps = {
   dims: BoardDims;
@@ -18,15 +22,28 @@ type SelectionCursorProps = {
 const DRAG_PX = 10;
 /** Wait for a second finger before treating touch as aim (orbit/pinch start). */
 const MULTI_WAIT_MS = 120;
+/** Touch: pixels of upward drag per depth layer. */
+const TOUCH_DEPTH_PX = 42;
+/** Desktop Shift-aim: NDC Y delta per depth layer (~0.12 ≈ comfortable mouse travel). */
+const DESKTOP_DEPTH_NDC = 0.12;
 
 function isTouchPointer(type: string): boolean {
   return type === "touch" || type === "pen";
 }
 
+type DepthAimSession = {
+  axis: SliceAxis;
+  deepDir: 1 | -1;
+  startDepth: number;
+  /** Touch: clientY at aim start. Desktop: NDC y at aim start. */
+  startY: number;
+  mode: "touch" | "desktop";
+};
+
 /**
  * Always-visible aim cursor.
- * Desktop: Shift + move aims (orbit paused); click / Space places.
- * Touch: one-finger drag aims (preview); two-finger orbits / pinches; Place commits.
+ * Desktop: Shift + move aims (orbit paused); vertical motion = depth; click / Space places.
+ * Touch: one-finger drag aims — drag up goes deeper; two-finger orbits / pinches; Place commits.
  */
 export function SelectionCursor({ dims, spacing = 1 }: SelectionCursorProps) {
   const { camera, gl } = useThree();
@@ -47,7 +64,6 @@ export function SelectionCursor({ dims, spacing = 1 }: SelectionCursorProps) {
   const raycaster = useMemo(() => new Raycaster(), []);
   const ndc = useMemo(() => new Vector2(), []);
   const point = useMemo(() => new Vector3(), []);
-  const center = useMemo(() => new Vector3(), []);
   const dragRef = useRef({
     active: false,
     moved: false,
@@ -60,10 +76,15 @@ export function SelectionCursor({ dims, spacing = 1 }: SelectionCursorProps) {
   const pointersRef = useRef(new Set<number>());
   const aimDelayRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pendingAimRef = useRef({ x: 0, y: 0 });
+  const depthAimRef = useRef<DepthAimSession | null>(null);
   // Keep place-lock out of the listener effect deps — rebinding mid-drop orphans
   // touch ids (missed pointerup) and makes one-finger aim look hung.
   const dropBusyRef = useRef(dropBusy);
   dropBusyRef.current = dropBusy;
+  const cursorRef = useRef(cursor);
+  cursorRef.current = cursor;
+  const placementRef = useRef(placement);
+  placementRef.current = placement;
 
   const cellSize = spacing * 0.96;
   const edges = useMemo(() => {
@@ -73,19 +94,87 @@ export function SelectionCursor({ dims, spacing = 1 }: SelectionCursorProps) {
     return geo;
   }, [cellSize]);
 
-  // Desktop Shift-aim: follow pointer each frame (orbit paused via store.aiming).
-  useFrame((state) => {
-    if (!aiming || status !== "playing") return;
+  const beginDepthSession = (startY: number, mode: "touch" | "desktop"): DepthAimSession => {
+    const axis = facingAxis(camera.position, placementRef.current);
+    const session: DepthAimSession = {
+      axis,
+      deepDir: deepDirection(camera.position, axis),
+      startDepth: nearDepthIndex(camera.position, axis, dims),
+      startY,
+      mode,
+    };
+    depthAimRef.current = session;
+    return session;
+  };
 
-    ndc.copy(state.pointer);
+  const depthIndexForSession = (session: DepthAimSession, currentY: number): number => {
+    const raw =
+      session.mode === "touch"
+        ? (session.startY - currentY) / TOUCH_DEPTH_PX
+        : (currentY - session.startY) / DESKTOP_DEPTH_NDC;
+    const steps = Math.round(raw);
+    const max = dims[session.axis] - 1;
+    return Math.max(0, Math.min(max, session.startDepth + steps * session.deepDir));
+  };
+
+  const applyDepthAim = (clientX: number, clientY: number, session: DepthAimSession) => {
+    const rect = gl.domElement.getBoundingClientRect();
+    if (rect.width <= 0 || rect.height <= 0) return;
+    ndc.set(
+      ((clientX - rect.left) / rect.width) * 2 - 1,
+      -((clientY - rect.top) / rect.height) * 2 + 1,
+    );
     raycaster.setFromCamera(ndc, camera);
-    const hit = pickCellAlongRay({
+    const depthIndex =
+      session.mode === "touch"
+        ? depthIndexForSession(session, clientY)
+        : depthIndexForSession(session, ndc.y);
+    const hit = pickCellOnDepthPlane({
       origin: raycaster.ray.origin,
       dir: raycaster.ray.direction,
       dims,
+      axis: session.axis,
+      depthIndex,
       spacing,
       point,
-      center,
+    });
+    if (!hit) return;
+    const cur = cursorRef.current;
+    if (hit.x !== cur.x || hit.y !== cur.y || hit.z !== cur.z) {
+      setCursor(hit);
+    }
+  };
+
+  // Stable refs so the pointer effect isn't rebound every render (missed pointerups).
+  const beginDepthSessionRef = useRef(beginDepthSession);
+  beginDepthSessionRef.current = beginDepthSession;
+  const applyDepthAimRef = useRef(applyDepthAim);
+  applyDepthAimRef.current = applyDepthAim;
+
+  // Desktop Shift-aim: lateral from pointer, vertical NDC = depth (up = deeper).
+  useFrame((state) => {
+    if (!aiming || status !== "playing") {
+      if (!touchAiming) depthAimRef.current = null;
+      return;
+    }
+    // Touch aim owns the session via pointer handlers.
+    if (touchAiming) return;
+
+    let session = depthAimRef.current;
+    if (!session || session.mode !== "desktop") {
+      session = beginDepthSession(state.pointer.y, "desktop");
+    }
+    ndc.copy(state.pointer);
+    raycaster.setFromCamera(ndc, camera);
+    const depthIndex = depthIndexForSession(session, state.pointer.y);
+    const hit = pickCellOnDepthPlane({
+      origin: raycaster.ray.origin,
+      dir: raycaster.ray.direction,
+      dims,
+      axis: session.axis,
+      depthIndex,
+      spacing,
+      point,
     });
     if (!hit) return;
     if (hit.x !== cursor.x || hit.y !== cursor.y || hit.z !== cursor.z) {
@@ -97,41 +186,11 @@ export function SelectionCursor({ dims, spacing = 1 }: SelectionCursorProps) {
     if (status !== "playing") {
       setTouchAiming(false);
       setAiming(false);
+      depthAimRef.current = null;
       return;
     }
 
     const el = gl.domElement;
-
-    const clientToCell = (clientX: number, clientY: number) => {
-      const rect = el.getBoundingClientRect();
-      if (rect.width <= 0 || rect.height <= 0) return null;
-      ndc.set(
-        ((clientX - rect.left) / rect.width) * 2 - 1,
-        -((clientY - rect.top) / rect.height) * 2 + 1,
-      );
-      raycaster.setFromCamera(ndc, camera);
-      return pickCellAlongRay({
-        origin: raycaster.ray.origin,
-        dir: raycaster.ray.direction,
-        dims,
-        spacing,
-        point,
-        center,
-      });
-    };
-
-    const highlightFrontFace = () => {
-      useSliceHighlightStore.getState().setSlice(facingOuterSlice(camera.position, dims));
-    };
-
-    const aimAt = (clientX: number, clientY: number) => {
-      if (status !== "playing") return;
-      const cell = clientToCell(clientX, clientY);
-      if (cell) {
-        setCursor(cell);
-        highlightFrontFace();
-      }
-    };
 
     const clearAimDelay = () => {
       if (aimDelayRef.current === null) return;
@@ -150,6 +209,7 @@ export function SelectionCursor({ dims, spacing = 1 }: SelectionCursorProps) {
         x: 0,
         y: 0,
       };
+      depthAimRef.current = null;
       setTouchAiming(false);
       setAiming(false);
     };
@@ -159,7 +219,9 @@ export function SelectionCursor({ dims, spacing = 1 }: SelectionCursorProps) {
       dragRef.current.touchAim = true;
       setTouchAiming(true);
       setAiming(true);
-      aimAt(pendingAimRef.current.x, pendingAimRef.current.y);
+      const y = pendingAimRef.current.y;
+      const session = beginDepthSessionRef.current(y, "touch");
+      applyDepthAimRef.current(pendingAimRef.current.x, y, session);
     };
 
     const onDown = (e: PointerEvent) => {
@@ -179,6 +241,7 @@ export function SelectionCursor({ dims, spacing = 1 }: SelectionCursorProps) {
         dragRef.current.multi = true;
         dragRef.current.touchAim = false;
         dragRef.current.moved = true;
+        depthAimRef.current = null;
         setTouchAiming(false);
         setAiming(false);
         return;
@@ -225,7 +288,10 @@ export function SelectionCursor({ dims, spacing = 1 }: SelectionCursorProps) {
       }
 
       if (dragRef.current.touchAim && pointersRef.current.size === 1 && !dragRef.current.multi) {
-        aimAt(e.clientX, e.clientY);
+        const session = depthAimRef.current;
+        if (session && session.mode === "touch") {
+          applyDepthAimRef.current(e.clientX, e.clientY, session);
+        }
       }
     };
 
@@ -235,15 +301,17 @@ export function SelectionCursor({ dims, spacing = 1 }: SelectionCursorProps) {
       pointersRef.current.delete(e.pointerId);
 
       if (pointersRef.current.size === 0) {
-        // Quick tap lifted before MULTI_WAIT_MS — still aim, never place.
+        // Quick tap lifted before MULTI_WAIT_MS — still aim at near depth, never place.
         const pendingAim = aimDelayRef.current !== null;
         clearAimDelay();
         if (touch && active && !multi && !touchAim && pendingAim) {
-          aimAt(pendingAimRef.current.x, pendingAimRef.current.y);
+          const session = beginDepthSessionRef.current(pendingAimRef.current.y, "touch");
+          applyDepthAimRef.current(pendingAimRef.current.x, pendingAimRef.current.y, session);
         }
         dragRef.current.active = false;
         dragRef.current.touchAim = false;
         dragRef.current.multi = false;
+        depthAimRef.current = null;
         setTouchAiming(false);
         setAiming(false);
       }
@@ -266,7 +334,7 @@ export function SelectionCursor({ dims, spacing = 1 }: SelectionCursorProps) {
       el.removeEventListener("pointerup", onUp);
       el.removeEventListener("pointercancel", onUp);
     };
-  }, [gl, camera, dims, spacing, placeAtCursor, setCursor, setAiming, status, raycaster, ndc, point, center]);
+  }, [gl, camera, dims, spacing, placeAtCursor, setCursor, setAiming, status, raycaster, ndc, point]);
 
   if (status !== "playing") return null;
 
