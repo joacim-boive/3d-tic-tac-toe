@@ -5,24 +5,16 @@ import { useFrame, useThree } from "@react-three/fiber";
 import { useEffect, useMemo, useRef } from "react";
 import {
   Color,
-  Euler,
   Group,
   Quaternion,
   Vector3,
-  type Camera,
   type Mesh,
   type MeshStandardMaterial,
 } from "three";
 import { cellToWorld } from "@/game/board";
 import { useGameStore } from "@/game/store";
-import {
-  eulerForTipDown,
-  snapTipEuler,
-  tipDownFromEuler,
-  tipRemap,
-  type TipEuler,
-  type TipRemapEntry,
-} from "@/game/tipBoard";
+import { tipDownFromEuler, tipRemap, type TipRemapEntry } from "@/game/tipBoard";
+import { eulerToQuat, tipEulerFromSwipe } from "@/game/tipNav";
 import { PLAYER_COLORS, type BoardDims, type PlayerId } from "@/game/types";
 import { BoardColliders, DROP_GRAVITY, MARKER_RADIUS } from "./BoardColliders";
 import { ClearRowHighlight } from "./ClearRowHighlight";
@@ -34,7 +26,6 @@ import { TipFloorHint } from "./TipFloorHint";
 
 const TIP_ANIM_SPEED = 12;
 const DRAG_THRESHOLD = 44;
-const HALF_PI = Math.PI / 2;
 /** Stagger window so balls don't all release at once. */
 const STAGGER_MAX_MS = 520;
 const BOUNCE_E = 0.28;
@@ -48,50 +39,6 @@ type TipBoardFrameProps = {
   dims: BoardDims;
   dropMode: boolean;
 };
-
-function eulerToQuat(e: TipEuler): Quaternion {
-  return new Quaternion().setFromEuler(new Euler(e.x, e.y, e.z, "XYZ"));
-}
-
-/**
- * Tip controls (two gestures only):
- * - Horizontal: spin on the bottom (yaw about world up) — pick which face is forward
- * - Vertical: flip forward/back about camera-right — swipe up tips bottom toward you
- * No tipping onto the left/right side faces.
- */
-function tipEulerFromSwipe(current: TipEuler, camera: Camera, dx: number, dy: number): TipEuler {
-  if (Math.abs(dx) > Math.abs(dy)) {
-    const snapped = snapTipEuler(current);
-    // Swipe right → near face moves right (positive yaw about world up).
-    return snapTipEuler({
-      ...snapped,
-      y: snapped.y + (dx > 0 ? HALF_PI : -HALF_PI),
-    });
-  }
-
-  const towardCam = new Vector3(camera.position.x, 0, camera.position.z);
-  if (towardCam.lengthSq() < 1e-6) towardCam.set(0, 0, 1);
-  else towardCam.normalize();
-  const camRight = new Vector3(towardCam.z, 0, -towardCam.x);
-
-  const q = eulerToQuat(current);
-  // Screen y grows downward; swipe up (dy < 0) → bottom toward camera.
-  const angle = (dy < 0 ? -1 : 1) * HALF_PI;
-
-  const applyFlip = (a: number): TipEuler => {
-    const delta = new Quaternion().setFromAxisAngle(camRight, a);
-    const next = delta.multiply(q.clone());
-    const e = new Euler().setFromQuaternion(next, "XYZ");
-    return eulerForTipDown(tipDownFromEuler({ x: e.x, y: e.y, z: e.z }));
-  };
-
-  const curDown = tipDownFromEuler(current);
-  let next = applyFlip(angle);
-  if (tipDownFromEuler(next) === curDown) {
-    next = applyFlip(-angle);
-  }
-  return next;
-}
 
 function easeOutCubic(t: number): number {
   return 1 - (1 - t) ** 3;
@@ -284,7 +231,12 @@ function TipDragController() {
       if (Math.hypot(dx, dy) < DRAG_THRESHOLD) return;
       armed.current = false;
       const tipTarget = useGameStore.getState().tipTargetEuler;
-      const next = tipEulerFromSwipe(tipTarget, cameraRef.current, dx, dy);
+      const cam = cameraRef.current;
+      const towardCam = new Vector3(cam.position.x, 0, cam.position.z);
+      if (towardCam.lengthSq() < 1e-6) towardCam.set(0, 0, 1);
+      else towardCam.normalize();
+      const camRight = new Vector3(towardCam.z, 0, -towardCam.x);
+      const next = tipEulerFromSwipe(tipTarget, camRight, dx, dy);
       useGameStore.getState().setTipTargetEuler(next);
       start.current = { x: e.clientX, y: e.clientY };
     };

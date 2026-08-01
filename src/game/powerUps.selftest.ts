@@ -21,7 +21,9 @@ import {
   underCapKinds,
 } from "./powerUps";
 import { canTipPreset, eulerForTipDown, tipBoard, tipChoices, tipDownFromEuler } from "./tipBoard";
+import { tipEulerFromSwipe } from "./tipNav";
 import type { BoardDims } from "./types";
+import { Vector3 } from "three";
 
 function assert(cond: unknown, msg: string): asserts cond {
   if (!cond) throw new Error(msg);
@@ -171,6 +173,29 @@ function testTipCube() {
   }
 }
 
+function testTipNavCombined() {
+  const right = new Vector3(1, 0, 0);
+  let e = { x: 0, y: 0, z: 0 };
+
+  e = tipEulerFromSwipe(e, right, 80, 0);
+  assert(tipDownFromEuler(e) === "-y", "yaw keeps −y floor");
+
+  e = tipEulerFromSwipe(e, right, 0, -80);
+  const afterFlip = tipDownFromEuler(e);
+  assert(afterFlip !== "-y", "flip changes floor");
+
+  const spun = tipEulerFromSwipe(e, right, 80, 0);
+  assert(tipDownFromEuler(spun) === afterFlip, "yaw while tipped keeps same floor");
+  assert(
+    spun.x !== e.x || spun.y !== e.y || spun.z !== e.z,
+    "yaw while tipped actually turns",
+  );
+
+  // Flip then yaw then flip again should still change the floor.
+  const again = tipEulerFromSwipe(spun, right, 0, -80);
+  assert(tipDownFromEuler(again) !== afterFlip, "second flip changes floor again");
+}
+
 function testTipCreatesWin() {
   const dims: BoardDims = { x: 3, y: 3, z: 3 };
   let board = createEmptyBoard();
@@ -191,5 +216,6 @@ testAiCatch();
 testClearCursorAxis();
 testClearAndRepack();
 testTipCube();
+testTipNavCombined();
 testTipCreatesWin();
 console.log("powerUps.selftest ok");
