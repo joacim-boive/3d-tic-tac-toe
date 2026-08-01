@@ -28,8 +28,10 @@ const TIP_ANIM_SPEED = 12;
 const DRAG_THRESHOLD = 44;
 /** Stagger window so balls don't all release at once. */
 const STAGGER_MAX_MS = 520;
-const BOUNCE_E = 0.28;
+/** Match PhysicsMarkers drop settle so tip falls feel the same. */
+const BOUNCE_E = 0.24;
 const MAX_BOUNCES = 1;
+const MAX_DROP_DURATION = 1;
 const SQUASH = 0.72;
 const STRETCH = 1.14;
 const IMPACT_FLASH = 0.7;
@@ -65,15 +67,16 @@ function buildDropPhases(spawnY: number, landY: number, g: number): DropPlan {
   const fallEnd = tCursor;
   const impactSpeed = grav * fallT;
 
+  // Same punchy single bounce as drop-mode PhysicsMarkers.
   const up = impactSpeed * BOUNCE_E;
-  if (up >= 0.55 && MAX_BOUNCES > 0) {
+  if (up >= 0.7 && MAX_BOUNCES > 0) {
     phases.push({ t0: tCursor, y0: landY, v0: up });
     tCursor += (2 * up) / grav;
   }
   tCursor += 0.06;
   return {
     phases,
-    totalDuration: Math.min(tCursor, 1.35),
+    totalDuration: Math.min(tCursor, MAX_DROP_DURATION),
     fallEnd,
     impactSpeed,
   };
@@ -138,11 +141,11 @@ export function TipBoardFrame({ dims, dropMode }: TipBoardFrameProps) {
     if (!g) return;
 
     if (tipFalling) {
-      // Keep the tipped pose while balls fall in world space (TipFallPhysics is
-      // outside this group). Snapping upright here made the board jump/zoom.
-      targetQuat.current.copy(eulerToQuat(tipEuler));
-      displayQuat.current.copy(targetQuat.current);
-      g.quaternion.copy(displayQuat.current);
+      // Rebase upright so landings match the visible grid floor (world −Y).
+      // Balls are drawn in world space from their tipped starts → new cells.
+      displayQuat.current.identity();
+      targetQuat.current.identity();
+      g.quaternion.identity();
       return;
     }
 
@@ -174,8 +177,7 @@ export function TipBoardFrame({ dims, dropMode }: TipBoardFrameProps) {
       {tipMode && !tipFalling ? <TipDragController /> : null}
 
       <group ref={groupRef}>
-        {/* Hide grid while tipped balls fall — avoids a sudden upright snap. */}
-        {!tipFalling ? <Grid dims={dims} /> : null}
+        <Grid dims={dims} />
         {!tipMode && !tipFalling ? <SelectionCursor dims={dims} /> : null}
         <ClearRowHighlight dims={dims} />
         <TipFloorHint dims={dims} />
@@ -349,7 +351,8 @@ function TipFallingBall({
   const bornAt = useRef(performance.now());
   const [ex, ey, ez] = end;
   const g = DROP_GRAVITY[1];
-  const spawnY = Math.max(start.y, ey + 0.15);
+  // Fall from the ball's tipped world height — don't teleport upward first.
+  const spawnY = Math.max(start.y, ey + 0.05);
   const plan = useMemo(() => buildDropPhases(spawnY, ey, g), [spawnY, ey, g]);
   const color = useMemo(() => new Color(PLAYER_COLORS[player]), [player]);
   const baseEmissive = 0.28;
@@ -380,6 +383,7 @@ function TipFallingBall({
       }
       released.current = true;
       fallStartedAt.current = now;
+      // Continue from current pose (already at start); physics uses spawnY as y0.
       mesh.position.set(startX, spawnY, startZ);
     }
 
@@ -394,6 +398,8 @@ function TipFallingBall({
     }
 
     const y = sampleDropY(plan.phases, ey, g, t);
+    // Hold column XZ until near the floor, then ease into the packed cell —
+    // same vertical-first feel as a normal drop.
     const xzT = plan.fallEnd > 0 ? Math.min(1, t / plan.fallEnd) : 1;
     const xzEase = easeOutCubic(xzT);
     const x = startX + (ex - startX) * xzEase;
