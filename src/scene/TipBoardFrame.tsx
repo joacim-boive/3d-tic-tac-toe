@@ -2,7 +2,7 @@
 
 import { Physics } from "@react-three/rapier";
 import { useFrame, useThree } from "@react-three/fiber";
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef } from "react";
 import {
   Color,
   Group,
@@ -105,7 +105,6 @@ export function TipBoardFrame({ dims, dropMode }: TipBoardFrameProps) {
   const powerUpMode = useGameStore((s) => s.powerUpMode);
   const tipEuler = useGameStore((s) => s.tipEuler);
   const tipFalling = useGameStore((s) => s.tipFalling);
-  const tipTargetEuler = useGameStore((s) => s.tipTargetEuler);
   const commitTipEuler = useGameStore((s) => s.commitTipEuler);
   const beginTipFall = useGameStore((s) => s.beginTipFall);
   const finishTipFall = useGameStore((s) => s.finishTipFall);
@@ -116,6 +115,8 @@ export function TipBoardFrame({ dims, dropMode }: TipBoardFrameProps) {
   const tipVisual = tipMode || watchTipPlayback;
   const displayQuat = useRef(new Quaternion());
   const targetQuat = useRef(new Quaternion());
+  /** Once commit fall starts, stay upright until tip UI fully exits — no re-aim snap. */
+  const uprightHoldRef = useRef(false);
 
   const fallEntries = useMemo(() => {
     if (!tipFalling) return [] as TipRemapEntry[];
@@ -140,44 +141,63 @@ export function TipBoardFrame({ dims, dropMode }: TipBoardFrameProps) {
     });
   }, [tipFalling, fallEntries]);
 
+  useLayoutEffect(() => {
+    if (!tipFalling) return;
+    uprightHoldRef.current = true;
+    displayQuat.current.identity();
+    targetQuat.current.identity();
+    if (groupRef.current) groupRef.current.quaternion.identity();
+  }, [tipFalling]);
+
+  useLayoutEffect(() => {
+    if (tipFalling || tipVisual) return;
+    uprightHoldRef.current = false;
+    displayQuat.current.identity();
+    targetQuat.current.identity();
+    if (groupRef.current) groupRef.current.quaternion.identity();
+  }, [tipFalling, tipVisual]);
+
   useFrame((_, dt) => {
     const g = groupRef.current;
     if (!g) return;
 
-    if (tipFalling) {
-      // Rebase upright so landings match the visible grid floor (world −Y).
-      // Balls are drawn in world space from their tipped starts → new cells.
+    const state = useGameStore.getState();
+    const falling = state.tipFalling;
+    const aiming = state.powerUpMode === "tip" && !falling;
+    const playbackRotate = state.watchTipPlayback && !falling;
+
+    // Fall + post-fall hold: never re-apply the pre-commit tip pose.
+    if (falling || uprightHoldRef.current) {
       displayQuat.current.identity();
       targetQuat.current.identity();
       g.quaternion.identity();
+      if (!falling && state.powerUpMode !== "tip" && !state.watchTipPlayback) {
+        uprightHoldRef.current = false;
+      }
       return;
     }
 
-    targetQuat.current.copy(eulerToQuat(tipTargetEuler));
-    displayQuat.current.slerp(targetQuat.current, 1 - Math.exp(-TIP_ANIM_SPEED * dt));
-    g.quaternion.copy(displayQuat.current);
+    if (aiming || playbackRotate) {
+      targetQuat.current.copy(eulerToQuat(state.tipTargetEuler));
+      displayQuat.current.slerp(targetQuat.current, 1 - Math.exp(-TIP_ANIM_SPEED * dt));
+      g.quaternion.copy(displayQuat.current);
 
-    if (
-      tipVisual &&
-      displayQuat.current.angleTo(targetQuat.current) < 0.015 &&
-      (tipEuler.x !== tipTargetEuler.x ||
-        tipEuler.y !== tipTargetEuler.y ||
-        tipEuler.z !== tipTargetEuler.z)
-    ) {
-      commitTipEuler(tipTargetEuler);
-      // Spectator commit playback: after rotate lands, drop the balls.
-      if (watchTipPlayback) {
-        beginTipFall();
+      if (
+        displayQuat.current.angleTo(targetQuat.current) < 0.015 &&
+        (state.tipEuler.x !== state.tipTargetEuler.x ||
+          state.tipEuler.y !== state.tipTargetEuler.y ||
+          state.tipEuler.z !== state.tipTargetEuler.z)
+      ) {
+        commitTipEuler(state.tipTargetEuler);
+        if (state.watchTipPlayback) beginTipFall();
       }
+      return;
     }
-  });
 
-  useEffect(() => {
-    if (!tipVisual && !tipFalling && groupRef.current) {
-      groupRef.current.quaternion.identity();
-      displayQuat.current.identity();
-    }
-  }, [tipVisual, tipFalling]);
+    displayQuat.current.identity();
+    targetQuat.current.identity();
+    g.quaternion.identity();
+  });
 
   return (
     <>
@@ -189,14 +209,14 @@ export function TipBoardFrame({ dims, dropMode }: TipBoardFrameProps) {
         <ClearRowHighlight dims={dims} />
         <TipFloorHint dims={dims} />
 
-        {tipFalling ? null : dropMode ? (
+        {dropMode ? (
           <Physics gravity={DROP_GRAVITY} colliders={false}>
             <BoardColliders dims={dims} />
-            <PhysicsMarkers dims={dims} />
+            {!tipFalling ? <PhysicsMarkers dims={dims} /> : null}
           </Physics>
-        ) : (
+        ) : !tipFalling ? (
           <Markers dims={dims} />
-        )}
+        ) : null}
       </group>
 
       {tipFalling ? (

@@ -523,6 +523,14 @@ function finishPowerUpBoard(
   const opponentToast =
     state.playMode === "ai" && by === AI_PLAYER && _toast ? _toast : null;
 
+  const tipReset = {
+    tipFalling: false,
+    tipEuler: { ...IDENTITY_TIP_EULER },
+    tipTargetEuler: { ...IDENTITY_TIP_EULER },
+    tipCheckpoint: null,
+    tipDirty: false,
+  } as const;
+
   if (win) {
     set({
       board,
@@ -543,6 +551,7 @@ function finishPowerUpBoard(
       dropBusy: false,
       onlineStatus: state.playMode === "online" ? "ended" : state.onlineStatus,
       rematchVotes: state.playMode === "online" ? { ...EMPTY_VOTES } : state.rematchVotes,
+      ...tipReset,
     });
     if (state.playMode === "online") localStateSyncPublisher?.();
     return;
@@ -568,6 +577,7 @@ function finishPowerUpBoard(
       dropBusy: false,
       onlineStatus: state.playMode === "online" ? "ended" : state.onlineStatus,
       rematchVotes: state.playMode === "online" ? { ...EMPTY_VOTES } : state.rematchVotes,
+      ...tipReset,
     });
     if (state.playMode === "online") localStateSyncPublisher?.();
     return;
@@ -590,6 +600,7 @@ function finishPowerUpBoard(
     pendingTipSync: null,
     fallingKey: null,
     dropBusy: false,
+    ...tipReset,
   });
 
   if (state.playMode === "ai" && nextPlayer === AI_PLAYER) {
@@ -1163,6 +1174,8 @@ export const useGameStore = create<GameState>((set, get) => ({
           tipFalling: false,
           tipEuler: { ...IDENTITY_TIP_EULER },
           tipTargetEuler: { ...IDENTITY_TIP_EULER },
+          tipCheckpoint: null,
+          tipDirty: false,
           watchTipPlayback: false,
           pendingTipSync: null,
           watchPowerUp: null,
@@ -1175,7 +1188,10 @@ export const useGameStore = create<GameState>((set, get) => ({
           tipFalling: false,
           tipEuler: { ...IDENTITY_TIP_EULER },
           tipTargetEuler: { ...IDENTITY_TIP_EULER },
+          tipCheckpoint: null,
+          tipDirty: false,
           watchTipPlayback: false,
+          powerUpMode: null,
         });
         return;
       }
@@ -1186,6 +1202,8 @@ export const useGameStore = create<GameState>((set, get) => ({
         tipFalling: false,
         tipEuler: { ...IDENTITY_TIP_EULER },
         tipTargetEuler: { ...IDENTITY_TIP_EULER },
+        tipCheckpoint: null,
+        tipDirty: false,
         watchTipPlayback: false,
         watchPowerUp: null,
         powerUpMode: null,
@@ -1195,10 +1213,19 @@ export const useGameStore = create<GameState>((set, get) => ({
 
     if (state.powerUpMode !== "tip") return;
     if (toDown === "-y") {
-      set({ tipFalling: false });
+      set({
+        tipFalling: false,
+        tipEuler: { ...IDENTITY_TIP_EULER },
+        tipTargetEuler: { ...IDENTITY_TIP_EULER },
+        tipCheckpoint: null,
+        tipDirty: false,
+        powerUpMode: null,
+      });
       return;
     }
     // One tip per spend: rebase via full Euler (includes yaw), spend, exit.
+    // Single store update via finishPowerUpBoard — no intermediate frame that
+    // could re-slerp toward the pre-commit tip pose.
     const board = tipBoardFromEuler(state.board, dims, state.tipEuler);
     const by = state.currentPlayer;
     const spent = spendPowerUp(state.inventory[by], "tip");
@@ -1217,13 +1244,6 @@ export const useGameStore = create<GameState>((set, get) => ({
       publishPowerUpNotify("tip", by, "confirm");
       publishTipAimEnd(by);
     }
-    set({
-      tipFalling: false,
-      tipEuler: { ...IDENTITY_TIP_EULER },
-      tipTargetEuler: { ...IDENTITY_TIP_EULER },
-      tipCheckpoint: null,
-      tipDirty: false,
-    });
     finishPowerUpBoard(get, set, board, by, spent, `${state.displayName(by)} tipped the field`);
   },
 
