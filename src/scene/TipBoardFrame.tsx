@@ -30,6 +30,7 @@ import { Grid } from "./Grid";
 import { Markers } from "./Markers";
 import { PhysicsMarkers } from "./PhysicsMarkers";
 import { SelectionCursor } from "./SelectionCursor";
+import { TipFloorHint } from "./TipFloorHint";
 
 const TIP_ANIM_SPEED = 12;
 const DRAG_THRESHOLD = 44;
@@ -231,6 +232,7 @@ export function TipBoardFrame({ dims, dropMode }: TipBoardFrameProps) {
         <Grid dims={dims} />
         {!tipMode && !tipFalling ? <SelectionCursor dims={dims} /> : null}
         <ClearRowHighlight dims={dims} />
+        <TipFloorHint dims={dims} />
 
         {tipFalling ? (
           <TipFallPhysics

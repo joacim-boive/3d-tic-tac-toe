@@ -2,7 +2,7 @@ import type { PresenceChannel } from "pusher-js";
 import type { Board } from "@/game/board";
 import { resolvePresetId } from "@/game/presets";
 import { generateRoomCode, isValidRoomCode, normalizeRoomCode } from "@/game/roomCode";
-import { setLocalPlacePublisher, setLocalSwarmPublisher, setLocalSwarmResultPublisher, setLocalStateSyncPublisher, useGameStore } from "@/game/store";
+import { setLocalClearAimPublisher, setLocalPlacePublisher, setLocalPowerUpNotifyPublisher, setLocalSwarmPublisher, setLocalSwarmResultPublisher, setLocalStateSyncPublisher, setLocalTipAimPublisher, useGameStore } from "@/game/store";
 import type { PlayerId, PlayerNames, PlacementMode, PresetId } from "@/game/types";
 import type { PresenceData, RoomMessage, StateMessage } from "./messages";
 import { notifyOpponentConnected } from "./notify";
@@ -141,6 +141,30 @@ function onMessage(raw: RoomMessage) {
       store.applyRemoteSwarmResult(raw.by, raw.index, raw.outcome, raw.kind);
       break;
     }
+    case "powerup-notify": {
+      if (store.seat === raw.by) break;
+      store.applyRemotePowerUpNotify(raw.kind, raw.by, raw.phase);
+      break;
+    }
+    case "powerup-aim": {
+      if (store.seat === raw.by) break;
+      store.applyRemoteClearAim({
+        by: raw.by,
+        active: raw.active,
+        clearAxis: raw.clearAxis,
+        cursor: raw.cursor,
+      });
+      break;
+    }
+    case "powerup-tip-aim": {
+      if (store.seat === raw.by) break;
+      store.applyRemoteTipAim({
+        by: raw.by,
+        active: raw.active,
+        toDown: raw.toDown,
+      });
+      break;
+    }
     case "rematch": {
       store.setRematchVote(raw.seat, raw.accept);
       const votes = useGameStore.getState().rematchVotes;
@@ -177,6 +201,9 @@ function wireChannel(channel: PresenceChannel, seat: PlayerId) {
     "hello",
     "package-swarm",
     "package-result",
+    "powerup-notify",
+    "powerup-aim",
+    "powerup-tip-aim",
   ] as const;
   for (const type of events) {
     channel.bind(`client-${type}`, (data: RoomMessage) => {
@@ -238,6 +265,27 @@ function wireChannel(channel: PresenceChannel, seat: PlayerId) {
   });
   setLocalStateSyncPublisher(() => {
     trigger(channel, buildStateMessage());
+  });
+  setLocalPowerUpNotifyPublisher((kind, by, phase) => {
+    trigger(channel, { type: "powerup-notify", kind, by, phase });
+  });
+  setLocalClearAimPublisher((msg) => {
+    trigger(channel, {
+      type: "powerup-aim",
+      kind: "clear-row",
+      by: msg.by,
+      active: msg.active,
+      clearAxis: msg.clearAxis,
+      cursor: msg.cursor,
+    });
+  });
+  setLocalTipAimPublisher((msg) => {
+    trigger(channel, {
+      type: "powerup-tip-aim",
+      by: msg.by,
+      active: msg.active,
+      toDown: msg.toDown,
+    });
   });
 }
 
@@ -326,8 +374,12 @@ async function attachSession(
       dispose: () => {
         clearDisconnectTimer();
         setLocalPlacePublisher(null);
-  setLocalSwarmPublisher(null);
-  setLocalSwarmResultPublisher(null);
+        setLocalSwarmPublisher(null);
+        setLocalSwarmResultPublisher(null);
+        setLocalStateSyncPublisher(null);
+        setLocalPowerUpNotifyPublisher(null);
+        setLocalClearAimPublisher(null);
+        setLocalTipAimPublisher(null);
         channel.unbind_all();
         pusher.unsubscribe(channelName);
       },
@@ -336,8 +388,12 @@ async function attachSession(
     tryStartFromMembers(channel);
   } catch (err) {
     setLocalPlacePublisher(null);
-  setLocalSwarmPublisher(null);
-  setLocalSwarmResultPublisher(null);
+    setLocalSwarmPublisher(null);
+    setLocalSwarmResultPublisher(null);
+    setLocalStateSyncPublisher(null);
+    setLocalPowerUpNotifyPublisher(null);
+    setLocalClearAimPublisher(null);
+    setLocalTipAimPublisher(null);
     channel.unbind_all();
     pusher.unsubscribe(channelName);
     disconnectPusher();
@@ -388,6 +444,10 @@ export async function leaveOnlineSession(): Promise<void> {
   setLocalPlacePublisher(null);
   setLocalSwarmPublisher(null);
   setLocalSwarmResultPublisher(null);
+  setLocalStateSyncPublisher(null);
+  setLocalPowerUpNotifyPublisher(null);
+  setLocalClearAimPublisher(null);
+  setLocalTipAimPublisher(null);
   if (handle) {
     handle.dispose();
   }

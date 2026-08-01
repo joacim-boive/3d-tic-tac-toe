@@ -56,6 +56,36 @@ export type PackageResultMessage = {
   kind?: PowerUpId;
 };
 
+/** Opponent toast + spectator awareness (no board payload). */
+export type PowerUpNotifyMessage = {
+  type: "powerup-notify";
+  kind: PowerUpId;
+  by: PlayerId;
+  phase: "activate" | "cancel" | "confirm";
+};
+
+/** Live Clear aiming for the spectator (shaft follows without granting controls). */
+export type PowerUpAimMessage = {
+  type: "powerup-aim";
+  kind: "clear-row";
+  by: PlayerId;
+  active: boolean;
+  clearAxis?: "x" | "y" | "z";
+  cursor?: CellCoord;
+};
+
+/**
+ * Tip intent for the spectator — which face will become the floor.
+ * Does not rotate their cube; camera/view stay put.
+ */
+export type PowerUpTipAimMessage = {
+  type: "powerup-tip-aim";
+  by: PlayerId;
+  active: boolean;
+  /** Face becoming floor, or null while still upright / spinning. */
+  toDown?: "+x" | "-x" | "+y" | "-y" | "+z" | "-z" | null;
+};
+
 export type StateMessage = {
   type: "state";
   board: Array<[string, PlayerId]>;
@@ -81,4 +111,7 @@ export type RoomMessage =
   | RematchMessage
   | PackageSwarmMessage
   | PackageResultMessage
+  | PowerUpNotifyMessage
+  | PowerUpAimMessage
+  | PowerUpTipAimMessage
   | StateMessage;

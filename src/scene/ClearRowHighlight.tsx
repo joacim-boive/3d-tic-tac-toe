@@ -56,18 +56,23 @@ function shaftWorld(
 }
 
 /**
- * One translucent red column/shaft along the clear-target line — cleaner than per-cell spheres.
+ * Translucent clear shaft — local aiming, or live spectator follow of opponent aim.
  */
 export function ClearRowHighlight({ dims, spacing = 1 }: ClearRowHighlightProps) {
   const powerUpMode = useGameStore((s) => s.powerUpMode);
   const clearAxis = useGameStore((s) => s.clearAxis);
   const cursor = useGameStore((s) => s.cursor);
+  const watch = useGameStore((s) => s.watchPowerUp);
   const color = useMemo(() => new Color(CLEAR_COLOR), []);
 
-  if (powerUpMode !== "clear-row") return null;
+  const watching = watch?.kind === "clear-row" ? watch : null;
+  const local = powerUpMode === "clear-row";
+  if (!local && !watching) return null;
 
-  const { a, b } = clearFixedFromCursor(clearAxis, cursor);
-  const { position, size } = shaftWorld(clearAxis, a, b, dims, spacing);
+  const axis = local ? clearAxis : watching!.clearAxis;
+  const aim = local ? cursor : watching!.cursor;
+  const { a, b } = clearFixedFromCursor(axis, aim);
+  const { position, size } = shaftWorld(axis, a, b, dims, spacing);
 
   return (
     <mesh position={position} renderOrder={2}>

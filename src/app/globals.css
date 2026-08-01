@@ -371,6 +371,38 @@ button {
   -webkit-touch-callout: none;
 }
 
+/* Opponent power-up notice — overlays the canvas, never shifts chrome layout */
+.powerup-toast {
+  position: absolute;
+  top: 0.85rem;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 25;
+  margin: 0;
+  padding: 0.4rem 0.9rem;
+  max-width: min(92%, 28rem);
+  border-radius: 8px;
+  background: rgba(10, 16, 22, 0.9);
+  border: 1px solid rgba(62, 207, 200, 0.35);
+  color: var(--ink);
+  font-size: 0.88rem;
+  text-align: center;
+  pointer-events: none;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+  animation: powerup-toast-in 0.18s ease-out;
+}
+
+@keyframes powerup-toast-in {
+  from {
+    opacity: 0;
+    transform: translateX(-50%) translateY(-6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+  }
+}
+
 .chrome {
   flex-shrink: 0;
   z-index: 2;

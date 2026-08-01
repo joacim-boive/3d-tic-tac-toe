@@ -8,6 +8,7 @@ import { leaveOnlineSession } from "@/online/session";
 import { RematchDialog } from "./RematchDialog";
 import { PackageSwarm } from "./PackageSwarm";
 import { PowerUpHud } from "./PowerUpHud";
+import { PowerUpToast } from "./PowerUpToast";
 import { useGameControls } from "./useGameControls";
 
 type GameChromeProps = {
@@ -41,6 +42,7 @@ export function GameChrome({ children }: GameChromeProps) {
   const bonusPlacesRemaining = useGameStore((s) => s.bonusPlacesRemaining);
   const powerUpMode = useGameStore((s) => s.powerUpMode);
   const tipFalling = useGameStore((s) => s.tipFalling);
+  const watchPowerUp = useGameStore((s) => s.watchPowerUp);
   const currentPlayer = useGameStore((s) => s.currentPlayer);
   const status = useGameStore((s) => s.status);
   const winner = useGameStore((s) => s.winner);
@@ -75,6 +77,10 @@ export function GameChrome({ children }: GameChromeProps) {
     statusText = "Draw";
   } else if (tipFalling) {
     statusText = "Balls falling…";
+  } else if (watchPowerUp?.kind === "clear-row") {
+    statusText = `${displayName(watchPowerUp.by)} aiming Clear…`;
+  } else if (watchPowerUp?.kind === "tip") {
+    statusText = `${displayName(watchPowerUp.by)} tipping…`;
   } else if (powerUpMode === "clear-row") {
     statusText = "Clear — aim · tap to switch axis";
   } else if (powerUpMode === "tip") {
@@ -162,6 +168,7 @@ export function GameChrome({ children }: GameChromeProps) {
       <div className="game-viewport">
         {children}
         <PackageSwarm />
+        <PowerUpToast />
       </div>
 
       <PowerUpHud />
