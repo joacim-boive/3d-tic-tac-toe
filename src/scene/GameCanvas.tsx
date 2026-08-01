@@ -2,17 +2,11 @@
 
 import { OrbitControls } from "@react-three/drei";
 import { Canvas, useThree } from "@react-three/fiber";
-import { Physics } from "@react-three/rapier";
 import { Suspense, useEffect, useState } from "react";
 import { MathUtils, TOUCH } from "three";
 import { getPreset } from "@/game/presets";
 import { useGameStore } from "@/game/store";
-import { ActiveSlice } from "./ActiveSlice";
-import { BoardColliders, DROP_GRAVITY } from "./BoardColliders";
-import { Grid } from "./Grid";
-import { Markers } from "./Markers";
-import { PhysicsMarkers } from "./PhysicsMarkers";
-import { SelectionCursor } from "./SelectionCursor";
+import { TipBoardFrame } from "./TipBoardFrame";
 
 function camDistance(dims: { x: number; y: number; z: number }): number {
   return Math.max(dims.x, dims.y, dims.z) * 1.6 + 2;
@@ -55,15 +49,22 @@ function SceneContent() {
   const placement = useGameStore((s) => s.placement);
   const aiming = useGameStore((s) => s.aiming);
   const status = useGameStore((s) => s.status);
+  const powerUpMode = useGameStore((s) => s.powerUpMode);
+  const tipFalling = useGameStore((s) => s.tipFalling);
   const touchUi = useCoarsePointer();
   const dims = getPreset(presetId).dims;
   const camDist = camDistance(dims);
-  // Match over: free orbit/zoom to review the line; aim gestures off.
   const reviewing = status === "won" || status === "draw";
   const dropMode = placement === "drop";
+  const tipMode = powerUpMode === "tip";
+  const watchTipPlayback = useGameStore((s) => s.watchTipPlayback);
+  const swarmBusy = useGameStore((s) => s.swarmBusy);
+  // Tip: drag tips the box. Swarm: overlay owns all pointers.
+  // Spectator tip commit playback also locks orbit.
+  const camLocked = tipMode || tipFalling || watchTipPlayback || swarmBusy;
   // Drop mode: orbit around and over the top, never under the box.
-  const maxPolar = dropMode ? MathUtils.DEG2RAD * 78 : Math.PI;
-  const minPolar = dropMode ? MathUtils.DEG2RAD * 8 : 0;
+  const maxPolar = reviewing ? Math.PI : dropMode ? MathUtils.DEG2RAD * 78 : Math.PI;
+  const minPolar = reviewing ? 0 : dropMode ? MathUtils.DEG2RAD * 8 : 0;
 
   return (
     <>
@@ -73,29 +74,19 @@ function SceneContent() {
       <directionalLight position={[dims.x, dims.y * 1.2, dims.z * 0.8]} intensity={1.1} />
       <directionalLight position={[-dims.x, -dims.y * 0.4, -dims.z]} intensity={0.35} />
 
-      <Grid dims={dims} />
-      <ActiveSlice dims={dims} />
-      <SelectionCursor dims={dims} />
-
-      {dropMode ? (
-        <Physics gravity={DROP_GRAVITY} colliders={false}>
-          <BoardColliders dims={dims} />
-          <PhysicsMarkers dims={dims} />
-        </Physics>
-      ) : (
-        <Markers dims={dims} />
-      )}
+      <TipBoardFrame dims={dims} dropMode={dropMode} />
 
       {/*
-        Playing (touch): one-finger reserved for aiming (PAN + enablePan false = no-op);
-        two-finger dolly-rotate = orbit + pinch. Mouse left-drag still rotates.
-        Reviewing: one-finger orbit so the winning line can be inspected.
+        Tip / package swarm: OrbitControls off.
+        Otherwise: one-finger aim; two-finger orbit (touch).
+        Viewport size must stay fixed when Tip toggles (mode controls overlay)
+        so disabling orbit here does not look like a zoom change.
       */}
       <OrbitControls
-        enablePan={!touchUi || reviewing}
-        enableZoom
-        enableRotate
-        enabled={reviewing || !aiming}
+        enablePan={!camLocked && (!touchUi || reviewing)}
+        enableZoom={!camLocked}
+        enableRotate={!camLocked}
+        enabled={!camLocked && (reviewing || !aiming)}
         enableDamping
         dampingFactor={0.08}
         minDistance={camDist * 0.35}

@@ -2,7 +2,7 @@ import type { PresenceChannel } from "pusher-js";
 import type { Board } from "@/game/board";
 import { resolvePresetId } from "@/game/presets";
 import { generateRoomCode, isValidRoomCode, normalizeRoomCode } from "@/game/roomCode";
-import { setLocalPlacePublisher, useGameStore } from "@/game/store";
+import { setLocalClearAimPublisher, setLocalPlacePublisher, setLocalPowerUpNotifyPublisher, setLocalSwarmPublisher, setLocalSwarmResultPublisher, setLocalStateSyncPublisher, setLocalTipAimPublisher, setLocalTipCommitPublisher, useGameStore } from "@/game/store";
 import type { PlayerId, PlayerNames, PlacementMode, PresetId } from "@/game/types";
 import type { PresenceData, RoomMessage, StateMessage } from "./messages";
 import { notifyOpponentConnected } from "./notify";
@@ -60,6 +60,9 @@ function buildStateMessage(): StateMessage {
     winner: s.winner,
     winningLine: s.winningLine,
     winningCell: s.winningCell,
+    inventory: s.inventory,
+    powerUpsEnabled: s.powerUpsEnabled,
+    bonusPlacesRemaining: s.bonusPlacesRemaining,
   };
 }
 
@@ -75,6 +78,9 @@ function applyStateMessage(msg: StateMessage) {
     winner: msg.winner,
     winningLine: msg.winningLine,
     winningCell: msg.winningCell ?? null,
+    inventory: msg.inventory,
+    powerUpsEnabled: msg.powerUpsEnabled,
+    bonusPlacesRemaining: msg.bonusPlacesRemaining,
   });
 }
 
@@ -120,6 +126,53 @@ function onMessage(raw: RoomMessage) {
       store.applyRemotePlace({ x: raw.x, y: raw.y, z: raw.z }, raw.by);
       break;
     }
+    case "package-swarm": {
+      if (store.seat === raw.earner) break;
+      store.applyRemoteSwarm({
+        seed: raw.seed,
+        liveIndex: raw.liveIndex,
+        earner: raw.earner,
+        packages: raw.packages,
+      });
+      break;
+    }
+    case "package-result": {
+      if (store.seat === raw.by) break;
+      store.applyRemoteSwarmResult(raw.by, raw.index, raw.outcome, raw.kind);
+      break;
+    }
+    case "powerup-notify": {
+      if (store.seat === raw.by) break;
+      store.applyRemotePowerUpNotify(raw.kind, raw.by, raw.phase);
+      break;
+    }
+    case "powerup-aim": {
+      if (store.seat === raw.by) break;
+      store.applyRemoteClearAim({
+        by: raw.by,
+        active: raw.active,
+        clearAxis: raw.clearAxis,
+        cursor: raw.cursor,
+      });
+      break;
+    }
+    case "powerup-tip-aim": {
+      if (store.seat === raw.by) break;
+      store.applyRemoteTipAim({
+        by: raw.by,
+        active: raw.active,
+        toDown: raw.toDown,
+      });
+      break;
+    }
+    case "powerup-tip-commit": {
+      if (store.seat === raw.by) break;
+      store.applyRemoteTipCommit({
+        by: raw.by,
+        tipEuler: raw.tipEuler,
+      });
+      break;
+    }
     case "rematch": {
       store.setRematchVote(raw.seat, raw.accept);
       const votes = useGameStore.getState().rematchVotes;
@@ -136,6 +189,9 @@ function onMessage(raw: RoomMessage) {
       if (store.onlineStatus === "paused" || store.onlineStatus === "lobby") {
         applyStateMessage(raw);
         store.resumeOnline();
+      } else if (store.onlineStatus === "playing" || store.onlineStatus === "ended") {
+        // Power-up board sync (Clear / Tip) from peer
+        applyStateMessage(raw);
       }
       break;
     }
@@ -145,7 +201,19 @@ function onMessage(raw: RoomMessage) {
 }
 
 function wireChannel(channel: PresenceChannel, seat: PlayerId) {
-  const events = ["ready", "place", "rematch", "state", "hello"] as const;
+  const events = [
+    "ready",
+    "place",
+    "rematch",
+    "state",
+    "hello",
+    "package-swarm",
+    "package-result",
+    "powerup-notify",
+    "powerup-aim",
+    "powerup-tip-aim",
+    "powerup-tip-commit",
+  ] as const;
   for (const type of events) {
     channel.bind(`client-${type}`, (data: RoomMessage) => {
       if (!data || typeof data !== "object" || data.type !== type) return;
@@ -191,6 +259,49 @@ function wireChannel(channel: PresenceChannel, seat: PlayerId) {
 
   setLocalPlacePublisher((coord, by) => {
     trigger(channel, { type: "place", x: coord.x, y: coord.y, z: coord.z, by });
+  });
+  setLocalSwarmPublisher((plan) => {
+    trigger(channel, {
+      type: "package-swarm",
+      seed: plan.seed,
+      liveIndex: plan.liveIndex,
+      earner: plan.earner,
+      packages: plan.packages,
+    });
+  });
+  setLocalSwarmResultPublisher((by, index, outcome, kind) => {
+    trigger(channel, { type: "package-result", by, index, outcome, kind });
+  });
+  setLocalStateSyncPublisher(() => {
+    trigger(channel, buildStateMessage());
+  });
+  setLocalPowerUpNotifyPublisher((kind, by, phase) => {
+    trigger(channel, { type: "powerup-notify", kind, by, phase });
+  });
+  setLocalClearAimPublisher((msg) => {
+    trigger(channel, {
+      type: "powerup-aim",
+      kind: "clear-row",
+      by: msg.by,
+      active: msg.active,
+      clearAxis: msg.clearAxis,
+      cursor: msg.cursor,
+    });
+  });
+  setLocalTipAimPublisher((msg) => {
+    trigger(channel, {
+      type: "powerup-tip-aim",
+      by: msg.by,
+      active: msg.active,
+      toDown: msg.toDown,
+    });
+  });
+  setLocalTipCommitPublisher((msg) => {
+    trigger(channel, {
+      type: "powerup-tip-commit",
+      by: msg.by,
+      tipEuler: msg.tipEuler,
+    });
   });
 }
 
@@ -279,6 +390,13 @@ async function attachSession(
       dispose: () => {
         clearDisconnectTimer();
         setLocalPlacePublisher(null);
+        setLocalSwarmPublisher(null);
+        setLocalSwarmResultPublisher(null);
+        setLocalStateSyncPublisher(null);
+        setLocalPowerUpNotifyPublisher(null);
+        setLocalClearAimPublisher(null);
+        setLocalTipAimPublisher(null);
+        setLocalTipCommitPublisher(null);
         channel.unbind_all();
         pusher.unsubscribe(channelName);
       },
@@ -287,6 +405,13 @@ async function attachSession(
     tryStartFromMembers(channel);
   } catch (err) {
     setLocalPlacePublisher(null);
+    setLocalSwarmPublisher(null);
+    setLocalSwarmResultPublisher(null);
+    setLocalStateSyncPublisher(null);
+    setLocalPowerUpNotifyPublisher(null);
+    setLocalClearAimPublisher(null);
+    setLocalTipAimPublisher(null);
+    setLocalTipCommitPublisher(null);
     channel.unbind_all();
     pusher.unsubscribe(channelName);
     disconnectPusher();
@@ -335,6 +460,13 @@ export async function leaveOnlineSession(): Promise<void> {
   const handle = active;
   active = null;
   setLocalPlacePublisher(null);
+  setLocalSwarmPublisher(null);
+  setLocalSwarmResultPublisher(null);
+  setLocalStateSyncPublisher(null);
+  setLocalPowerUpNotifyPublisher(null);
+  setLocalClearAimPublisher(null);
+  setLocalTipAimPublisher(null);
+  setLocalTipCommitPublisher(null);
   if (handle) {
     handle.dispose();
   }

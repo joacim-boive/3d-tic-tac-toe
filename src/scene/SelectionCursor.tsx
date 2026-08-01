@@ -48,6 +48,7 @@ type TriDepthSession = {
  * Sticky-depth aim cursor.
  * 1-finger / Shift+move: pick freely on the sticky plane (including up/down).
  * 3-finger swipe up/down: change depth (up = deeper). Q/E or Shift+wheel on desktop.
+ * Power-ups: swarm blocks pointers; clear-row tap cycles axis (cursor mesh hidden).
  */
 export function SelectionCursor({ dims, spacing = 1 }: SelectionCursorProps) {
   const { camera, gl } = useThree();
@@ -62,12 +63,16 @@ export function SelectionCursor({ dims, spacing = 1 }: SelectionCursorProps) {
   const placement = useGameStore((s) => s.placement);
   const dropBusy = useGameStore((s) => s.dropBusy);
   const occupiedCount = useGameStore((s) => s.occupiedCount);
+  const swarmBusy = useGameStore((s) => s.swarmBusy);
+  const powerUpMode = useGameStore((s) => s.powerUpMode);
+  const cycleClearAxis = useGameStore((s) => s.cycleClearAxis);
   const sticky = useSliceHighlightStore((s) => s.slice);
   const setSticky = useSliceHighlightStore((s) => s.setSlice);
   const clearSticky = useSliceHighlightStore((s) => s.clearSlice);
 
   const [touchAiming, setTouchAiming] = useState(false);
   const showAim = aiming || touchAiming;
+  const clearMode = powerUpMode === "clear-row";
 
   const raycaster = useMemo(() => new Raycaster(), []);
   const ndc = useMemo(() => new Vector2(), []);
@@ -87,6 +92,12 @@ export function SelectionCursor({ dims, spacing = 1 }: SelectionCursorProps) {
   const triDepthRef = useRef<TriDepthSession | null>(null);
   const dropBusyRef = useRef(dropBusy);
   dropBusyRef.current = dropBusy;
+  const swarmBusyRef = useRef(swarmBusy);
+  swarmBusyRef.current = swarmBusy;
+  const clearModeRef = useRef(clearMode);
+  clearModeRef.current = clearMode;
+  const cycleClearAxisRef = useRef(cycleClearAxis);
+  cycleClearAxisRef.current = cycleClearAxis;
   const cursorRef = useRef(cursor);
   cursorRef.current = cursor;
   const placementRef = useRef(placement);
@@ -175,7 +186,7 @@ export function SelectionCursor({ dims, spacing = 1 }: SelectionCursorProps) {
 
   // Desktop Shift-aim: free 2D pick on sticky plane (up/down moves on-plane).
   useFrame((state) => {
-    if (!aiming || status !== "playing") {
+    if (!aiming || status !== "playing" || swarmBusy) {
       if (!touchAiming) aimSessionRef.current = null;
       return;
     }
@@ -228,6 +239,7 @@ export function SelectionCursor({ dims, spacing = 1 }: SelectionCursorProps) {
     if (status !== "playing") return;
 
     const stepDepth = (deeper: 1 | -1) => {
+      if (swarmBusyRef.current) return;
       const stickyNow = ensureStickyRef.current();
       const next = stepStickyDepth(stickyNow, camera.position, dims, deeper);
       publishStickyRef.current(next.axis, next.index);
@@ -250,6 +262,7 @@ export function SelectionCursor({ dims, spacing = 1 }: SelectionCursorProps) {
 
     const onWheel = (e: WheelEvent) => {
       if (!useGameStore.getState().aiming) return;
+      if (swarmBusyRef.current) return;
       e.preventDefault();
       if (e.deltaY === 0) return;
       // Scroll up → deeper (into the board), scroll down → shallower.
@@ -333,6 +346,7 @@ export function SelectionCursor({ dims, spacing = 1 }: SelectionCursorProps) {
     const beginTouchAim = () => {
       if (dragRef.current.multi || pointersRef.current.size !== 1) return;
       if (triDepthRef.current) return;
+      if (swarmBusyRef.current) return;
       dragRef.current.touchAim = true;
       setTouchAiming(true);
       setAiming(true);
@@ -346,6 +360,8 @@ export function SelectionCursor({ dims, spacing = 1 }: SelectionCursorProps) {
     };
 
     const onDown = (e: PointerEvent) => {
+      if (swarmBusyRef.current) return;
+      // Recover from missed pointerup/cancel (listener rebind mid-gesture, Safari quirks).
       if (e.isPrimary && pointersRef.current.size > 0 && !pointersRef.current.has(e.pointerId)) {
         resetGestureState();
       }
@@ -472,7 +488,16 @@ export function SelectionCursor({ dims, spacing = 1 }: SelectionCursorProps) {
         endTriDepth();
         const pendingAim = aimDelayRef.current !== null;
         clearAimDelay();
-        if (touch && active && !multi && !touchAim && pendingAim && !wasTri) {
+        // Quick tap → aim on sticky plane (except clear mode: tap cycles axis below).
+        if (
+          touch &&
+          active &&
+          !multi &&
+          !touchAim &&
+          pendingAim &&
+          !wasTri &&
+          !clearModeRef.current
+        ) {
           const stickyNow = ensureStickyRef.current();
           pickOnDepthRef.current(
             pendingAimRef.current.x,
@@ -494,7 +519,7 @@ export function SelectionCursor({ dims, spacing = 1 }: SelectionCursorProps) {
         const left = listPointerPoints()[0];
         // After 3-finger depth, keep free aim on the sticky plane with the
         // remaining finger — no need to lift and re-drag.
-        if (wasTri && left && touch) {
+        if (wasTri && left && touch && !swarmBusyRef.current) {
           dragRef.current = {
             active: true,
             moved: true,
@@ -516,8 +541,14 @@ export function SelectionCursor({ dims, spacing = 1 }: SelectionCursorProps) {
           dragRef.current.touchAim = false;
         }
       }
+
+      // Clear mode: tap/click cycles axis (chips stay in sync). Else desktop click places.
       if (!active || moved || touchAim || multi) return;
-      if (status !== "playing" || dropBusyRef.current) return;
+      if (status !== "playing" || dropBusyRef.current || swarmBusyRef.current) return;
+      if (clearModeRef.current) {
+        cycleClearAxisRef.current();
+        return;
+      }
       if (!touch) placeAtCursor();
     };
 
@@ -548,6 +579,10 @@ export function SelectionCursor({ dims, spacing = 1 }: SelectionCursorProps) {
   ]);
 
   if (status !== "playing") return null;
+
+  // Clear mode: no place-style cell border — the translucent shaft is the only preview.
+  // Gesture listeners above still handle aim + tap-to-cycle.
+  if (clearMode) return null;
 
   const occupied = board.has(cellKey(cursor.x, cursor.y, cursor.z));
   const [cx, cy, cz] = cellToWorld(cursor, dims, spacing);

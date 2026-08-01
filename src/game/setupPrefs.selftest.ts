@@ -13,11 +13,13 @@ function testValidBlob() {
     playMode: "ai",
     placement: "drop",
     aiDifficulty: "hard",
+    powerUpsEnabled: true,
   });
   assert(prefs.presetId === "5x5x4", "preset");
   assert(prefs.playMode === "ai", "mode");
   assert(prefs.placement === "drop", "placement");
   assert(prefs.aiDifficulty === "hard", "difficulty");
+  assert(prefs.powerUpsEnabled === true, "power-ups on");
 }
 
 function testExtremeDifficulty() {
@@ -28,6 +30,11 @@ function testExtremeDifficulty() {
     aiDifficulty: "extreme",
   });
   assert(prefs.aiDifficulty === "extreme", "extreme accepted");
+}
+
+function testPowerUpsFlag() {
+  assert(parseSetupPrefs({ powerUpsEnabled: false }).powerUpsEnabled === false, "off");
+  assert(parseSetupPrefs({ powerUpsEnabled: "yes" }).powerUpsEnabled === undefined, "junk");
 }
 
 function testLegacyPresetId() {
@@ -55,6 +62,7 @@ function testNullSafe() {
 
 testValidBlob();
 testExtremeDifficulty();
+testPowerUpsFlag();
 testLegacyPresetId();
 testIgnoresJunk();
 testNullSafe();

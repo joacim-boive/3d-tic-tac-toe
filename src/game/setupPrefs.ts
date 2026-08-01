@@ -8,6 +8,7 @@ export type SetupPrefs = {
   playMode: PlayMode;
   placement: PlacementMode;
   aiDifficulty: AiDifficulty;
+  powerUpsEnabled: boolean;
 };
 
 const PLAY_MODES: readonly PlayMode[] = ["hotseat", "ai", "online"];
@@ -38,6 +39,7 @@ export function parseSetupPrefs(raw: unknown): Partial<SetupPrefs> {
   if (isPlayMode(obj.playMode)) out.playMode = obj.playMode;
   if (isPlacement(obj.placement)) out.placement = obj.placement;
   if (isDifficulty(obj.aiDifficulty)) out.aiDifficulty = obj.aiDifficulty;
+  if (typeof obj.powerUpsEnabled === "boolean") out.powerUpsEnabled = obj.powerUpsEnabled;
 
   return out;
 }
