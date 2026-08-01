@@ -17,6 +17,7 @@ import { tipRemapFromEuler, type TipRemapEntry } from "@/game/tipBoard";
 import { eulerToQuat, tipEulerFromSwipe } from "@/game/tipNav";
 import { PLAYER_COLORS, type BoardDims, type PlayerId } from "@/game/types";
 import { BoardColliders, DROP_GRAVITY, MARKER_RADIUS } from "./BoardColliders";
+import { ActiveSlice } from "./ActiveSlice";
 import { ClearRowHighlight } from "./ClearRowHighlight";
 import { Grid } from "./Grid";
 import { Markers } from "./Markers";
@@ -205,6 +206,7 @@ export function TipBoardFrame({ dims, dropMode }: TipBoardFrameProps) {
 
       <group ref={groupRef}>
         <Grid dims={dims} />
+        <ActiveSlice dims={dims} />
         {!tipVisual && !tipFalling ? <SelectionCursor dims={dims} /> : null}
         <ClearRowHighlight dims={dims} />
         <TipFloorHint dims={dims} />

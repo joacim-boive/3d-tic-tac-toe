@@ -93,20 +93,6 @@ export function useGameControls() {
           e.preventDefault();
           nudgeCursor(0, -1, 0);
           break;
-        case "q":
-        case "Q":
-        case "[":
-          if (status !== "playing" || playLocked) break;
-          e.preventDefault();
-          nudgeCursor(0, 0, -1);
-          break;
-        case "e":
-        case "E":
-        case "]":
-          if (status !== "playing" || playLocked) break;
-          e.preventDefault();
-          nudgeCursor(0, 0, 1);
-          break;
         case "Escape":
           // Power-up modes: Esc cancels (same as Cancel), not leave to menu.
           if ((clearMode || powerUpMode === "tip") && !tipFalling) {
