@@ -1,85 +1,178 @@
 "use client";
 
-import { useMemo } from "react";
-import { BufferGeometry, DoubleSide, Float32BufferAttribute } from "three";
+import { useThree } from "@react-three/fiber";
+import { useEffect, useMemo, useRef } from "react";
+import { BufferGeometry, DoubleSide, Float32BufferAttribute, Vector3 } from "three";
 import { cellToWorld } from "@/game/board";
 import { useGameStore } from "@/game/store";
 import type { BoardDims } from "@/game/types";
+import { facingSliceAxis, sliceIndexForCell, type SliceAxis } from "./facingSliceAxis";
+import { useSliceHighlightStore } from "./sliceHighlightStore";
 
 type ActiveSliceProps = {
   dims: BoardDims;
   spacing?: number;
 };
 
+function buildPlaneLattice(
+  widthCells: number,
+  heightCells: number,
+  spacing: number,
+): BufferGeometry {
+  const positions: number[] = [];
+  const hw = (widthCells * spacing) / 2;
+  const hh = (heightCells * spacing) / 2;
+
+  for (let i = 0; i <= widthCells; i++) {
+    const px = i * spacing - hw;
+    positions.push(px, -hh, 0, px, hh, 0);
+  }
+  for (let j = 0; j <= heightCells; j++) {
+    const py = j * spacing - hh;
+    positions.push(-hw, py, 0, hw, py, 0);
+  }
+
+  const geo = new BufferGeometry();
+  geo.setAttribute("position", new Float32BufferAttribute(positions, 3));
+  return geo;
+}
+
+function buildBorder(widthCells: number, heightCells: number, spacing: number): BufferGeometry {
+  const hw = (widthCells * spacing) / 2;
+  const hh = (heightCells * spacing) / 2;
+  const positions = [
+    -hw,
+    -hh,
+    0,
+    hw,
+    -hh,
+    0,
+    hw,
+    -hh,
+    0,
+    hw,
+    hh,
+    0,
+    hw,
+    hh,
+    0,
+    -hw,
+    hh,
+    0,
+    -hw,
+    hh,
+    0,
+    -hw,
+    -hh,
+    0,
+  ];
+  const geo = new BufferGeometry();
+  geo.setAttribute("position", new Float32BufferAttribute(positions, 3));
+  return geo;
+}
+
+function planeLayout(
+  axis: SliceAxis,
+  dims: BoardDims,
+  spacing: number,
+  index: number,
+): {
+  position: [number, number, number];
+  rotation: [number, number, number];
+  widthCells: number;
+  heightCells: number;
+} {
+  const cell =
+    axis === "x"
+      ? { x: index, y: 0, z: 0 }
+      : axis === "y"
+        ? { x: 0, y: index, z: 0 }
+        : { x: 0, y: 0, z: index };
+  const [cx, cy, cz] = cellToWorld(cell, dims, spacing);
+
+  if (axis === "x") {
+    // YZ face — rotate so local +Z points along world +X
+    return {
+      position: [cx, 0, 0],
+      rotation: [0, Math.PI / 2, 0],
+      widthCells: dims.z,
+      heightCells: dims.y,
+    };
+  }
+  if (axis === "y") {
+    // XZ face — rotate so local +Z points along world +Y
+    return {
+      position: [0, cy, 0],
+      rotation: [-Math.PI / 2, 0, 0],
+      widthCells: dims.x,
+      heightCells: dims.z,
+    };
+  }
+  return {
+    position: [0, 0, cz],
+    rotation: [0, 0, 0],
+    widthCells: dims.x,
+    heightCells: dims.y,
+  };
+}
+
 /**
- * Soft fill + brighter XY lattice on the cursor's Z layer so depth (Q/E) is obvious
- * without hiding the rest of the board.
+ * Soft fill + lattice on the face-most plane through the last placed marker.
+ * Locked at place time from the camera-facing axis; stays put while orbiting.
  */
 export function ActiveSlice({ dims, spacing = 1 }: ActiveSliceProps) {
-  const cursor = useGameStore((s) => s.cursor);
-  const status = useGameStore((s) => s.status);
+  const camera = useThree((s) => s.camera);
+  const occupiedCount = useGameStore((s) => s.occupiedCount);
+  const lastPlaced = useGameStore((s) => s.lastPlaced);
+  const phase = useGameStore((s) => s.phase);
+  const slice = useSliceHighlightStore((s) => s.slice);
+  const setSlice = useSliceHighlightStore((s) => s.setSlice);
+  const clearSlice = useSliceHighlightStore((s) => s.clearSlice);
+
+  const viewDir = useMemo(() => new Vector3(), []);
+  const lastCountRef = useRef(0);
+
+  useEffect(() => {
+    if (phase !== "playing") {
+      clearSlice();
+      lastCountRef.current = 0;
+      return;
+    }
+    if (occupiedCount === 0 || !lastPlaced) {
+      clearSlice();
+      lastCountRef.current = 0;
+      return;
+    }
+    if (occupiedCount === lastCountRef.current) return;
+    lastCountRef.current = occupiedCount;
+
+    camera.getWorldDirection(viewDir);
+    const axis = facingSliceAxis(viewDir);
+    setSlice({ axis, index: sliceIndexForCell(axis, lastPlaced) });
+  }, [occupiedCount, lastPlaced, phase, camera, viewDir, setSlice, clearSlice]);
+
+  const layout = useMemo(() => {
+    if (!slice) return null;
+    return planeLayout(slice.axis, dims, spacing, slice.index);
+  }, [slice, dims, spacing]);
 
   const lattice = useMemo(() => {
-    const positions: number[] = [];
-    const hx = (dims.x * spacing) / 2;
-    const hy = (dims.y * spacing) / 2;
-
-    for (let i = 0; i <= dims.x; i++) {
-      const px = i * spacing - hx;
-      positions.push(px, -hy, 0, px, hy, 0);
-    }
-    for (let j = 0; j <= dims.y; j++) {
-      const py = j * spacing - hy;
-      positions.push(-hx, py, 0, hx, py, 0);
-    }
-
-    const geo = new BufferGeometry();
-    geo.setAttribute("position", new Float32BufferAttribute(positions, 3));
-    return geo;
-  }, [dims.x, dims.y, spacing]);
+    if (!layout) return null;
+    return buildPlaneLattice(layout.widthCells, layout.heightCells, spacing);
+  }, [layout, spacing]);
 
   const border = useMemo(() => {
-    const hx = (dims.x * spacing) / 2;
-    const hy = (dims.y * spacing) / 2;
-    const positions = [
-      -hx,
-      -hy,
-      0,
-      hx,
-      -hy,
-      0,
-      hx,
-      -hy,
-      0,
-      hx,
-      hy,
-      0,
-      hx,
-      hy,
-      0,
-      -hx,
-      hy,
-      0,
-      -hx,
-      hy,
-      0,
-      -hx,
-      -hy,
-      0,
-    ];
-    const geo = new BufferGeometry();
-    geo.setAttribute("position", new Float32BufferAttribute(positions, 3));
-    return geo;
-  }, [dims.x, dims.y, spacing]);
+    if (!layout) return null;
+    return buildBorder(layout.widthCells, layout.heightCells, spacing);
+  }, [layout, spacing]);
 
-  if (status !== "playing") return null;
+  if (phase !== "playing" || !layout || !lattice || !border) return null;
 
-  const [, , cz] = cellToWorld(cursor, dims, spacing);
-  const width = dims.x * spacing * 0.98;
-  const height = dims.y * spacing * 0.98;
+  const width = layout.widthCells * spacing * 0.98;
+  const height = layout.heightCells * spacing * 0.98;
 
   return (
-    <group position={[0, 0, cz]}>
+    <group position={layout.position} rotation={layout.rotation}>
       <mesh renderOrder={1}>
         <planeGeometry args={[width, height]} />
         <meshBasicMaterial

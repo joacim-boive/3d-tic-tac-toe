@@ -10,8 +10,9 @@ import {
   type WebGLProgramParametersWithUniforms,
 } from "three";
 import { cellToWorld } from "@/game/board";
-import { useGameStore } from "@/game/store";
 import type { BoardDims } from "@/game/types";
+import type { SliceAxis } from "./facingSliceAxis";
+import { useSliceHighlightStore } from "./sliceHighlightStore";
 
 type GridProps = {
   dims: BoardDims;
@@ -22,24 +23,48 @@ type DepthUniforms = {
   uCamPos: { value: Vector3 };
   uNear: { value: number };
   uFar: { value: number };
-  uSliceZ: { value: number };
+  uSliceAxis: { value: Vector3 };
+  uSlicePos: { value: number };
   uSliceActive: { value: number };
   uSliceFalloff: { value: number };
 };
+
+function axisUnit(axis: SliceAxis): Vector3 {
+  if (axis === "x") return new Vector3(1, 0, 0);
+  if (axis === "y") return new Vector3(0, 1, 0);
+  return new Vector3(0, 0, 1);
+}
+
+function sliceWorldPos(
+  axis: SliceAxis,
+  index: number,
+  dims: BoardDims,
+  spacing: number,
+): number {
+  const cell =
+    axis === "x"
+      ? { x: index, y: 0, z: 0 }
+      : axis === "y"
+        ? { x: 0, y: index, z: 0 }
+        : { x: 0, y: 0, z: index };
+  const [cx, cy, cz] = cellToWorld(cell, dims, spacing);
+  if (axis === "x") return cx;
+  if (axis === "y") return cy;
+  return cz;
+}
 
 /**
  * Cell-boundary lattice (N+1 planes per axis) so an N³ board reads as N cells,
  * not N−1.
  *
- * Opacity falls off with camera distance and softens away from the active Z
- * slice so large boards keep near structure readable.
+ * Opacity falls off with camera distance and softens away from the locked
+ * placement slice (face chosen at place time) so large boards stay readable.
  */
 export function Grid({ dims, spacing = 1 }: GridProps) {
   const materialRef = useRef<LineBasicMaterial>(null);
   const depthUniformsRef = useRef<DepthUniforms | null>(null);
   const camWorld = useMemo(() => new Vector3(), []);
-  const cursor = useGameStore((s) => s.cursor);
-  const status = useGameStore((s) => s.status);
+  const slice = useSliceHighlightStore((s) => s.slice);
 
   const geometry = useMemo(() => {
     const positions: number[] = [];
@@ -77,8 +102,6 @@ export function Grid({ dims, spacing = 1 }: GridProps) {
   const fadeNear = maxDim * 0.45;
   const fadeFar = maxDim * 2.35;
   const sliceFalloff = spacing * 1.75;
-  const [, , sliceZ] = cellToWorld(cursor, dims, spacing);
-  const sliceActive = status === "playing" ? 1 : 0;
 
   useLayoutEffect(() => {
     const mat = materialRef.current;
@@ -89,7 +112,8 @@ export function Grid({ dims, spacing = 1 }: GridProps) {
         uCamPos: { value: new Vector3() },
         uNear: { value: fadeNear },
         uFar: { value: fadeFar },
-        uSliceZ: { value: 0 },
+        uSliceAxis: { value: new Vector3(0, 0, 1) },
+        uSlicePos: { value: 0 },
         uSliceActive: { value: 0 },
         uSliceFalloff: { value: sliceFalloff },
       };
@@ -103,7 +127,8 @@ export function Grid({ dims, spacing = 1 }: GridProps) {
            uniform vec3 uCamPos;
            uniform float uNear;
            uniform float uFar;
-           uniform float uSliceZ;
+           uniform vec3 uSliceAxis;
+           uniform float uSlicePos;
            uniform float uSliceActive;
            uniform float uSliceFalloff;
            varying float vDepthFade;
@@ -115,9 +140,9 @@ export function Grid({ dims, spacing = 1 }: GridProps) {
            vec4 worldPos = modelMatrix * vec4( transformed, 1.0 );
            float dist = distance( worldPos.xyz, uCamPos );
            vDepthFade = 1.0 - smoothstep( uNear, uFar, dist );
-           float sliceDist = abs( worldPos.z - uSliceZ );
+           float sliceDist = abs( dot( worldPos.xyz, uSliceAxis ) - uSlicePos );
            float sliceKeep = 1.0 - smoothstep( 0.0, uSliceFalloff, sliceDist );
-           // Prefer the active layer; keep the rest of the box clearly readable.
+           // Prefer the locked placement layer; keep the rest of the box readable.
            vSliceFade = mix( 1.0, mix( 0.7, 1.0, sliceKeep ), uSliceActive );`,
         );
 
@@ -152,9 +177,14 @@ export function Grid({ dims, spacing = 1 }: GridProps) {
     uniforms.uCamPos.value.copy(camWorld);
     uniforms.uNear.value = fadeNear;
     uniforms.uFar.value = fadeFar;
-    uniforms.uSliceZ.value = sliceZ;
-    uniforms.uSliceActive.value = sliceActive;
     uniforms.uSliceFalloff.value = sliceFalloff;
+    if (slice) {
+      uniforms.uSliceAxis.value.copy(axisUnit(slice.axis));
+      uniforms.uSlicePos.value = sliceWorldPos(slice.axis, slice.index, dims, spacing);
+      uniforms.uSliceActive.value = 1;
+    } else {
+      uniforms.uSliceActive.value = 0;
+    }
   });
 
   return (

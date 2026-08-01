@@ -81,6 +81,8 @@ type GameState = {
   winningLine: CellCoord[];
   /** The mark that completed the line — only this ball bounces. */
   winningCell: CellCoord | null;
+  /** Most recently placed cell — drives the locked face highlight. */
+  lastPlaced: CellCoord | null;
   /** Aiming cursor — always set while a game is in progress. */
   cursor: CellCoord;
   /** True while Shift is held (aim mode; camera orbit paused). */
@@ -234,6 +236,7 @@ function applyPlace(
       winner: win.winner,
       winningLine: win.line,
       winningCell: resolved,
+      lastPlaced: resolved,
       cursor: resolved,
       aiming: false,
       fallingKey: dropAnim ? key : null,
@@ -252,6 +255,7 @@ function applyPlace(
       winner: null,
       winningLine: [],
       winningCell: null,
+      lastPlaced: resolved,
       cursor: resolved,
       aiming: false,
       fallingKey: dropAnim ? key : null,
@@ -271,6 +275,7 @@ function applyPlace(
     winner: null,
     winningLine: [],
     winningCell: null,
+    lastPlaced: resolved,
     cursor: resolved,
     fallingKey: dropAnim ? key : null,
     dropBusy: dropAnim,
@@ -297,6 +302,7 @@ export const useGameStore = create<GameState>((set, get) => ({
   winner: null,
   winningLine: [],
   winningCell: null,
+  lastPlaced: null,
   cursor: { x: 1, y: 1, z: 1 },
   aiming: false,
   fallingKey: null,
@@ -402,6 +408,7 @@ export const useGameStore = create<GameState>((set, get) => ({
       status: "playing",
       winner: null,
       winningLine: [],
+      lastPlaced: null,
       cursor: startCursor,
       aiming: false,
       fallingKey: null,
@@ -427,6 +434,7 @@ export const useGameStore = create<GameState>((set, get) => ({
       status: "playing",
       winner: null,
       winningLine: [],
+      lastPlaced: null,
       cursor: startCursor,
       aiming: false,
       fallingKey: null,
@@ -448,6 +456,7 @@ export const useGameStore = create<GameState>((set, get) => ({
       status: "playing",
       winner: null,
       winningLine: [],
+      lastPlaced: null,
       aiming: false,
       fallingKey: null,
       dropBusy: false,
@@ -499,6 +508,7 @@ export const useGameStore = create<GameState>((set, get) => ({
       status: "playing",
       winner: null,
       winningLine: [],
+      lastPlaced: null,
       cursor: startCursor,
       aiming: false,
       fallingKey: null,
@@ -548,6 +558,7 @@ export const useGameStore = create<GameState>((set, get) => ({
       status: "playing",
       winner: null,
       winningLine: [],
+      lastPlaced: null,
       cursor: startCursor,
       aiming: false,
       fallingKey: null,
@@ -569,6 +580,7 @@ export const useGameStore = create<GameState>((set, get) => ({
       status: "playing",
       winner: null,
       winningLine: [],
+      lastPlaced: null,
       aiming: false,
       fallingKey: null,
       dropBusy: false,
@@ -600,6 +612,7 @@ export const useGameStore = create<GameState>((set, get) => ({
       winner: snap.winner,
       winningLine: snap.winningLine,
       winningCell: snap.winningCell ?? null,
+      lastPlaced: null,
       cursor:
         placement === "drop"
           ? snapDropCursor(centerCell(dims), snap.board, dims)
