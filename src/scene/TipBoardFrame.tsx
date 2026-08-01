@@ -192,9 +192,11 @@ export function TipBoardFrame({ dims, dropMode }: TipBoardFrameProps) {
     if (!g) return;
 
     if (tipFalling) {
-      // Rebase upright while balls fall in world −Y onto the new floor.
-      displayQuat.current.identity();
-      g.quaternion.identity();
+      // Keep the tipped pose while balls fall in world space (TipFallPhysics is
+      // outside this group). Snapping upright here made the board jump/zoom.
+      targetQuat.current.copy(eulerToQuat(tipEuler));
+      displayQuat.current.copy(targetQuat.current);
+      g.quaternion.copy(displayQuat.current);
       return;
     }
 
@@ -229,20 +231,13 @@ export function TipBoardFrame({ dims, dropMode }: TipBoardFrameProps) {
       {tipMode && !tipFalling ? <TipDragController /> : null}
 
       <group ref={groupRef}>
-        <Grid dims={dims} />
+        {/* Hide grid while tipped balls fall — avoids a sudden upright snap. */}
+        {!tipFalling ? <Grid dims={dims} /> : null}
         {!tipMode && !tipFalling ? <SelectionCursor dims={dims} /> : null}
         <ClearRowHighlight dims={dims} />
         <TipFloorHint dims={dims} />
 
-        {tipFalling ? (
-          <TipFallPhysics
-            dims={dims}
-            entries={fallEntries}
-            starts={fallStarts}
-            delaysMs={releaseDelays}
-            onAllSettled={finishTipFall}
-          />
-        ) : dropMode ? (
+        {tipFalling ? null : dropMode ? (
           <Physics gravity={DROP_GRAVITY} colliders={false}>
             <BoardColliders dims={dims} />
             <PhysicsMarkers dims={dims} />
@@ -251,6 +246,16 @@ export function TipBoardFrame({ dims, dropMode }: TipBoardFrameProps) {
           <Markers dims={dims} />
         )}
       </group>
+
+      {tipFalling ? (
+        <TipFallPhysics
+          dims={dims}
+          entries={fallEntries}
+          starts={fallStarts}
+          delaysMs={releaseDelays}
+          onAllSettled={finishTipFall}
+        />
+      ) : null}
     </>
   );
 }

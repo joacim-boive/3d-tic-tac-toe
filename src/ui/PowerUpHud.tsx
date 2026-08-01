@@ -7,7 +7,7 @@ import {
   type PowerUpId,
 } from "@/game/powerUps";
 import { useGameStore } from "@/game/store";
-import { canTipPreset, tipDownFromEuler } from "@/game/tipBoard";
+import { canTipPreset } from "@/game/tipBoard";
 import { PLAYER_COLORS, PLAYER_LABELS, type PlayerId } from "@/game/types";
 import { clearFixedFromCursor, type Axis } from "@/game/clearRow";
 
@@ -76,10 +76,7 @@ export function PowerUpHud() {
   const setClearAxis = useGameStore((s) => s.setClearAxis);
   const cancelPowerUpMode = useGameStore((s) => s.cancelPowerUpMode);
   const confirmClearRow = useGameStore((s) => s.confirmClearRow);
-  const confirmTip = useGameStore((s) => s.confirmTip);
-  const tipTargetEuler = useGameStore((s) => s.tipTargetEuler);
   const tipFalling = useGameStore((s) => s.tipFalling);
-  const tipDirty = useGameStore((s) => s.tipDirty);
   const cursor = useGameStore((s) => s.cursor);
   const swarmBusy = useGameStore((s) => s.swarmBusy);
   const dropBusy = useGameStore((s) => s.dropBusy);
@@ -97,10 +94,6 @@ export function PowerUpHud() {
         seat != null &&
         currentPlayer === seat &&
         onlineStatus === "playing"));
-
-  const tipFloor = tipDownFromEuler(tipTargetEuler);
-  const tipReady = tipFloor !== "-y";
-  const tipDoneReady = tipDirty && !tipReady;
 
   return (
     <div className="powerups">
@@ -147,26 +140,6 @@ export function PowerUpHud() {
           <button type="button" className="chrome__btn" onClick={cancelPowerUpMode}>
             Cancel
           </button>
-        </div>
-      ) : null}
-
-      {powerUpMode === "tip" ? (
-        <div className="powerups__mode">
-          {!tipFalling ? (
-            <>
-              <button
-                type="button"
-                className="chrome__btn chrome__btn--accent"
-                disabled={!tipReady && !tipDoneReady}
-                onClick={() => confirmTip()}
-              >
-                {tipDoneReady ? "Done" : "Drop"}
-              </button>
-              <button type="button" className="chrome__btn" onClick={cancelPowerUpMode}>
-                Cancel
-              </button>
-            </>
-          ) : null}
         </div>
       ) : null}
     </div>

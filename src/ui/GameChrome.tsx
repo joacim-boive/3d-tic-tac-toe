@@ -3,6 +3,7 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { getPreset } from "@/game/presets";
 import { useGameStore } from "@/game/store";
+import { tipDownFromEuler } from "@/game/tipBoard";
 import { PLAYER_COLORS } from "@/game/types";
 import { leaveOnlineSession } from "@/online/session";
 import { RematchDialog } from "./RematchDialog";
@@ -54,6 +55,10 @@ export function GameChrome({ children }: GameChromeProps) {
   const rematch = useGameStore((s) => s.rematch);
   const returnToSetup = useGameStore((s) => s.returnToSetup);
   const placeAtCursor = useGameStore((s) => s.placeAtCursor);
+  const cancelPowerUpMode = useGameStore((s) => s.cancelPowerUpMode);
+  const confirmTip = useGameStore((s) => s.confirmTip);
+  const tipTargetEuler = useGameStore((s) => s.tipTargetEuler);
+  const tipDirty = useGameStore((s) => s.tipDirty);
   const displayName = useGameStore((s) => s.displayName);
 
   const preset = getPreset(presetId);
@@ -137,7 +142,28 @@ export function GameChrome({ children }: GameChromeProps) {
               )}
             </button>
           )}
-          {status === "playing" && !paused && myTurn && powerUpMode !== "clear-row" && powerUpMode !== "tip" && (
+          {status === "playing" && !paused && myTurn && powerUpMode === "tip" && !tipFalling ? (
+            <>
+              <button
+                type="button"
+                className="chrome__btn chrome__btn--accent"
+                disabled={
+                  tipDownFromEuler(tipTargetEuler) === "-y" ? !tipDirty : false
+                }
+                onClick={() => confirmTip()}
+              >
+                {tipDirty && tipDownFromEuler(tipTargetEuler) === "-y" ? "Done" : "Drop"}
+              </button>
+              <button type="button" className="chrome__btn" onClick={cancelPowerUpMode}>
+                Cancel
+              </button>
+            </>
+          ) : null}
+          {status === "playing" &&
+            !paused &&
+            myTurn &&
+            powerUpMode !== "clear-row" &&
+            powerUpMode !== "tip" && (
             <button
               type="button"
               className="chrome__btn chrome__btn--accent"

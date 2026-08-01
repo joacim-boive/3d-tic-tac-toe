@@ -59,6 +59,8 @@ function SceneContent() {
   const tipMode = powerUpMode === "tip";
   const swarmBusy = useGameStore((s) => s.swarmBusy);
   // Tip: drag tips the box. Swarm: overlay owns all pointers.
+  // Keep OrbitControls mounted; only lock inputs — toggling `enabled` can
+  // interrupt damping and feel like a zoom/framing jump on mobile.
   const camLocked = tipMode || tipFalling || swarmBusy;
   // Drop mode: orbit around and over the top, never under the box.
   const maxPolar = reviewing ? Math.PI : dropMode ? MathUtils.DEG2RAD * 78 : Math.PI;
@@ -77,6 +79,8 @@ function SceneContent() {
       {/*
         Tip / package swarm: OrbitControls off.
         Otherwise: one-finger aim; two-finger orbit (touch).
+        Viewport size must stay fixed when Tip toggles (mode controls overlay)
+        so disabling orbit here does not look like a zoom change.
       */}
       <OrbitControls
         enablePan={!camLocked && (!touchUi || reviewing)}
