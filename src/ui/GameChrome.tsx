@@ -88,7 +88,7 @@ export function GameChrome({ children }: GameChromeProps) {
   } else if (powerUpMode === "clear-row") {
     statusText = "Clear — aim · tap to switch axis";
   } else if (powerUpMode === "tip") {
-    statusText = "Tip — orient · ghosts show where balls land";
+    statusText = "Tip — spin on bottom · flip forward/back";
   } else if (bonusPlacesRemaining > 0) {
     statusText = `${displayName(currentPlayer)} — extra place`;
   } else if (playMode === "ai" && currentPlayer === "b") {

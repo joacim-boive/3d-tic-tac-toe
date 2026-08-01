@@ -251,42 +251,8 @@ export function TipBoardFrame({ dims, dropMode }: TipBoardFrameProps) {
           delaysMs={releaseDelays}
           onAllSettled={finishTipFall}
         />
-      ) : tipMode ? (
-        <TipLandingPreview dims={dims} />
       ) : null}
     </>
-  );
-}
-
-function TipLandingPreview({ dims, spacing = 1 }: { dims: BoardDims; spacing?: number }) {
-  const board = useGameStore((s) => s.board);
-  const tipTargetEuler = useGameStore((s) => s.tipTargetEuler);
-  const toDown = tipDownFromEuler(tipTargetEuler);
-
-  const ghosts = useMemo(() => {
-    if (toDown === "-y") return [] as TipRemapEntry[];
-    return tipRemap(board, dims, toDown);
-  }, [board, dims, toDown]);
-
-  if (ghosts.length === 0) return null;
-
-  return (
-    <group>
-      {ghosts.map((entry) => {
-        const [x, y, z] = cellToWorld(entry.to, dims, spacing);
-        return (
-          <mesh key={entry.key} position={[x, y, z]} renderOrder={4}>
-            <sphereGeometry args={[0.3, 14, 10]} />
-            <meshBasicMaterial
-              color={PLAYER_COLORS[entry.player]}
-              transparent
-              opacity={0.32}
-              depthWrite={false}
-            />
-          </mesh>
-        );
-      })}
-    </group>
   );
 }
 
