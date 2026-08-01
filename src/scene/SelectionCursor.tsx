@@ -37,9 +37,13 @@ export function SelectionCursor({ dims, spacing = 1 }: SelectionCursorProps) {
   const placeAtCursor = useGameStore((s) => s.placeAtCursor);
   const placement = useGameStore((s) => s.placement);
   const dropBusy = useGameStore((s) => s.dropBusy);
+  const swarmBusy = useGameStore((s) => s.swarmBusy);
+  const powerUpMode = useGameStore((s) => s.powerUpMode);
+  const cycleClearAxis = useGameStore((s) => s.cycleClearAxis);
 
   const [touchAiming, setTouchAiming] = useState(false);
   const showAim = aiming || touchAiming;
+  const clearMode = powerUpMode === "clear-row";
 
   const raycaster = useMemo(() => new Raycaster(), []);
   const ndc = useMemo(() => new Vector2(), []);
@@ -61,6 +65,12 @@ export function SelectionCursor({ dims, spacing = 1 }: SelectionCursorProps) {
   // touch ids (missed pointerup) and makes one-finger aim look hung.
   const dropBusyRef = useRef(dropBusy);
   dropBusyRef.current = dropBusy;
+  const swarmBusyRef = useRef(swarmBusy);
+  swarmBusyRef.current = swarmBusy;
+  const clearModeRef = useRef(clearMode);
+  clearModeRef.current = clearMode;
+  const cycleClearAxisRef = useRef(cycleClearAxis);
+  cycleClearAxisRef.current = cycleClearAxis;
 
   const cellSize = spacing * 0.96;
   const edges = useMemo(() => {
@@ -72,7 +82,7 @@ export function SelectionCursor({ dims, spacing = 1 }: SelectionCursorProps) {
 
   // Desktop Shift-aim: follow pointer each frame (orbit paused via store.aiming).
   useFrame((state) => {
-    if (!aiming || status !== "playing") return;
+    if (!aiming || status !== "playing" || swarmBusy) return;
 
     ndc.copy(state.pointer);
     raycaster.setFromCamera(ndc, camera);
@@ -150,6 +160,7 @@ export function SelectionCursor({ dims, spacing = 1 }: SelectionCursorProps) {
     };
 
     const onDown = (e: PointerEvent) => {
+      if (swarmBusyRef.current) return;
       // Recover from missed pointerup/cancel (listener rebind mid-gesture, Safari quirks).
       // Primary contact starting fresh while orphans linger would otherwise look like multi-touch.
       if (e.isPrimary && pointersRef.current.size > 0 && !pointersRef.current.has(e.pointerId)) {
@@ -221,10 +232,17 @@ export function SelectionCursor({ dims, spacing = 1 }: SelectionCursorProps) {
       pointersRef.current.delete(e.pointerId);
 
       if (pointersRef.current.size === 0) {
-        // Quick tap lifted before MULTI_WAIT_MS — still aim, never place.
+        // Quick tap lifted before MULTI_WAIT_MS — still aim (except clear mode: tap = cycle axis).
         const pendingAim = aimDelayRef.current !== null;
         clearAimDelay();
-        if (touch && active && !multi && !touchAim && pendingAim) {
+        if (
+          touch &&
+          active &&
+          !multi &&
+          !touchAim &&
+          pendingAim &&
+          !clearModeRef.current
+        ) {
           aimAt(pendingAimRef.current.x, pendingAimRef.current.y);
         }
         dragRef.current.active = false;
@@ -233,10 +251,13 @@ export function SelectionCursor({ dims, spacing = 1 }: SelectionCursorProps) {
         setTouchAiming(false);
       }
 
-      // Touch never auto-places — Place button commits after preview.
-      // Multi-touch orbit must not place even if pointerType is misreported.
+      // Clear mode: tap/click cycles axis (chips stay in sync). Else desktop click places.
       if (!active || moved || touchAim || multi) return;
       if (status !== "playing" || dropBusyRef.current) return;
+      if (clearModeRef.current) {
+        cycleClearAxisRef.current();
+        return;
+      }
       if (!touch) placeAtCursor();
     };
 
@@ -254,6 +275,10 @@ export function SelectionCursor({ dims, spacing = 1 }: SelectionCursorProps) {
   }, [gl, camera, dims, spacing, placeAtCursor, setCursor, status, raycaster, ndc, point, center]);
 
   if (status !== "playing") return null;
+
+  // Clear mode: no place-style cell border — the translucent shaft is the only preview.
+  // Gesture listeners above still handle aim + tap-to-cycle.
+  if (clearMode) return null;
 
   const occupied = board.has(cellKey(cursor.x, cursor.y, cursor.z));
   const [cx, cy, cz] = cellToWorld(cursor, dims, spacing);
@@ -287,7 +312,6 @@ export function SelectionCursor({ dims, spacing = 1 }: SelectionCursorProps) {
       <lineSegments geometry={edges}>
         <lineBasicMaterial color={color} transparent opacity={dropBusy ? 0.25 : 0.95} />
       </lineSegments>
-      {/* Hide landing ghost while a piece is falling — otherwise it looks like an instant place. */}
       {!dropBusy ? (
         <mesh>
           <sphereGeometry args={[0.28, 20, 16]} />

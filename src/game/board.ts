@@ -96,6 +96,26 @@ export function isDraw(occupiedCount: number, dims: BoardDims): boolean {
   return occupiedCount >= cellCount(dims);
 }
 
+/**
+ * Scan every occupied cell for a win (after Clear/Tip / repack).
+ * Returns the first win found; prefers player `prefer` when both could win.
+ */
+export function checkWinAny(
+  board: Board,
+  dims: BoardDims,
+  prefer?: PlayerId,
+): WinResult | null {
+  let other: WinResult | null = null;
+  for (const [key, player] of board) {
+    const cell = parseCellKey(key);
+    const win = checkWin(board, dims, cell, player);
+    if (!win) continue;
+    if (prefer && win.winner === prefer) return win;
+    if (!other) other = win;
+  }
+  return other;
+}
+
 export function listEmptyCells(board: Board, dims: BoardDims): CellCoord[] {
   const empty: CellCoord[] = [];
   for (let x = 0; x < dims.x; x++) {

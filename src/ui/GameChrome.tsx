@@ -3,9 +3,13 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { getPreset } from "@/game/presets";
 import { useGameStore } from "@/game/store";
+import { tipDownFromEuler } from "@/game/tipBoard";
 import { PLAYER_COLORS } from "@/game/types";
 import { leaveOnlineSession } from "@/online/session";
 import { RematchDialog } from "./RematchDialog";
+import { PackageSwarm } from "./PackageSwarm";
+import { PowerUpHud } from "./PowerUpHud";
+import { PowerUpToast } from "./PowerUpToast";
 import { useGameControls } from "./useGameControls";
 
 type GameChromeProps = {
@@ -35,6 +39,12 @@ export function GameChrome({ children }: GameChromeProps) {
   const playMode = useGameStore((s) => s.playMode);
   const placement = useGameStore((s) => s.placement);
   const dropBusy = useGameStore((s) => s.dropBusy);
+  const swarmBusy = useGameStore((s) => s.swarmBusy);
+  const bonusPlacesRemaining = useGameStore((s) => s.bonusPlacesRemaining);
+  const powerUpMode = useGameStore((s) => s.powerUpMode);
+  const tipFalling = useGameStore((s) => s.tipFalling);
+  const watchPowerUp = useGameStore((s) => s.watchPowerUp);
+  const watchTipPlayback = useGameStore((s) => s.watchTipPlayback);
   const currentPlayer = useGameStore((s) => s.currentPlayer);
   const status = useGameStore((s) => s.status);
   const winner = useGameStore((s) => s.winner);
@@ -46,6 +56,9 @@ export function GameChrome({ children }: GameChromeProps) {
   const rematch = useGameStore((s) => s.rematch);
   const returnToSetup = useGameStore((s) => s.returnToSetup);
   const placeAtCursor = useGameStore((s) => s.placeAtCursor);
+  const cancelPowerUpMode = useGameStore((s) => s.cancelPowerUpMode);
+  const confirmTip = useGameStore((s) => s.confirmTip);
+  const tipTargetEuler = useGameStore((s) => s.tipTargetEuler);
   const displayName = useGameStore((s) => s.displayName);
 
   const preset = getPreset(presetId);
@@ -59,12 +72,26 @@ export function GameChrome({ children }: GameChromeProps) {
     const other = seat === "a" ? "b" : "a";
     const otherName = playerNames[other].trim() || displayName(other);
     statusText = `Waiting for ${otherName} to reconnect…`;
+  } else if (swarmBusy) {
+    statusText = "Compete — claim or deny a package";
   } else if (dropBusy) {
     statusText = "Dropping…";
   } else if (status === "won" && winner) {
     statusText = `${displayName(winner)} wins`;
   } else if (status === "draw") {
     statusText = "Draw";
+  } else if (watchTipPlayback) {
+    statusText = "Opponent tipping…";
+  } else if (tipFalling) {
+    statusText = "Balls falling…";
+  } else if (watchPowerUp?.kind === "clear-row") {
+    statusText = `${displayName(watchPowerUp.by)} aiming Clear…`;
+  } else if (watchPowerUp?.kind === "tip") {
+    statusText = `${displayName(watchPowerUp.by)} tipping…`;
+  } else if (powerUpMode === "clear-row") {
+    statusText = "Clear — aim · tap to switch axis";
+  } else if (bonusPlacesRemaining > 0) {
+    statusText = `${displayName(currentPlayer)} — extra place`;
   } else if (playMode === "ai" && currentPlayer === "b") {
     statusText = "Cyan is thinking…";
   } else {
@@ -115,12 +142,37 @@ export function GameChrome({ children }: GameChromeProps) {
               )}
             </button>
           )}
-          {status === "playing" && !paused && myTurn && (
+          {status === "playing" && !paused && myTurn && powerUpMode === "tip" && !tipFalling ? (
+            <>
+              <button
+                type="button"
+                className="chrome__btn chrome__btn--accent"
+                disabled={tipDownFromEuler(tipTargetEuler) === "-y"}
+                onClick={() => confirmTip()}
+              >
+                Commit
+                {!touchUi && (
+                  <>
+                    {" "}
+                    <kbd>Space</kbd>
+                  </>
+                )}
+              </button>
+              <button type="button" className="chrome__btn" onClick={cancelPowerUpMode}>
+                Cancel
+              </button>
+            </>
+          ) : null}
+          {status === "playing" &&
+            !paused &&
+            myTurn &&
+            powerUpMode !== "clear-row" &&
+            powerUpMode !== "tip" && (
             <button
               type="button"
               className="chrome__btn chrome__btn--accent"
               onClick={placeAtCursor}
-              disabled={dropBusy}
+              disabled={dropBusy || swarmBusy}
             >
               {placement === "drop" ? "Drop" : "Place"}
               {!touchUi && (
@@ -143,62 +195,15 @@ export function GameChrome({ children }: GameChromeProps) {
         </div>
       </header>
 
-      <div className="game-viewport">{children}</div>
+      <div className="game-viewport">
+        {children}
+        <PackageSwarm />
+        <PowerUpToast />
+      </div>
+
+      <PowerUpHud />
 
       <RematchDialog />
-
-      <footer className="chrome chrome--bottom">
-        <ul className="chrome__hints">
-          {status === "won" || status === "draw" ? (
-            <>
-              <li>
-                <kbd>drag</kbd> orbit
-              </li>
-              <li>
-                <kbd>pinch</kbd> zoom
-              </li>
-            </>
-          ) : touchUi ? (
-            <>
-              <li>
-                <kbd>drag</kbd> aim
-              </li>
-              <li>
-                <kbd>2 fingers</kbd> orbit
-              </li>
-              <li>
-                <kbd>pinch</kbd> zoom
-              </li>
-              <li>
-                <kbd>{placement === "drop" ? "Drop" : "Place"}</kbd> commit
-              </li>
-            </>
-          ) : (
-            <>
-              <li>
-                <kbd>drag</kbd> orbit
-              </li>
-              <li>
-                <kbd>pinch</kbd> zoom
-              </li>
-              <li>
-                <kbd>Shift</kbd> + move aim
-              </li>
-              <li>
-                <kbd>WASD</kbd> {placement === "drop" ? "column" : "nudge"}
-              </li>
-              {placement === "free" ? (
-                <li>
-                  <kbd>Q</kbd>/<kbd>E</kbd> depth
-                </li>
-              ) : null}
-              <li>
-                <kbd>Space</kbd> / click {placement === "drop" ? "drop" : "place"}
-              </li>
-            </>
-          )}
-        </ul>
-      </footer>
     </div>
   );
 }
