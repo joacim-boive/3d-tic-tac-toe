@@ -30,40 +30,38 @@ export function canTipPreset(dims: BoardDims): boolean {
   return isCubeDims(dims);
 }
 
-type Vec3 = { x: number; y: number; z: number };
-
-function rotateToNegY(p: Vec3, toDown: TipDown, n: number): Vec3 {
-  const m = n - 1;
-  switch (toDown) {
-    case "-y":
-      return p;
-    case "+y":
-      return { x: p.x, y: m - p.y, z: m - p.z };
-    case "-x":
-      return { x: p.y, y: p.x, z: p.z };
-    case "+x":
-      return { x: p.y, y: m - p.x, z: p.z };
-    case "-z":
-      return { x: p.x, y: p.z, z: m - p.y };
-    case "+z":
-      return { x: p.x, y: m - p.z, z: p.y };
-  }
-}
-
 /**
- * Reorient the cube so `toDown` becomes −Y, then pack columns to y=0.
- * Cube-only. Deterministic; stable sort by pre-pack height then key.
+ * Apply a snapped tip Euler (Three.js order 'XYZ') to a cell index.
+ * Matches `Vector3.applyQuaternion(quat.setFromEuler(XYZ))` / fall visual starts.
  */
-export function tipBoard(board: Board, dims: BoardDims, toDown: TipDown): Board {
-  if (!isCubeDims(dims)) {
-    throw new Error("tipBoard requires cube dims");
-  }
-  const remapped = tipRemap(board, dims, toDown);
-  const next: Board = new Map();
-  for (const e of remapped) {
-    next.set(cellKey(e.to.x, e.to.y, e.to.z), e.player);
-  }
-  return next;
+export function cellThroughTipEuler(p: CellCoord, euler: TipEuler, n: number): CellCoord {
+  const mid = (n - 1) / 2;
+  const x = p.x - mid;
+  const y = p.y - mid;
+  const z = p.z - mid;
+
+  // Same matrix as THREE.Matrix4.makeRotationFromEuler(order 'XYZ'):
+  // a=cos(x) b=sin(x) c=cos(y) d=sin(y) e=cos(z) f=sin(z)
+  const a = Math.cos(euler.x);
+  const b = Math.sin(euler.x);
+  const c = Math.cos(euler.y);
+  const d = Math.sin(euler.y);
+  const e = Math.cos(euler.z);
+  const f = Math.sin(euler.z);
+  const ae = a * e;
+  const af = a * f;
+  const be = b * e;
+  const bf = b * f;
+
+  const x1 = c * e * x + -c * f * y + d * z;
+  const y1 = (af + be * d) * x + (ae - bf * d) * y + -b * c * z;
+  const z1 = (bf - ae * d) * x + (be + af * d) * y + a * c * z;
+
+  return {
+    x: Math.round(x1 + mid),
+    y: Math.round(y1 + mid),
+    z: Math.round(z1 + mid),
+  };
 }
 
 export type TipRemapEntry = {
@@ -73,29 +71,11 @@ export type TipRemapEntry = {
   key: string;
 };
 
-/** Stable from→to mapping used for fall animation. */
-export function tipRemap(board: Board, dims: BoardDims, toDown: TipDown): TipRemapEntry[] {
-  if (!isCubeDims(dims)) {
-    throw new Error("tipRemap requires cube dims");
-  }
-  const n = dims.x;
-  type Entry = {
-    x: number;
-    y: number;
-    z: number;
-    player: PlayerId;
-    key: string;
-    from: CellCoord;
-  };
-  const rotated: Entry[] = [];
-  for (const [key, player] of board) {
-    const [x, y, z] = key.split(",").map(Number) as [number, number, number];
-    const from = { x, y, z };
-    const r = rotateToNegY(from, toDown, n);
-    rotated.push({ ...r, player, key, from });
-  }
-
-  const columns = new Map<string, Entry[]>();
+function packRotatedEntries(
+  rotated: Array<{ x: number; y: number; z: number; player: PlayerId; key: string; from: CellCoord }>,
+  n: number,
+): TipRemapEntry[] {
+  const columns = new Map<string, typeof rotated>();
   for (const e of rotated) {
     const ck = `${e.x},${e.z}`;
     const list = columns.get(ck) ?? [];
@@ -117,45 +97,99 @@ export function tipRemap(board: Board, dims: BoardDims, toDown: TipDown): TipRem
 }
 
 /**
+ * Reorient the cube so `toDown` becomes −Y (canonical spin), then pack to y=0.
+ * Uses the same Three.js XYZ path as a player tip with `eulerForTipDown`.
+ * Prefer `tipBoardFromEuler` when the tip includes yaw.
+ */
+export function tipBoard(board: Board, dims: BoardDims, toDown: TipDown): Board {
+  return tipBoardFromEuler(board, dims, eulerForTipDown(toDown));
+}
+
+/** Full tip orientation (face + yaw) → new board. */
+export function tipBoardFromEuler(board: Board, dims: BoardDims, euler: TipEuler): Board {
+  if (!isCubeDims(dims)) {
+    throw new Error("tipBoardFromEuler requires cube dims");
+  }
+  const remapped = tipRemapFromEuler(board, dims, euler);
+  const next: Board = new Map();
+  for (const e of remapped) {
+    next.set(cellKey(e.to.x, e.to.y, e.to.z), e.player);
+  }
+  return next;
+}
+
+/** Stable from→to mapping for a face tip (canonical spin via `eulerForTipDown`). */
+export function tipRemap(board: Board, dims: BoardDims, toDown: TipDown): TipRemapEntry[] {
+  return tipRemapFromEuler(board, dims, eulerForTipDown(toDown));
+}
+
+/**
+ * Remap through the full tip Euler (includes spin-on-bottom yaw).
+ * Matches the visual `R * cellToWorld(from)` → upright cell after identity snap.
+ */
+export function tipRemapFromEuler(
+  board: Board,
+  dims: BoardDims,
+  euler: TipEuler,
+): TipRemapEntry[] {
+  if (!isCubeDims(dims)) {
+    throw new Error("tipRemapFromEuler requires cube dims");
+  }
+  const n = dims.x;
+  const snapped = snapTipEuler(euler);
+  const rotated: Array<{
+    x: number;
+    y: number;
+    z: number;
+    player: PlayerId;
+    key: string;
+    from: CellCoord;
+  }> = [];
+  for (const [key, player] of board) {
+    const [x, y, z] = key.split(",").map(Number) as [number, number, number];
+    const from = { x, y, z };
+    const r = cellThroughTipEuler(from, snapped, n);
+    rotated.push({
+      x: Math.max(0, Math.min(n - 1, r.x)),
+      y: Math.max(0, Math.min(n - 1, r.y)),
+      z: Math.max(0, Math.min(n - 1, r.z)),
+      player,
+      key,
+      from,
+    });
+  }
+  return packRotatedEntries(rotated, n);
+}
+
+/**
  * Which local face is currently pointing most toward world −Y,
  * given an XYZ Euler rotation applied to the board group.
  */
 export function tipDownFromEuler(euler: TipEuler): TipDown {
-  const cx = Math.cos(euler.x);
-  const sx = Math.sin(euler.x);
-  const cy = Math.cos(euler.y);
-  const sy = Math.sin(euler.y);
-  const cz = Math.cos(euler.z);
-  const sz = Math.sin(euler.z);
+  // Columns of THREE.Matrix4.makeRotationFromEuler(order 'XYZ').
+  const a = Math.cos(euler.x);
+  const b = Math.sin(euler.x);
+  const c = Math.cos(euler.y);
+  const d = Math.sin(euler.y);
+  const e = Math.cos(euler.z);
+  const f = Math.sin(euler.z);
+  const ae = a * e;
+  const af = a * f;
+  const be = b * e;
+  const bf = b * f;
 
-  // Columns of R = Rz * Ry * Rx (Three.js default Euler 'XYZ' intrinsic = extrinsic ZYX…
-  // Three.js Object3D with order 'XYZ' applies R = Rx * Ry * Rz in local terms differently.
-  // We use the same as THREE.Euler order 'XYZ': R = Rz * Ry * Rx applied to column vectors.
-  // Basis vectors (local axes in world):
-  const xAxis = {
-    x: cy * cz,
-    y: sx * sy * cz + cx * sz,
-    z: -cx * sy * cz + sx * sz,
-  };
-  const yAxis = {
-    x: -cy * sz,
-    y: -sx * sy * sz + cx * cz,
-    z: cx * sy * sz + sx * cz,
-  };
-  const zAxis = {
-    x: sy,
-    y: -sx * cy,
-    z: cx * cy,
-  };
+  const xAxisY = af + be * d;
+  const yAxisY = ae - bf * d;
+  const zAxisY = -b * c;
 
   // Score: how much each local −axis aligns with world down (0,-1,0).
   const scores: Array<{ id: TipDown; score: number }> = [
-    { id: "-x", score: xAxis.y },
-    { id: "+x", score: -xAxis.y },
-    { id: "-y", score: yAxis.y },
-    { id: "+y", score: -yAxis.y },
-    { id: "-z", score: zAxis.y },
-    { id: "+z", score: -zAxis.y },
+    { id: "-x", score: xAxisY },
+    { id: "+x", score: -xAxisY },
+    { id: "-y", score: yAxisY },
+    { id: "+y", score: -yAxisY },
+    { id: "-z", score: zAxisY },
+    { id: "+z", score: -zAxisY },
   ];
   scores.sort((a, b) => b.score - a.score);
   return scores[0]!.id;

@@ -36,6 +36,7 @@ import {
   IDENTITY_TIP_EULER,
   canTipPreset,
   tipBoard,
+  tipBoardFromEuler,
   tipChoices,
   tipDownFromEuler,
   type TipDown,
@@ -1178,7 +1179,7 @@ export const useGameStore = create<GameState>((set, get) => ({
         });
         return;
       }
-      const board = tipBoard(state.board, dims, toDown);
+      const board = tipBoardFromEuler(state.board, dims, state.tipEuler);
       set({
         board,
         occupiedCount: board.size,
@@ -1197,8 +1198,8 @@ export const useGameStore = create<GameState>((set, get) => ({
       set({ tipFalling: false });
       return;
     }
-    // One tip per spend: rebase, spend, exit — no chaining extra flips.
-    const board = tipBoard(state.board, dims, toDown);
+    // One tip per spend: rebase via full Euler (includes yaw), spend, exit.
+    const board = tipBoardFromEuler(state.board, dims, state.tipEuler);
     const by = state.currentPlayer;
     const spent = spendPowerUp(state.inventory[by], "tip");
     if (!spent) {

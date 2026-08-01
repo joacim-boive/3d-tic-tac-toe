@@ -1,7 +1,7 @@
 /**
  * Assert-based self-check for power-up helpers — run with `npm run check:powerups`.
  */
-import { cellKey, checkWinAny, createEmptyBoard } from "./board";
+import { cellKey, cellToWorld, checkWinAny, createEmptyBoard, worldToCell } from "./board";
 import { axisLineCells, clearAxisLine, clearFixedFromCursor, nextClearAxis, repackDrop } from "./clearRow";
 import {
   AI_CATCH_CHANCE,
@@ -20,8 +20,17 @@ import {
   spendPowerUp,
   underCapKinds,
 } from "./powerUps";
-import { canTipPreset, eulerForTipDown, tipBoard, tipChoices, tipDownFromEuler } from "./tipBoard";
-import { tipEulerFromSwipe } from "./tipNav";
+import {
+  canTipPreset,
+  cellThroughTipEuler,
+  eulerForTipDown,
+  tipBoard,
+  tipChoices,
+  tipDownFromEuler,
+  tipRemap,
+  tipRemapFromEuler,
+} from "./tipBoard";
+import { eulerToQuat, tipEulerFromSwipe } from "./tipNav";
 import type { BoardDims } from "./types";
 import { Vector3 } from "three";
 
@@ -165,11 +174,69 @@ function testTipCube() {
   board.set(cellKey(0, 1, 1), "b");
   const tipped = tipBoard(board, dims, "-x");
   assert(tipped.size === 2, "both pieces kept");
-  assert(tipped.get(cellKey(1, 0, 1)) === "b", "b maps to x=1");
-  assert(tipped.get(cellKey(2, 0, 1)) === "a", "a maps to x=2");
+  // Three.js Z+90°: local −x → world −y; column/x remap matches visual tip.
+  assert(tipped.get(cellKey(1, 0, 1)) === "b", "b maps to (1,0,1)");
+  assert(tipped.get(cellKey(0, 0, 1)) === "a", "a maps to (0,0,1)");
   assert(tipChoices().length === 5, "5 tip choices excl −y");
   for (const d of ["+x", "-x", "+y", "-y", "+z", "-z"] as const) {
     assert(tipDownFromEuler(eulerForTipDown(d)) === d, `euler round-trip ${d}`);
+  }
+}
+
+function testTipRemapIncludesYaw() {
+  const dims = { x: 4, y: 4, z: 4 };
+  let board = createEmptyBoard();
+  board.set(cellKey(0, 0, 0), "a");
+  board.set(cellKey(1, 0, 0), "b");
+
+  // Face helper is canonical-spin euler remap.
+  for (const d of ["+x", "-x", "+y", "+z", "-z"] as const) {
+    const face = tipRemap(board, dims, d);
+    const fromEuler = tipRemapFromEuler(board, dims, eulerForTipDown(d));
+    assert(face.length === fromEuler.length, `len ${d}`);
+    for (let i = 0; i < face.length; i++) {
+      assert(
+        face[i]!.to.x === fromEuler[i]!.to.x &&
+          face[i]!.to.y === fromEuler[i]!.to.y &&
+          face[i]!.to.z === fromEuler[i]!.to.z &&
+          face[i]!.key === fromEuler[i]!.key,
+        `face vs euler mismatch ${d} ${face[i]!.key}`,
+      );
+    }
+  }
+
+  // Remap landings must match visual quat * cellToWorld (the fall start).
+  let e = { x: 0, y: 0, z: 0 };
+  e = tipEulerFromSwipe(e, new Vector3(1, 0, 0), 80, 0);
+  e = tipEulerFromSwipe(e, new Vector3(1, 0, 0), 0, -80);
+  const down = tipDownFromEuler(e);
+  assert(down !== "-y", "yaw+flip leaves upright");
+
+  const q = eulerToQuat(e);
+  for (const [key] of board) {
+    const [x, y, z] = key.split(",").map(Number) as [number, number, number];
+    const from = { x, y, z };
+    const [wx, wy, wz] = cellToWorld(from, dims);
+    const world = new Vector3(wx, wy, wz).applyQuaternion(q);
+    const viaWorld = worldToCell(world.x, world.y, world.z, dims);
+    assert(viaWorld !== null, `world cell ${key}`);
+    const viaEuler = cellThroughTipEuler(from, e, dims.x);
+    assert(
+      viaEuler.x === viaWorld.x && viaEuler.y === viaWorld.y && viaEuler.z === viaWorld.z,
+      `euler cell must match visual world ${key}`,
+    );
+  }
+
+  const faceOnly = tipRemap(board, dims, down);
+  const full = tipRemapFromEuler(board, dims, e);
+  const faceKey = faceOnly.map((r) => `${r.key}:${r.to.x},${r.to.y},${r.to.z}`).sort().join("|");
+  const fullKey = full.map((r) => `${r.key}:${r.to.x},${r.to.y},${r.to.z}`).sort().join("|");
+  assert(faceKey !== fullKey, "yaw changes landing cells vs face-only");
+
+  // Packed landing XZ equals rotated column (no lateral teleport after fall).
+  for (const entry of full) {
+    const rotated = cellThroughTipEuler(entry.from, e, dims.x);
+    assert(entry.to.x === rotated.x && entry.to.z === rotated.z, `pack keeps column ${entry.key}`);
   }
 }
 
@@ -216,6 +283,7 @@ testAiCatch();
 testClearCursorAxis();
 testClearAndRepack();
 testTipCube();
+testTipRemapIncludesYaw();
 testTipNavCombined();
 testTipCreatesWin();
 console.log("powerUps.selftest ok");

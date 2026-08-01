@@ -13,7 +13,7 @@ import {
 } from "three";
 import { cellToWorld } from "@/game/board";
 import { useGameStore } from "@/game/store";
-import { tipDownFromEuler, tipRemap, type TipRemapEntry } from "@/game/tipBoard";
+import { tipRemapFromEuler, type TipRemapEntry } from "@/game/tipBoard";
 import { eulerToQuat, tipEulerFromSwipe } from "@/game/tipNav";
 import { PLAYER_COLORS, type BoardDims, type PlayerId } from "@/game/types";
 import { BoardColliders, DROP_GRAVITY, MARKER_RADIUS } from "./BoardColliders";
@@ -119,7 +119,8 @@ export function TipBoardFrame({ dims, dropMode }: TipBoardFrameProps) {
 
   const fallEntries = useMemo(() => {
     if (!tipFalling) return [] as TipRemapEntry[];
-    return tipRemap(board, dims, tipDownFromEuler(tipEuler));
+    // Full Euler remap — includes spin-on-bottom yaw, not just which face is down.
+    return tipRemapFromEuler(board, dims, tipEuler);
   }, [tipFalling, tipEuler, board, dims]);
 
   const fallStarts = useMemo(() => {
