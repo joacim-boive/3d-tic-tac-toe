@@ -76,7 +76,7 @@ export type PowerUpAimMessage = {
 
 /**
  * Tip intent for the spectator — which face will become the floor.
- * Does not rotate their cube; camera/view stay put.
+ * Does not rotate their cube while aiming; camera/view stay put.
  */
 export type PowerUpTipAimMessage = {
   type: "powerup-tip-aim";
@@ -84,6 +84,13 @@ export type PowerUpTipAimMessage = {
   active: boolean;
   /** Face becoming floor, or null while still upright / spinning. */
   toDown?: "+x" | "-x" | "+y" | "-y" | "+z" | "-z" | null;
+};
+
+/** Opponent committed Tip — spectator plays rotate + ball-drop. */
+export type PowerUpTipCommitMessage = {
+  type: "powerup-tip-commit";
+  by: PlayerId;
+  tipEuler: { x: number; y: number; z: number };
 };
 
 export type StateMessage = {
@@ -114,4 +121,5 @@ export type RoomMessage =
   | PowerUpNotifyMessage
   | PowerUpAimMessage
   | PowerUpTipAimMessage
+  | PowerUpTipCommitMessage
   | StateMessage;

@@ -57,11 +57,11 @@ function SceneContent() {
   const reviewing = status === "won" || status === "draw";
   const dropMode = placement === "drop";
   const tipMode = powerUpMode === "tip";
+  const watchTipPlayback = useGameStore((s) => s.watchTipPlayback);
   const swarmBusy = useGameStore((s) => s.swarmBusy);
   // Tip: drag tips the box. Swarm: overlay owns all pointers.
-  // Keep OrbitControls mounted; only lock inputs — toggling `enabled` can
-  // interrupt damping and feel like a zoom/framing jump on mobile.
-  const camLocked = tipMode || tipFalling || swarmBusy;
+  // Spectator tip commit playback also locks orbit.
+  const camLocked = tipMode || tipFalling || watchTipPlayback || swarmBusy;
   // Drop mode: orbit around and over the top, never under the box.
   const maxPolar = reviewing ? Math.PI : dropMode ? MathUtils.DEG2RAD * 78 : Math.PI;
   const minPolar = reviewing ? 0 : dropMode ? MathUtils.DEG2RAD * 8 : 0;

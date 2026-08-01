@@ -2,7 +2,7 @@ import type { PresenceChannel } from "pusher-js";
 import type { Board } from "@/game/board";
 import { resolvePresetId } from "@/game/presets";
 import { generateRoomCode, isValidRoomCode, normalizeRoomCode } from "@/game/roomCode";
-import { setLocalClearAimPublisher, setLocalPlacePublisher, setLocalPowerUpNotifyPublisher, setLocalSwarmPublisher, setLocalSwarmResultPublisher, setLocalStateSyncPublisher, setLocalTipAimPublisher, useGameStore } from "@/game/store";
+import { setLocalClearAimPublisher, setLocalPlacePublisher, setLocalPowerUpNotifyPublisher, setLocalSwarmPublisher, setLocalSwarmResultPublisher, setLocalStateSyncPublisher, setLocalTipAimPublisher, setLocalTipCommitPublisher, useGameStore } from "@/game/store";
 import type { PlayerId, PlayerNames, PlacementMode, PresetId } from "@/game/types";
 import type { PresenceData, RoomMessage, StateMessage } from "./messages";
 import { notifyOpponentConnected } from "./notify";
@@ -165,6 +165,14 @@ function onMessage(raw: RoomMessage) {
       });
       break;
     }
+    case "powerup-tip-commit": {
+      if (store.seat === raw.by) break;
+      store.applyRemoteTipCommit({
+        by: raw.by,
+        tipEuler: raw.tipEuler,
+      });
+      break;
+    }
     case "rematch": {
       store.setRematchVote(raw.seat, raw.accept);
       const votes = useGameStore.getState().rematchVotes;
@@ -204,6 +212,7 @@ function wireChannel(channel: PresenceChannel, seat: PlayerId) {
     "powerup-notify",
     "powerup-aim",
     "powerup-tip-aim",
+    "powerup-tip-commit",
   ] as const;
   for (const type of events) {
     channel.bind(`client-${type}`, (data: RoomMessage) => {
@@ -285,6 +294,13 @@ function wireChannel(channel: PresenceChannel, seat: PlayerId) {
       by: msg.by,
       active: msg.active,
       toDown: msg.toDown,
+    });
+  });
+  setLocalTipCommitPublisher((msg) => {
+    trigger(channel, {
+      type: "powerup-tip-commit",
+      by: msg.by,
+      tipEuler: msg.tipEuler,
     });
   });
 }
@@ -380,6 +396,7 @@ async function attachSession(
         setLocalPowerUpNotifyPublisher(null);
         setLocalClearAimPublisher(null);
         setLocalTipAimPublisher(null);
+        setLocalTipCommitPublisher(null);
         channel.unbind_all();
         pusher.unsubscribe(channelName);
       },
@@ -394,6 +411,7 @@ async function attachSession(
     setLocalPowerUpNotifyPublisher(null);
     setLocalClearAimPublisher(null);
     setLocalTipAimPublisher(null);
+    setLocalTipCommitPublisher(null);
     channel.unbind_all();
     pusher.unsubscribe(channelName);
     disconnectPusher();
@@ -448,6 +466,7 @@ export async function leaveOnlineSession(): Promise<void> {
   setLocalPowerUpNotifyPublisher(null);
   setLocalClearAimPublisher(null);
   setLocalTipAimPublisher(null);
+  setLocalTipCommitPublisher(null);
   if (handle) {
     handle.dispose();
   }

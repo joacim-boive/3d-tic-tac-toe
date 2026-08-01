@@ -107,10 +107,13 @@ export function TipBoardFrame({ dims, dropMode }: TipBoardFrameProps) {
   const tipFalling = useGameStore((s) => s.tipFalling);
   const tipTargetEuler = useGameStore((s) => s.tipTargetEuler);
   const commitTipEuler = useGameStore((s) => s.commitTipEuler);
+  const beginTipFall = useGameStore((s) => s.beginTipFall);
   const finishTipFall = useGameStore((s) => s.finishTipFall);
   const board = useGameStore((s) => s.board);
+  const watchTipPlayback = useGameStore((s) => s.watchTipPlayback);
 
   const tipMode = powerUpMode === "tip";
+  const tipVisual = tipMode || watchTipPlayback;
   const displayQuat = useRef(new Quaternion());
   const targetQuat = useRef(new Quaternion());
 
@@ -154,23 +157,26 @@ export function TipBoardFrame({ dims, dropMode }: TipBoardFrameProps) {
     g.quaternion.copy(displayQuat.current);
 
     if (
-      tipMode &&
+      tipVisual &&
       displayQuat.current.angleTo(targetQuat.current) < 0.015 &&
       (tipEuler.x !== tipTargetEuler.x ||
         tipEuler.y !== tipTargetEuler.y ||
         tipEuler.z !== tipTargetEuler.z)
     ) {
-      // Lock the pose only — balls stay glued until the player commits.
       commitTipEuler(tipTargetEuler);
+      // Spectator commit playback: after rotate lands, drop the balls.
+      if (watchTipPlayback) {
+        beginTipFall();
+      }
     }
   });
 
   useEffect(() => {
-    if (!tipMode && !tipFalling && groupRef.current) {
+    if (!tipVisual && !tipFalling && groupRef.current) {
       groupRef.current.quaternion.identity();
       displayQuat.current.identity();
     }
-  }, [tipMode, tipFalling]);
+  }, [tipVisual, tipFalling]);
 
   return (
     <>
@@ -178,7 +184,7 @@ export function TipBoardFrame({ dims, dropMode }: TipBoardFrameProps) {
 
       <group ref={groupRef}>
         <Grid dims={dims} />
-        {!tipMode && !tipFalling ? <SelectionCursor dims={dims} /> : null}
+        {!tipVisual && !tipFalling ? <SelectionCursor dims={dims} /> : null}
         <ClearRowHighlight dims={dims} />
         <TipFloorHint dims={dims} />
 

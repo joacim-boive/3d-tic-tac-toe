@@ -44,6 +44,7 @@ export function GameChrome({ children }: GameChromeProps) {
   const powerUpMode = useGameStore((s) => s.powerUpMode);
   const tipFalling = useGameStore((s) => s.tipFalling);
   const watchPowerUp = useGameStore((s) => s.watchPowerUp);
+  const watchTipPlayback = useGameStore((s) => s.watchTipPlayback);
   const currentPlayer = useGameStore((s) => s.currentPlayer);
   const status = useGameStore((s) => s.status);
   const winner = useGameStore((s) => s.winner);
@@ -79,6 +80,8 @@ export function GameChrome({ children }: GameChromeProps) {
     statusText = `${displayName(winner)} wins`;
   } else if (status === "draw") {
     statusText = "Draw";
+  } else if (watchTipPlayback) {
+    statusText = "Opponent tipping…";
   } else if (tipFalling) {
     statusText = "Balls falling…";
   } else if (watchPowerUp?.kind === "clear-row") {

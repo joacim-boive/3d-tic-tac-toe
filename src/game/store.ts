@@ -137,6 +137,24 @@ type GameState = {
    * Clear: live shaft. Tip: floor-face hint without rotating our cube.
    */
   watchPowerUp: WatchPowerUp | null;
+  /**
+   * Spectator is replaying an opponent's Tip commit (rotate → fall).
+   * Aiming still does not rotate; only commit playback does.
+   */
+  watchTipPlayback: boolean;
+  /** Board/turn snapshot held until spectator tip playback finishes. */
+  pendingTipSync: {
+    board: Board;
+    occupiedCount: number;
+    currentPlayer: PlayerId;
+    status: GameStatus;
+    winner: PlayerId | null;
+    winningLine: CellCoord[];
+    winningCell: CellCoord | null;
+    inventory: PowerUpInventory;
+    bonusPlacesRemaining: number;
+    onlineStatus: OnlineStatus;
+  } | null;
   /** Precomputed AI catch attempt if the human never taps the live package. */
   swarmAiResult: { caught: boolean; kind?: PowerUpId } | null;
   /** Current snapped tip orientation (tip mode). */
@@ -233,6 +251,7 @@ type GameState = {
     active: boolean;
     toDown?: TipDown | null;
   }) => void;
+  applyRemoteTipCommit: (msg: { by: PlayerId; tipEuler: TipEuler }) => void;
   applyRemoteSwarm: (plan: SwarmPlan) => void;
   applyRemoteSwarmResult: (
     by: PlayerId,
@@ -280,6 +299,7 @@ let localClearAimPublisher:
 let localTipAimPublisher:
   | ((msg: { by: PlayerId; active: boolean; toDown?: TipDown | null }) => void)
   | null = null;
+let localTipCommitPublisher: ((msg: { by: PlayerId; tipEuler: TipEuler }) => void) | null = null;
 
 export function setLocalPlacePublisher(
   fn: ((coord: CellCoord, by: PlayerId) => void) | null,
@@ -324,6 +344,12 @@ export function setLocalTipAimPublisher(
   fn: ((msg: { by: PlayerId; active: boolean; toDown?: TipDown | null }) => void) | null,
 ): void {
   localTipAimPublisher = fn;
+}
+
+export function setLocalTipCommitPublisher(
+  fn: ((msg: { by: PlayerId; tipEuler: TipEuler }) => void) | null,
+): void {
+  localTipCommitPublisher = fn;
 }
 
 function publishClearAim(get: () => GameState) {
@@ -509,6 +535,8 @@ function finishPowerUpBoard(
       bonusPlacesRemaining: 0,
       powerUpToast: opponentToast,
       watchPowerUp: null,
+      watchTipPlayback: false,
+      pendingTipSync: null,
       aiming: false,
       fallingKey: null,
       dropBusy: false,
@@ -532,6 +560,8 @@ function finishPowerUpBoard(
       bonusPlacesRemaining: 0,
       powerUpToast: opponentToast,
       watchPowerUp: null,
+      watchTipPlayback: false,
+      pendingTipSync: null,
       aiming: false,
       fallingKey: null,
       dropBusy: false,
@@ -555,6 +585,8 @@ function finishPowerUpBoard(
     bonusPlacesRemaining: 0,
     powerUpToast: opponentToast,
     watchPowerUp: null,
+    watchTipPlayback: false,
+    pendingTipSync: null,
     fallingKey: null,
     dropBusy: false,
   });
@@ -750,6 +782,8 @@ export const useGameStore = create<GameState>((set, get) => ({
   clearAxis: "x",
   powerUpToast: null,
   watchPowerUp: null,
+  watchTipPlayback: false,
+  pendingTipSync: null,
   swarmAiResult: null,
   tipEuler: { ...IDENTITY_TIP_EULER },
   tipTargetEuler: { ...IDENTITY_TIP_EULER },
@@ -1067,13 +1101,16 @@ export const useGameStore = create<GameState>((set, get) => ({
       powerUpToast: null,
       aiming: false,
     });
-    if (state.playMode === "online") publishTipAim(get);
+    if (state.playMode === "online") {
+      localTipCommitPublisher?.({ by, tipEuler: locked });
+    }
     return true;
   },
 
   beginTipFall: () => {
     const state = get();
-    if (state.powerUpMode !== "tip" || state.tipFalling) return;
+    if (state.tipFalling) return;
+    if (state.powerUpMode !== "tip" && !state.watchTipPlayback) return;
     const locked = { ...state.tipTargetEuler };
     if (tipDownFromEuler(locked) === "-y") return;
     set({
@@ -1083,28 +1120,79 @@ export const useGameStore = create<GameState>((set, get) => ({
       powerUpToast: null,
       aiming: false,
     });
-    if (state.playMode === "online") publishTipAim(get);
   },
 
   setTipTargetEuler: (euler) => {
     const state = get();
-    if (state.powerUpMode !== "tip" || state.tipFalling) return;
+    if (state.tipFalling) return;
+    if (state.powerUpMode !== "tip") return;
     set({ tipTargetEuler: euler });
     if (state.playMode === "online") publishTipAim(get);
   },
 
   commitTipEuler: (euler) => {
     const state = get();
-    if (state.powerUpMode !== "tip" || state.tipFalling) return;
+    if (state.tipFalling) return;
+    if (state.powerUpMode !== "tip" && !state.watchTipPlayback) return;
     set({ tipEuler: euler, tipTargetEuler: euler });
-    if (state.playMode === "online") publishTipAim(get);
+    if (state.powerUpMode === "tip" && state.playMode === "online") publishTipAim(get);
   },
 
   finishTipFall: () => {
     const state = get();
-    if (!state.tipFalling || state.powerUpMode !== "tip") return;
+    if (!state.tipFalling) return;
     const dims = getPreset(state.presetId).dims;
     const toDown = tipDownFromEuler(state.tipEuler);
+
+    // Spectator replay of opponent's commit — apply board (or pending sync) and exit.
+    if (state.watchTipPlayback) {
+      const pending = state.pendingTipSync;
+      if (pending) {
+        set({
+          board: pending.board,
+          occupiedCount: pending.occupiedCount,
+          currentPlayer: pending.currentPlayer,
+          status: pending.status,
+          winner: pending.winner,
+          winningLine: pending.winningLine,
+          winningCell: pending.winningCell,
+          inventory: pending.inventory,
+          bonusPlacesRemaining: pending.bonusPlacesRemaining,
+          onlineStatus: pending.onlineStatus,
+          tipFalling: false,
+          tipEuler: { ...IDENTITY_TIP_EULER },
+          tipTargetEuler: { ...IDENTITY_TIP_EULER },
+          watchTipPlayback: false,
+          pendingTipSync: null,
+          watchPowerUp: null,
+          powerUpMode: null,
+        });
+        return;
+      }
+      if (toDown === "-y") {
+        set({
+          tipFalling: false,
+          tipEuler: { ...IDENTITY_TIP_EULER },
+          tipTargetEuler: { ...IDENTITY_TIP_EULER },
+          watchTipPlayback: false,
+        });
+        return;
+      }
+      const board = tipBoard(state.board, dims, toDown);
+      set({
+        board,
+        occupiedCount: board.size,
+        tipFalling: false,
+        tipEuler: { ...IDENTITY_TIP_EULER },
+        tipTargetEuler: { ...IDENTITY_TIP_EULER },
+        watchTipPlayback: false,
+        watchPowerUp: null,
+        powerUpMode: null,
+      });
+      return;
+    }
+
+    if (state.powerUpMode !== "tip") return;
     if (toDown === "-y") {
       set({ tipFalling: false });
       return;
@@ -1295,10 +1383,13 @@ export const useGameStore = create<GameState>((set, get) => ({
       });
       return;
     }
-    set({
-      powerUpToast: `${name} used ${label}`,
-      watchPowerUp: null,
-    });
+    if (phase === "confirm") {
+      set({
+        powerUpToast: `${name} used ${label}`,
+        // Tip confirm may arrive during rotate/fall playback — don't abort it.
+        watchPowerUp: kind === "tip" && get().watchTipPlayback ? get().watchPowerUp : null,
+      });
+    }
   },
 
   applyRemoteClearAim: (msg) => {
@@ -1324,6 +1415,7 @@ export const useGameStore = create<GameState>((set, get) => ({
   applyRemoteTipAim: (msg) => {
     const state = get();
     if (state.seat === msg.by) return;
+    if (state.watchTipPlayback) return;
     if (!msg.active) {
       set((s) => ({
         watchPowerUp: s.watchPowerUp?.kind === "tip" ? null : s.watchPowerUp,
@@ -1336,6 +1428,22 @@ export const useGameStore = create<GameState>((set, get) => ({
         by: msg.by,
         toDown: msg.toDown ?? null,
       },
+    });
+  },
+
+  applyRemoteTipCommit: (msg) => {
+    const state = get();
+    if (state.seat === msg.by) return;
+    const name = state.displayName(msg.by);
+    set({
+      powerUpToast: `${name} tipped the field`,
+      watchPowerUp: null,
+      watchTipPlayback: true,
+      pendingTipSync: null,
+      tipEuler: { ...IDENTITY_TIP_EULER },
+      tipTargetEuler: { ...msg.tipEuler },
+      tipFalling: false,
+      aiming: false,
     });
   },
 
@@ -1647,6 +1755,7 @@ export const useGameStore = create<GameState>((set, get) => ({
     localPowerUpNotifyPublisher = null;
     localClearAimPublisher = null;
     localTipAimPublisher = null;
+    localTipCommitPublisher = null;
     set({
       phase: "setup",
       board: createEmptyBoard(),
@@ -1669,6 +1778,8 @@ export const useGameStore = create<GameState>((set, get) => ({
       powerUpMode: null,
       powerUpToast: null,
       watchPowerUp: null,
+      watchTipPlayback: false,
+      pendingTipSync: null,
       swarmAiResult: null,
       tipEuler: { ...IDENTITY_TIP_EULER },
       tipTargetEuler: { ...IDENTITY_TIP_EULER },
@@ -1688,6 +1799,41 @@ export const useGameStore = create<GameState>((set, get) => ({
     const placement = snap.placement ?? get().placement;
     const onlineStatus: OnlineStatus =
       snap.status === "won" || snap.status === "draw" ? "ended" : "playing";
+    const inventory = snap.inventory ?? emptyInventory();
+
+    // During spectator tip playback, hold the authoritative board until fall settles.
+    if (get().watchTipPlayback) {
+      set({
+        phase: "playing",
+        playMode: "online",
+        playerNames: snap.names,
+        presetId: resolved,
+        placement,
+        inventory,
+        powerUpsEnabled: snap.powerUpsEnabled ?? get().powerUpsEnabled,
+        pendingTipSync: {
+          board: snap.board,
+          occupiedCount: snap.occupiedCount,
+          currentPlayer: snap.currentPlayer,
+          status: snap.status,
+          winner: snap.winner,
+          winningLine: snap.winningLine,
+          winningCell: snap.winningCell ?? null,
+          inventory,
+          bonusPlacesRemaining: snap.bonusPlacesRemaining ?? 0,
+          onlineStatus,
+        },
+        pendingSwarmEarner: null,
+        swarm: null,
+        swarmBusy: false,
+        swarmPopped: {},
+        swarmAiResult: null,
+        powerUpMode: null,
+        opponentConnected: true,
+      });
+      return;
+    }
+
     set({
       phase: "playing",
       playMode: "online",
@@ -1701,7 +1847,7 @@ export const useGameStore = create<GameState>((set, get) => ({
       winner: snap.winner,
       winningLine: snap.winningLine,
       winningCell: snap.winningCell ?? null,
-      inventory: snap.inventory ?? emptyInventory(),
+      inventory,
       powerUpsEnabled: snap.powerUpsEnabled ?? get().powerUpsEnabled,
       bonusPlacesRemaining: snap.bonusPlacesRemaining ?? 0,
       pendingSwarmEarner: null,
@@ -1711,6 +1857,8 @@ export const useGameStore = create<GameState>((set, get) => ({
       swarmAiResult: null,
       powerUpMode: null,
       watchPowerUp: null,
+      watchTipPlayback: false,
+      pendingTipSync: null,
       powerUpToast: null,
       tipEuler: { ...IDENTITY_TIP_EULER },
       tipTargetEuler: { ...IDENTITY_TIP_EULER },
@@ -1738,6 +1886,7 @@ export const useGameStore = create<GameState>((set, get) => ({
     const state = get();
     if (state.status !== "playing") return false;
     if (state.dropBusy || state.swarmBusy || state.tipFalling) return false;
+    if (state.watchTipPlayback) return false;
     if (state.powerUpMode === "clear-row" || state.powerUpMode === "tip") return false;
     if (state.playMode === "ai" && state.currentPlayer !== HUMAN) return false;
     if (state.playMode === "online") {
