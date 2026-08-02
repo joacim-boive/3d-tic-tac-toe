@@ -7,6 +7,7 @@ import { MathUtils, TOUCH } from "three";
 import { getPreset } from "@/game/presets";
 import { useGameStore } from "@/game/store";
 import { TipBoardFrame } from "./TipBoardFrame";
+import { SwarmPackages } from "./SwarmPackages";
 
 function camDistance(dims: { x: number; y: number; z: number }): number {
   return Math.max(dims.x, dims.y, dims.z) * 1.6 + 2;
@@ -59,7 +60,7 @@ function SceneContent() {
   const tipMode = powerUpMode === "tip";
   const watchTipPlayback = useGameStore((s) => s.watchTipPlayback);
   const swarmBusy = useGameStore((s) => s.swarmBusy);
-  // Tip: drag tips the box. Swarm: overlay owns all pointers.
+  // Tip: drag tips the box. Swarm: 3D packages own pointers (orbit off).
   // Spectator tip commit playback also locks orbit.
   const camLocked = tipMode || tipFalling || watchTipPlayback || swarmBusy;
   // Drop mode: orbit around and over the top, never under the box.
@@ -75,6 +76,7 @@ function SceneContent() {
       <directionalLight position={[-dims.x, -dims.y * 0.4, -dims.z]} intensity={0.35} />
 
       <TipBoardFrame dims={dims} dropMode={dropMode} />
+      <SwarmPackages dims={dims} />
 
       {/*
         Tip / package swarm: OrbitControls off.

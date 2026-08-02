@@ -73,7 +73,7 @@ export function GameChrome({ children }: GameChromeProps) {
     const otherName = playerNames[other].trim() || displayName(other);
     statusText = `Waiting for ${otherName} to reconnect…`;
   } else if (swarmBusy) {
-    statusText = "Compete — claim or deny a package";
+    statusText = "Catch a package — tap a cylinder";
   } else if (dropBusy) {
     statusText = "Dropping…";
   } else if (status === "won" && winner) {
@@ -95,7 +95,10 @@ export function GameChrome({ children }: GameChromeProps) {
   } else if (playMode === "ai" && currentPlayer === "b") {
     statusText = "Cyan is thinking…";
   } else {
-    statusText = placement === "drop" ? `${displayName(currentPlayer)} to drop` : `${displayName(currentPlayer)} to place`;
+    statusText =
+      placement === "drop"
+        ? `${displayName(currentPlayer)} to drop`
+        : `${displayName(currentPlayer)} to place`;
   }
 
   const modeLabel = playMode === "ai" ? "vs AI" : playMode === "online" ? "Online" : "Hotseat";
@@ -168,21 +171,21 @@ export function GameChrome({ children }: GameChromeProps) {
             myTurn &&
             powerUpMode !== "clear-row" &&
             powerUpMode !== "tip" && (
-            <button
-              type="button"
-              className="chrome__btn chrome__btn--accent"
-              onClick={placeAtCursor}
-              disabled={dropBusy || swarmBusy}
-            >
-              {placement === "drop" ? "Drop" : "Place"}
-              {!touchUi && (
-                <>
-                  {" "}
-                  <kbd>Space</kbd>
-                </>
-              )}
-            </button>
-          )}
+              <button
+                type="button"
+                className="chrome__btn chrome__btn--accent"
+                onClick={placeAtCursor}
+                disabled={dropBusy || swarmBusy}
+              >
+                {placement === "drop" ? "Drop" : "Place"}
+                {!touchUi && (
+                  <>
+                    {" "}
+                    <kbd>Space</kbd>
+                  </>
+                )}
+              </button>
+            )}
           <button type="button" className="chrome__btn" onClick={onMenu}>
             Menu
             {!touchUi && (
