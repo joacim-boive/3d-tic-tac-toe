@@ -56,6 +56,8 @@ import type {
 import { PLAYER_LABELS, centerCell } from "./types";
 
 const AI_DELAY_MS = 400;
+/** How long the award chip bounce/highlight stays visible. */
+const INVENTORY_PULSE_MS = 1100;
 const HUMAN: PlayerId = "a";
 const AI_PLAYER: PlayerId = "b";
 const LOCAL_NAME_KEY = "voxel-toe-name";
@@ -64,6 +66,14 @@ const EMPTY_NAMES: PlayerNames = { a: "", b: "" };
 const EMPTY_VOTES: RematchVotes = { a: null, b: null };
 
 export type PowerUpMode = PowerUpId | null;
+
+/** Brief HUD cue after someone banks a caught package. */
+export type InventoryPulse = {
+  by: PlayerId;
+  kind: PowerUpId;
+  /** Monotonic id so re-awarding the same kind retriggers CSS animation. */
+  id: number;
+};
 
 /** Spectator overlay for an opponent's in-progress power-up (online). */
 export type WatchPowerUp =
@@ -132,6 +142,8 @@ type GameState = {
   powerUpMode: PowerUpMode;
   clearAxis: Axis;
   powerUpToast: string | null;
+  /** Who just banked a catch — HUD bounces that chip for ~1s. */
+  inventoryPulse: InventoryPulse | null;
   /**
    * Spectator view of opponent's in-progress power-up (online).
    * Clear: live shaft. Tip: floor-face hint without rotating our cube.
@@ -275,6 +287,30 @@ type GameState = {
 };
 
 let aiTimer: ReturnType<typeof setTimeout> | null = null;
+let inventoryPulseTimer: ReturnType<typeof setTimeout> | null = null;
+let inventoryPulseSeq = 0;
+
+function clearInventoryPulseTimer() {
+  if (inventoryPulseTimer) {
+    clearTimeout(inventoryPulseTimer);
+    inventoryPulseTimer = null;
+  }
+}
+
+function pulseInventoryAward(
+  set: (partial: Partial<GameState>) => void,
+  by: PlayerId,
+  kind: PowerUpId,
+) {
+  clearInventoryPulseTimer();
+  inventoryPulseSeq += 1;
+  const id = inventoryPulseSeq;
+  set({ inventoryPulse: { by, kind, id } });
+  inventoryPulseTimer = setTimeout(() => {
+    inventoryPulseTimer = null;
+    set({ inventoryPulse: null });
+  }, INVENTORY_PULSE_MS);
+}
 
 /** ponytail: session registers publisher; upgrade = explicit online middleware. */
 let localPlacePublisher: ((coord: CellCoord, by: PlayerId) => void) | null = null;
@@ -796,6 +832,7 @@ export const useGameStore = create<GameState>((set, get) => ({
   powerUpMode: null,
   clearAxis: "x",
   powerUpToast: null,
+  inventoryPulse: null,
   watchPowerUp: null,
   watchTipPlayback: false,
   pendingTipSync: null,
@@ -1336,6 +1373,7 @@ export const useGameStore = create<GameState>((set, get) => ({
       swarmAiResult: null,
       powerUpToast: null,
     });
+    pulseInventoryAward(set, by, kind);
     if (state.playMode === "online") {
       localSwarmResultPublisher?.(by, index, "claim", kind);
     }
@@ -1371,6 +1409,7 @@ export const useGameStore = create<GameState>((set, get) => ({
             swarmAiResult: null,
             powerUpToast: null,
           });
+          pulseInventoryAward(set, AI_PLAYER, aiResult.kind);
           afterSwarm(get, set);
           return;
         }
@@ -1529,6 +1568,7 @@ export const useGameStore = create<GameState>((set, get) => ({
           swarmAiResult: null,
           powerUpToast: null,
         });
+        pulseInventoryAward(set, by, kind);
         afterSwarm(get, set);
         return;
       }
@@ -1545,6 +1585,7 @@ export const useGameStore = create<GameState>((set, get) => ({
 
   startGame: () => {
     clearAiTimer();
+    clearInventoryPulseTimer();
     const state = get();
     const dims = getPreset(state.presetId).dims;
     const placement = state.placement;
@@ -1578,6 +1619,7 @@ export const useGameStore = create<GameState>((set, get) => ({
       swarmPopped: {},
       powerUpMode: null,
       powerUpToast: null,
+      inventoryPulse: null,
       watchPowerUp: null,
       swarmAiResult: null,
       tipEuler: { ...IDENTITY_TIP_EULER },
@@ -1588,6 +1630,7 @@ export const useGameStore = create<GameState>((set, get) => ({
 
   rematch: () => {
     clearAiTimer();
+    clearInventoryPulseTimer();
     const state = get();
     const dims = getPreset(state.presetId).dims;
     const nextStarter = opponentOf(state.startingPlayer);
@@ -1621,6 +1664,7 @@ export const useGameStore = create<GameState>((set, get) => ({
       swarmPopped: {},
       powerUpMode: null,
       powerUpToast: null,
+      inventoryPulse: null,
       watchPowerUp: null,
       swarmAiResult: null,
       tipEuler: { ...IDENTITY_TIP_EULER },
@@ -1634,6 +1678,7 @@ export const useGameStore = create<GameState>((set, get) => ({
 
   returnToSetup: () => {
     clearAiTimer();
+    clearInventoryPulseTimer();
     set({
       phase: "setup",
       board: createEmptyBoard(),
@@ -1656,6 +1701,7 @@ export const useGameStore = create<GameState>((set, get) => ({
       swarmPopped: {},
       powerUpMode: null,
       powerUpToast: null,
+      inventoryPulse: null,
       watchPowerUp: null,
       swarmAiResult: null,
       tipEuler: { ...IDENTITY_TIP_EULER },
@@ -1723,6 +1769,7 @@ export const useGameStore = create<GameState>((set, get) => ({
       swarmPopped: {},
       powerUpMode: null,
       powerUpToast: null,
+      inventoryPulse: null,
       watchPowerUp: null,
       swarmAiResult: null,
       tipEuler: { ...IDENTITY_TIP_EULER },
@@ -1759,6 +1806,7 @@ export const useGameStore = create<GameState>((set, get) => ({
 
   resetForRematch: () => {
     const state = get();
+    clearInventoryPulseTimer();
     const dims = getPreset(state.presetId).dims;
     const nextStarter = opponentOf(state.startingPlayer);
     const startCursor =
@@ -1787,6 +1835,7 @@ export const useGameStore = create<GameState>((set, get) => ({
       swarmPopped: {},
       powerUpMode: null,
       powerUpToast: null,
+      inventoryPulse: null,
       watchPowerUp: null,
       swarmAiResult: null,
       tipEuler: { ...IDENTITY_TIP_EULER },
@@ -1799,6 +1848,7 @@ export const useGameStore = create<GameState>((set, get) => ({
 
   leaveOnline: () => {
     clearAiTimer();
+    clearInventoryPulseTimer();
     localPlacePublisher = null;
     localSwarmPublisher = null;
     localSwarmResultPublisher = null;
@@ -1829,6 +1879,7 @@ export const useGameStore = create<GameState>((set, get) => ({
       swarmPopped: {},
       powerUpMode: null,
       powerUpToast: null,
+      inventoryPulse: null,
       watchPowerUp: null,
       watchTipPlayback: false,
       pendingTipSync: null,

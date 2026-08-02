@@ -1,50 +1,47 @@
 "use client";
 
 import { getPreset } from "@/game/presets";
-import {
-  POWER_UP_IDS,
-  POWER_UP_LABELS,
-  type PowerUpId,
-} from "@/game/powerUps";
+import { POWER_UP_IDS, POWER_UP_LABELS, type PowerUpId } from "@/game/powerUps";
 import { useGameStore } from "@/game/store";
 import { canTipPreset } from "@/game/tipBoard";
 import { PLAYER_COLORS, PLAYER_LABELS, type PlayerId } from "@/game/types";
 import { clearFixedFromCursor, type Axis } from "@/game/clearRow";
 
-function InventoryRow({
-  player,
-  actionable,
-}: {
-  player: PlayerId;
-  actionable: boolean;
-}) {
+function InventoryRow({ player, actionable }: { player: PlayerId; actionable: boolean }) {
   const inventory = useGameStore((s) => s.inventory[player]);
+  const pulse = useGameStore((s) => s.inventoryPulse);
   const activatePowerUp = useGameStore((s) => s.activatePowerUp);
   const powerUpMode = useGameStore((s) => s.powerUpMode);
   const bonusPlacesRemaining = useGameStore((s) => s.bonusPlacesRemaining);
   const presetId = useGameStore((s) => s.presetId);
   const dims = getPreset(presetId).dims;
+  const rowAwarded = pulse?.by === player;
 
   return (
-    <div className="powerups__row" style={{ ["--seat" as string]: PLAYER_COLORS[player] }}>
+    <div
+      className={`powerups__row${rowAwarded ? " is-awarded" : ""}`}
+      style={{ ["--seat" as string]: PLAYER_COLORS[player] }}
+    >
       <span className="powerups__who">{PLAYER_LABELS[player]}</span>
       <div className="powerups__chips">
         {POWER_UP_IDS.map((id) => {
           const count = inventory[id];
           const tipBlocked = id === "tip" && !canTipPreset(dims);
-          const active =
-            powerUpMode === id || (id === "extra-turn" && bonusPlacesRemaining > 0);
+          const active = powerUpMode === id || (id === "extra-turn" && bonusPlacesRemaining > 0);
           const canUse = actionable && count > 0 && !tipBlocked && !powerUpMode;
+          const awarded = pulse?.by === player && pulse.kind === id;
           return (
             <button
-              key={id}
+              key={awarded ? `${id}-pulse-${pulse.id}` : id}
               type="button"
-              className={`powerups__chip${active ? " is-active" : ""}${count === 0 ? " is-empty" : ""}`}
+              className={`powerups__chip${active ? " is-active" : ""}${count === 0 ? " is-empty" : ""}${awarded ? " is-awarded" : ""}`}
               disabled={!canUse}
               title={
                 tipBlocked
                   ? "Tip requires a cube board"
-                  : `${POWER_UP_LABELS[id]} ×${count}`
+                  : awarded
+                    ? `Caught ${POWER_UP_LABELS[id]}!`
+                    : `${POWER_UP_LABELS[id]} ×${count}`
               }
               onClick={() => activatePowerUp(id)}
             >
