@@ -1,9 +1,19 @@
 import type { Metadata, Viewport } from "next";
+import { AppUpdateBanner } from "@/ui/AppUpdateBanner";
 import "./globals.css";
 
 export const metadata: Metadata = {
   title: "Voxel Toe — 3D Tic-Tac-Toe",
   description: "Mobile-first 3D tic-tac-toe. Spin the cube, place coral and cyan.",
+  applicationName: "Voxel Toe",
+  appleWebApp: {
+    capable: true,
+    title: "Voxel Toe",
+    statusBarStyle: "black-translucent",
+  },
+  formatDetection: {
+    telephone: false,
+  },
 };
 
 export const viewport: Viewport = {
@@ -22,7 +32,10 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
-      <body>{children}</body>
+      <body>
+        <AppUpdateBanner />
+        {children}
+      </body>
     </html>
   );
 }

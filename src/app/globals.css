@@ -75,6 +75,13 @@ button {
   z-index: -1;
 }
 
+.setup__brand-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
 .setup__brand {
   margin: 0;
   font-size: 0.85rem;
@@ -82,6 +89,63 @@ button {
   text-transform: uppercase;
   color: var(--cyan);
   font-weight: 600;
+}
+
+.setup__version {
+  margin: 0;
+  font-size: 0.78rem;
+  letter-spacing: 0.06em;
+  color: var(--ink-muted);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.update-banner {
+  position: sticky;
+  top: 0;
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem 1rem;
+  padding: max(0.75rem, env(safe-area-inset-top, 0px)) 1.1rem 0.75rem;
+  background: linear-gradient(120deg, rgba(255, 107, 74, 0.22), rgba(62, 207, 200, 0.16));
+  border-bottom: 1px solid var(--line);
+  backdrop-filter: blur(10px);
+}
+
+.update-banner__copy {
+  min-width: 0;
+  flex: 1;
+}
+
+.update-banner__title {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: 0.95rem;
+  font-weight: 700;
+}
+
+.update-banner__detail {
+  margin: 0.15rem 0 0;
+  color: var(--ink-muted);
+  font-size: 0.82rem;
+  line-height: 1.35;
+}
+
+.update-banner__action {
+  flex-shrink: 0;
+  padding: 0.65rem 1rem;
+  border-radius: 999px;
+  background: linear-gradient(120deg, var(--coral), #ff8f4a);
+  color: #1a0d08;
+  font-weight: 700;
+  font-size: 0.9rem;
+  min-height: 40px;
+}
+
+.update-banner__action:active {
+  transform: scale(0.98);
 }
 
 .setup__title {

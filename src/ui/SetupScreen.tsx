@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useTransition } from "react";
+import { formatAppVersionLabel } from "@/appVersion";
 import { PRESETS } from "@/game/presets";
 import { hydrateLocalNameFromStorage, hydrateSetupFromStorage, useGameStore } from "@/game/store";
 import { isExtremeAllowed } from "@/game/ai";
@@ -51,7 +52,12 @@ export function SetupScreen() {
     <div className="setup">
       <div className="setup__atmosphere" aria-hidden />
       <header className="setup__header">
-        <p className="setup__brand">Voxel Toe</p>
+        <div className="setup__brand-row">
+          <p className="setup__brand">Voxel Toe</p>
+          <p className="setup__version" aria-label={`Version ${formatAppVersionLabel()}`}>
+            {formatAppVersionLabel()}
+          </p>
+        </div>
         <h1 className="setup__title">3D Tic-Tac-Toe</h1>
         <p className="setup__lede">
           Spin the cube. Drop or place coral and cyan. First to the line wins.
