@@ -155,7 +155,7 @@ export function SwarmPackages({ dims }: SwarmPackagesProps) {
     }
   }, [swarm?.seed, swarm]);
 
-  // Spawn shatter for remote / timeout pops (local taps also call spawnPopBurst).
+  // Spawn shatter for remote / AI-timeout pops (local taps also call spawnPopBurst).
   useEffect(() => {
     const entries = Object.entries(swarmPopped);
     if (entries.length === 0) return;
@@ -166,8 +166,8 @@ export function SwarmPackages({ dims }: SwarmPackagesProps) {
       const id = Number(idStr);
       const handleKey = `${seed}:${id}:${outcome}`;
       if (handledPopsRef.current.has(handleKey)) continue;
-      const origin = positionsRef.current.get(id);
-      if (!origin) continue;
+      const origin =
+        positionsRef.current.get(id) ?? packageWorldPos(0.5, 0.5, dims);
       handledPopsRef.current.add(handleKey);
       const color = colorsRef.current.get(id) ?? PACKAGE_COLORS[0]!;
       next.push(buildBurst(handleKey, origin, color, outcome, seed, id, now));
@@ -282,10 +282,6 @@ function FlyingCylinder({
   useFrame(() => {
     const group = groupRef.current;
     if (!group) return;
-    if (popped) {
-      group.visible = false;
-      return;
-    }
     const { pos, visible, t } = sampleFlight(
       pkg,
       performance.now(),
@@ -293,16 +289,24 @@ function FlyingCylinder({
       scratch.current,
       dims,
     );
+    // Keep last known world pos even after the cylinder leaves — AI timeout
+    // shatter reads this when the swarm clears.
+    if (t > 0 || visible) {
+      let stored = positionsRef.current.get(pkg.id);
+      if (!stored) {
+        stored = pos.clone();
+        positionsRef.current.set(pkg.id, stored);
+      } else {
+        stored.copy(pos);
+      }
+    }
+    if (popped) {
+      group.visible = false;
+      return;
+    }
     group.visible = visible;
     if (!visible) return;
     group.position.copy(pos);
-    let stored = positionsRef.current.get(pkg.id);
-    if (!stored) {
-      stored = pos.clone();
-      positionsRef.current.set(pkg.id, stored);
-    } else {
-      stored.copy(pos);
-    }
     group.rotation.x = t * Math.PI * 2.2;
     group.rotation.z = -0.35 + t * 0.9;
     group.rotation.y = t * Math.PI * 1.4;
