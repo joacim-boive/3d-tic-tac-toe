@@ -13,11 +13,14 @@ export const POWER_UP_LABELS: Record<PowerUpId, string> = {
 export const MAX_PER_KIND = 2;
 export const SWARM_PACKAGE_COUNT = 3;
 /** Earliest ply (occupiedCount) that may trigger a package swarm. */
-export const SWARM_MIN_PLY = 3;
+export const SWARM_MIN_PLY = 6;
 /** Chance to fire a swarm after a place once ply gate passes. */
-export const SWARM_CHANCE = 0.55;
-/** AI catch success rate (≈ one of three packages live). */
-export const AI_CATCH_CHANCE = 1 / 3;
+export const SWARM_CHANCE = 0.32;
+/**
+ * AI catch success when the human misses the live pack.
+ * ~0.5 ≈ a sharp human who usually lands a good first or second tap in time.
+ */
+export const AI_CATCH_CHANCE = 0.5;
 /** How long packages stay on screen (ms). */
 export const SWARM_DURATION_MS = 2800;
 
@@ -144,16 +147,18 @@ export function shouldAttemptSwarm(opts: {
 }
 
 function edgePoint(rng: Rng, edge: 0 | 1 | 2 | 3): { x: number; y: number } {
-  const t = rng();
+  // Middle 60% of each edge — paths cross the board instead of skirting corners.
+  const t = 0.2 + rng() * 0.6;
+  const inset = 0.03;
   switch (edge) {
     case 0:
-      return { x: t, y: -0.08 };
+      return { x: t, y: -inset };
     case 1:
-      return { x: 1.08, y: t };
+      return { x: 1 + inset, y: t };
     case 2:
-      return { x: t, y: 1.08 };
+      return { x: t, y: 1 + inset };
     default:
-      return { x: -0.08, y: t };
+      return { x: -inset, y: t };
   }
 }
 

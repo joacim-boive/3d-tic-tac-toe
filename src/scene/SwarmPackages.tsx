@@ -11,6 +11,15 @@ import type { BoardDims, PlayerId } from "@/game/types";
 /** Bright capsule colors — one per package slot. */
 const PACKAGE_COLORS = ["#ff4d6d", "#ffd166", "#3ecfc8"] as const;
 
+/** Visual cylinder size (25% smaller than the first 3D ship). */
+const PKG_RADIUS = 0.24;
+const PKG_HEIGHT = 0.465;
+const PKG_CAP_RADIUS = 0.2475;
+const PKG_CAP_HEIGHT = 0.03;
+const PKG_CAP_Y = 0.2325;
+const PKG_HIT_RADIUS = 0.435;
+const PKG_HIT_HEIGHT = 0.7125;
+
 const SHARD_COUNT: Record<SwarmTapOutcome, number> = {
   claim: 22,
   deny: 16,
@@ -329,11 +338,11 @@ function FlyingCylinder({
     >
       {/* Fat invisible hit volume (opacity 0 still raycasts; visible=false does not). */}
       <mesh>
-        <cylinderGeometry args={[0.58, 0.58, 0.95, 16]} />
+        <cylinderGeometry args={[PKG_HIT_RADIUS, PKG_HIT_RADIUS, PKG_HIT_HEIGHT, 16]} />
         <meshBasicMaterial transparent opacity={0} depthWrite={false} />
       </mesh>
       <mesh>
-        <cylinderGeometry args={[0.32, 0.32, 0.62, 28]} />
+        <cylinderGeometry args={[PKG_RADIUS, PKG_RADIUS, PKG_HEIGHT, 28]} />
         <meshStandardMaterial
           ref={matRef}
           color={baseColor}
@@ -343,8 +352,8 @@ function FlyingCylinder({
           roughness={0.22}
         />
       </mesh>
-      <mesh position={[0, 0.31, 0]}>
-        <cylinderGeometry args={[0.33, 0.33, 0.04, 28]} />
+      <mesh position={[0, PKG_CAP_Y, 0]}>
+        <cylinderGeometry args={[PKG_CAP_RADIUS, PKG_CAP_RADIUS, PKG_CAP_HEIGHT, 28]} />
         <meshStandardMaterial
           color="#ffffff"
           emissive={baseColor}
@@ -355,8 +364,8 @@ function FlyingCylinder({
           opacity={0.55}
         />
       </mesh>
-      <mesh position={[0, -0.31, 0]}>
-        <cylinderGeometry args={[0.33, 0.33, 0.04, 28]} />
+      <mesh position={[0, -PKG_CAP_Y, 0]}>
+        <cylinderGeometry args={[PKG_CAP_RADIUS, PKG_CAP_RADIUS, PKG_CAP_HEIGHT, 28]} />
         <meshStandardMaterial
           color="#ffffff"
           emissive={baseColor}

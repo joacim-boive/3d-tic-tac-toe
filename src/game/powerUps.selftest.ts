@@ -145,7 +145,7 @@ function testAiCatch() {
   let hits = 0;
   const rng = createPowerUpRng(99);
   for (let i = 0; i < 3000; i++) if (aiCatchRoll(rng)) hits++;
-  assert(hits > 700 && hits < 1300, `ai catch ~1/3, got ${hits}/3000`);
+  assert(hits > 1200 && hits < 1800, `ai catch ~1/2, got ${hits}/3000`);
   assert(typeof yes() === "number", "rng works");
 }
 

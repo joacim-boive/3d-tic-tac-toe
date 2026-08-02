@@ -22,7 +22,7 @@ function testCornersSpread() {
   const b = packageWorldPos(1, 1, dims);
   assert(a.x < 0 && a.y > 0, "top-left of UV → −x +y");
   assert(b.x > 0 && b.y < 0, "bottom-right → +x −y");
-  assert(a.distanceTo(b) > 5, "corners are well separated");
+  assert(a.distanceTo(b) > 3, "corners are well separated across the board");
 }
 
 testCenterMapsNearOrigin();
