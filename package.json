@@ -23,6 +23,7 @@
     "check:prefs": "npx tsx src/game/setupPrefs.selftest.ts",
     "check:slice": "npx tsx src/scene/facingSliceAxis.selftest.ts",
     "check:sticky": "npx tsx src/scene/stickyDepth.selftest.ts",
+    "check:haptic": "npx tsx src/scene/haptic.selftest.ts",
     "check:powerups": "npx tsx src/game/powerUps.selftest.ts",
     "check:tip-playback": "npx tsx src/game/tipPlayback.selftest.ts",
     "check:swarm": "npx tsx src/game/swarmPackages.selftest.ts",

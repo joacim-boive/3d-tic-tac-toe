@@ -8,6 +8,7 @@ import { useGameStore } from "@/game/store";
 import { PLAYER_COLORS, type BoardDims } from "@/game/types";
 import type { SliceAxis } from "./facingSliceAxis";
 import { deepDirection } from "./facingSliceAxis";
+import { hapticDepthStep } from "./haptic";
 import { pickCellOnDepthPlane } from "./pickCellOnDepthPlane";
 import { useSliceHighlightStore } from "./sliceHighlightStore";
 import {
@@ -41,6 +42,7 @@ type AimSession = {
 type TriDepthSession = {
   startY: number;
   startDepth: number;
+  lastDepth: number;
   axis: SliceAxis;
 };
 
@@ -306,6 +308,7 @@ export function SelectionCursor({ dims, spacing = 1 }: SelectionCursorProps) {
       triDepthRef.current = {
         startY: pointerCentroidY(listPointerPoints()),
         startDepth: stickyNow.index,
+        lastDepth: stickyNow.index,
         axis: stickyNow.axis,
       };
       // Pause orbit while changing depth.
@@ -324,6 +327,10 @@ export function SelectionCursor({ dims, spacing = 1 }: SelectionCursorProps) {
       const depth = clampDepthIndex(session.startDepth + steps * dir, session.axis, dims);
       publishStickyRef.current(session.axis, depth);
       applyStickyToCursorRef.current(session.axis, depth);
+      if (depth !== session.lastDepth) {
+        session.lastDepth = depth;
+        hapticDepthStep();
+      }
     };
 
     const resetGestureState = () => {
@@ -467,6 +474,7 @@ export function SelectionCursor({ dims, spacing = 1 }: SelectionCursorProps) {
         triDepthRef.current = {
           startY: pointerCentroidY(listPointerPoints()),
           startDepth: stickyNow.index,
+          lastDepth: stickyNow.index,
           axis: stickyNow.axis,
         };
         return;
