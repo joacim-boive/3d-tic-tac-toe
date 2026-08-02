@@ -443,6 +443,33 @@ button {
   -webkit-touch-callout: none;
 }
 
+/*
+  Native WebKit switches tiled over the board (iOS haptics).
+  Keep UA appearance — appearance:none / display:none kills haptics.
+  opacity:0 is fine; each cell must still be hittable so touchstart
+  lands on a switch (required for PointerTracking haptics).
+*/
+.depth-haptic-grid {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  grid-template-rows: repeat(10, 1fr);
+  pointer-events: auto;
+  touch-action: none;
+}
+
+.depth-haptic-grid__cell {
+  margin: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  touch-action: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
 /* Opponent power-up notice — overlays the canvas, never shifts chrome layout */
 .powerup-toast {
   position: absolute;

@@ -2,12 +2,13 @@
 
 import { OrbitControls } from "@react-three/drei";
 import { Canvas, useThree } from "@react-three/fiber";
-import { Suspense, useEffect, useState } from "react";
+import { Suspense, useEffect, useRef, useState, type RefObject } from "react";
 import { MathUtils, TOUCH } from "three";
 import { getPreset } from "@/game/presets";
 import { useGameStore } from "@/game/store";
-import { TipBoardFrame } from "./TipBoardFrame";
+import { DepthHapticLayer } from "./DepthHapticLayer";
 import { SwarmPackages } from "./SwarmPackages";
+import { TipBoardFrame } from "./TipBoardFrame";
 
 function camDistance(dims: { x: number; y: number; z: number }): number {
   return Math.max(dims.x, dims.y, dims.z) * 1.6 + 2;
@@ -111,10 +112,18 @@ export function GameCanvas() {
   const presetId = useGameStore((s) => s.presetId);
   const dims = getPreset(presetId).dims;
   const camDist = camDistance(dims);
+  const viewportRef = useRef<HTMLDivElement>(null);
 
   return (
-    <div className="game-viewport__canvas" onContextMenu={(e) => e.preventDefault()}>
+    <div
+      ref={viewportRef}
+      className="game-viewport__canvas"
+      onContextMenu={(e) => e.preventDefault()}
+    >
+      <DepthHapticLayer />
       <Canvas
+        eventSource={viewportRef as RefObject<HTMLElement>}
+        eventPrefix="client"
         dpr={[1, 1.5]}
         camera={{
           position: [camDist * 0.75, camDist * 0.55, camDist * 0.85],

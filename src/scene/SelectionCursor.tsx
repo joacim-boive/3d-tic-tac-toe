@@ -8,7 +8,12 @@ import { useGameStore } from "@/game/store";
 import { PLAYER_COLORS, type BoardDims } from "@/game/types";
 import type { SliceAxis } from "./facingSliceAxis";
 import { deepDirection } from "./facingSliceAxis";
-import { hapticDepthStep, moveDepthHaptic, primeDepthHaptic, releaseDepthHaptic } from "./haptic";
+import {
+  armDepthHapticSwitches,
+  DEPTH_HAPTIC_PX_PER_STEP,
+  hapticDepthStep,
+  releaseDepthHapticSwitches,
+} from "./haptic";
 import { pickCellOnDepthPlane } from "./pickCellOnDepthPlane";
 import { useSliceHighlightStore } from "./sliceHighlightStore";
 import {
@@ -26,8 +31,8 @@ type SelectionCursorProps = {
 
 const DRAG_PX = 10;
 const MULTI_WAIT_MS = 120;
-/** 3-finger vertical swipe: pixels per depth layer. */
-const TRI_SWIPE_PX = 48;
+/** 3-finger vertical swipe: pixels per depth layer (keep in sync with haptic track). */
+const TRI_SWIPE_PX = DEPTH_HAPTIC_PX_PER_STEP;
 
 function isTouchPointer(type: string): boolean {
   return type === "touch" || type === "pen";
@@ -285,12 +290,14 @@ export function SelectionCursor({ dims, spacing = 1 }: SelectionCursorProps) {
       setAiming(false);
       aimSessionRef.current = null;
       triDepthRef.current = null;
-      releaseDepthHaptic();
+      releaseDepthHapticSwitches();
       clearSticky();
       return;
     }
 
-    const el = gl.domElement;
+    // Prefer the viewport wrapper (hosts the iOS switch grid) so pointerdown
+    // lands on the same surface R3F uses as eventSource.
+    const el = gl.domElement.parentElement ?? gl.domElement;
 
     const clearAimDelay = () => {
       if (aimDelayRef.current === null) return;
@@ -302,22 +309,20 @@ export function SelectionCursor({ dims, spacing = 1 }: SelectionCursorProps) {
 
     const endTriDepth = () => {
       triDepthRef.current = null;
-      releaseDepthHaptic();
+      releaseDepthHapticSwitches();
     };
 
     const beginTriDepth = () => {
       const stickyNow = ensureStickyRef.current();
       const points = listPointerPoints();
       const y = pointerCentroidY(points);
-      const x =
-        points.length === 0 ? 0 : points.reduce((sum, p) => sum + p.x, 0) / points.length;
       triDepthRef.current = {
         startY: y,
         startDepth: stickyNow.index,
         lastDepth: stickyNow.index,
         axis: stickyNow.axis,
       };
-      primeDepthHaptic(x, y, pointersRef.current.keys());
+      armDepthHapticSwitches(points);
       // Pause orbit while changing depth.
       setAiming(true);
       setTouchAiming(false);
@@ -330,9 +335,6 @@ export function SelectionCursor({ dims, spacing = 1 }: SelectionCursorProps) {
       if (!session) return;
       const points = listPointerPoints();
       const y = pointerCentroidY(points);
-      const x =
-        points.length === 0 ? 0 : points.reduce((sum, p) => sum + p.x, 0) / points.length;
-      moveDepthHaptic(x, y);
       const steps = depthStepsFromSwipeDelta(y - session.startY, TRI_SWIPE_PX);
       const dir = deepDirection(camera.position, session.axis);
       const depth = clampDepthIndex(session.startDepth + steps * dir, session.axis, dims);
@@ -483,16 +485,13 @@ export function SelectionCursor({ dims, spacing = 1 }: SelectionCursorProps) {
         // Still in tri-depth — refresh anchor so lifting one finger doesn't jump.
         const stickyNow = ensureStickyRef.current();
         const points = listPointerPoints();
-        const y = pointerCentroidY(points);
-        const x =
-          points.length === 0 ? 0 : points.reduce((sum, p) => sum + p.x, 0) / points.length;
         triDepthRef.current = {
-          startY: y,
+          startY: pointerCentroidY(points),
           startDepth: stickyNow.index,
           lastDepth: stickyNow.index,
           axis: stickyNow.axis,
         };
-        primeDepthHaptic(x, y, pointersRef.current.keys());
+        armDepthHapticSwitches(points);
         return;
       }
 
@@ -577,8 +576,7 @@ export function SelectionCursor({ dims, spacing = 1 }: SelectionCursorProps) {
     };
 
     el.addEventListener("pointerdown", onDown);
-    // Capture on window so moves/ups still arrive after we point-capture onto the
-    // iOS haptic switch during three-finger depth.
+    // Window capture: keep tracking if a switch becomes the pointer target.
     window.addEventListener("pointermove", onMove, true);
     window.addEventListener("pointerup", onUp, true);
     window.addEventListener("pointercancel", onUp, true);
