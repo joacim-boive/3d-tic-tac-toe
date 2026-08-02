@@ -5,9 +5,16 @@
 import { evaluate, findWinningMove } from "./ai";
 import { cellKey, checkWin, listDropLandings, listEmptyCells, type Board } from "./board";
 import { axisLineCells, clearAxisLine, CLEAR_AXES, repackDrop, type Axis } from "./clearRow";
-import { canSpend, type PowerUpCounts } from "./powerUps";
+import { canSpend, isPowerUpAllowed, type PowerUpCounts } from "./powerUps";
 import { canTipPreset, tipBoard, tipChoices, type TipDown } from "./tipBoard";
-import type { AiDifficulty, BoardDims, CellCoord, PlacementMode, PlayerId } from "./types";
+import type {
+  AiDifficulty,
+  BoardDims,
+  CellCoord,
+  PlacementMode,
+  PlayerId,
+  PresetId,
+} from "./types";
 
 export type AiPowerUpDecision =
   | { action: "none" }
@@ -23,6 +30,7 @@ export type AiPowerUpContext = {
   placement: PlacementMode;
   difficulty: AiDifficulty;
   bonusPlacesRemaining: number;
+  presetId: PresetId;
 };
 
 type ScoredClear = {
@@ -285,7 +293,16 @@ function tipThreshold(difficulty: AiDifficulty): number {
  * Returns `none` when placing normally is better.
  */
 export function pickAiPowerUpSpend(ctx: AiPowerUpContext): AiPowerUpDecision {
-  const { board, dims, aiPlayer, inventory, placement, difficulty, bonusPlacesRemaining } = ctx;
+  const {
+    board,
+    dims,
+    aiPlayer,
+    inventory,
+    placement,
+    difficulty,
+    bonusPlacesRemaining,
+    presetId,
+  } = ctx;
 
   if (difficulty === "easy") {
     // Easy: only clear to break a double threat; never Extra/Tip gambling.
@@ -302,8 +319,9 @@ export function pickAiPowerUpSpend(ctx: AiPowerUpContext): AiPowerUpDecision {
     return { action: "none" };
   }
 
-  // 1) Extra turn when a double place finishes or forks.
+  // 1) Extra turn when a double place finishes or forks (not on 3×3×3).
   if (
+    isPowerUpAllowed("extra-turn", presetId) &&
     canSpend(inventory, "extra-turn") &&
     bonusPlacesRemaining === 0 &&
     shouldUseExtraTurn(board, dims, placement, aiPlayer)

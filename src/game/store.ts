@@ -21,6 +21,7 @@ import {
   createPowerUpRng,
   emptyInventory,
   hasInventoryRoom,
+  isPowerUpAllowed,
   pickRandomKind,
   planSwarm,
   randomSeed,
@@ -504,6 +505,7 @@ function maybeAiSpendPowerUp(get: () => GameState, set: (partial: Partial<GameSt
     placement: state.placement,
     difficulty: state.aiDifficulty,
     bonusPlacesRemaining: state.bonusPlacesRemaining,
+    presetId: state.presetId,
   });
 
   if (decision.action === "extra-turn") {
@@ -680,7 +682,7 @@ function maybeStartSwarm(
     const caught = aiCatchRoll(catchRng);
     let kind: PowerUpId | undefined;
     if (caught) {
-      kind = pickRandomKind(state.inventory.b, catchRng) ?? undefined;
+      kind = pickRandomKind(state.inventory.b, catchRng, state.presetId) ?? undefined;
     }
     swarmAiResult = { caught: Boolean(caught && kind), kind };
   }
@@ -993,6 +995,7 @@ export const useGameStore = create<GameState>((set, get) => ({
     }
 
     const by = state.currentPlayer;
+    if (!isPowerUpAllowed(kind, state.presetId)) return false;
     if (!canSpend(state.inventory[by], kind)) return false;
 
     if (kind === "extra-turn") {
@@ -1328,8 +1331,12 @@ export const useGameStore = create<GameState>((set, get) => ({
     }
 
     // Live package — race over. Claim if catcher has room, else deny/sabotage.
-    const kind = pickRandomKind(state.inventory[by], createPowerUpRng(plan.seed ^ 0xdeadbeef));
-    if (!kind || !hasInventoryRoom(state.inventory[by])) {
+    const kind = pickRandomKind(
+      state.inventory[by],
+      createPowerUpRng(plan.seed ^ 0xdeadbeef),
+      state.presetId,
+    );
+    if (!kind || !hasInventoryRoom(state.inventory[by], state.presetId)) {
       const swarmPopped = { ...state.swarmPopped, [index]: "deny" as const };
       set({
         swarm: null,
@@ -1345,7 +1352,7 @@ export const useGameStore = create<GameState>((set, get) => ({
       return;
     }
 
-    const next = awardPowerUp(state.inventory[by], kind);
+    const next = awardPowerUp(state.inventory[by], kind, state.presetId);
     if (!next) {
       const swarmPopped = { ...state.swarmPopped, [index]: "deny" as const };
       set({
@@ -1397,7 +1404,7 @@ export const useGameStore = create<GameState>((set, get) => ({
     // vs AI: if human never hit the live pack, AI may luck-claim on timeout.
     if (state.playMode === "ai" && aiResult) {
       if (aiResult.caught && aiResult.kind) {
-        const next = awardPowerUp(state.inventory.b, aiResult.kind);
+        const next = awardPowerUp(state.inventory.b, aiResult.kind, state.presetId);
         if (next) {
           const inv = cloneInventory(state.inventory);
           inv.b = next;
@@ -1556,7 +1563,7 @@ export const useGameStore = create<GameState>((set, get) => ({
 
     // claim
     if (kind) {
-      const next = awardPowerUp(state.inventory[by], kind);
+      const next = awardPowerUp(state.inventory[by], kind, state.presetId);
       if (next) {
         const inv = cloneInventory(state.inventory);
         inv[by] = next;

@@ -169,6 +169,7 @@ function testClearIgnoresEmptyAndOwnOnlyLines() {
     placement: "free",
     difficulty: "extreme",
     bonusPlacesRemaining: 0,
+    presetId: "3x3x3",
   });
 
   // If Clear fires, the chosen line must include an opponent mark.
@@ -210,6 +211,7 @@ function testClearBreaksOpponentForkThreat() {
     placement: "free",
     difficulty: "extreme",
     bonusPlacesRemaining: 0,
+    presetId: "4x4x4",
   });
 
   assert(decision.action === "none", "single blockable threat → place, don't clear");
@@ -235,15 +237,40 @@ function testClearUsedOnOpponentFork() {
     placement: "free",
     difficulty: "extreme",
     bonusPlacesRemaining: 0,
+    presetId: "4x4x4",
   });
 
   assert(decision.action === "clear-row", "clear to break an unstoppable fork");
 }
 
 function testExtraTurnWhenDoublePlaceWins() {
+  // Use 4×4×4 — Extra is banned on 3×3×3.
+  const dims: BoardDims = { x: 4, y: 4, z: 4 };
+  const board = createEmptyBoard();
+  // b has 3 on a row; two places finish the 4-in-a-row.
+  board.set(cellKey(0, 0, 0), "b");
+  board.set(cellKey(1, 0, 0), "b");
+  board.set(cellKey(0, 1, 0), "a");
+  board.set(cellKey(1, 1, 0), "a");
+  board.set(cellKey(2, 1, 0), "a");
+
+  const decision = pickAiPowerUpSpend({
+    board,
+    dims,
+    aiPlayer: "b",
+    inventory: { "extra-turn": 1, "clear-row": 0, tip: 0 },
+    placement: "free",
+    difficulty: "hard",
+    bonusPlacesRemaining: 0,
+    presetId: "4x4x4",
+  });
+
+  assert(decision.action === "extra-turn", "use Extra when two places finish a win");
+}
+
+function testExtraTurnBannedOn3x3x3() {
   const dims: BoardDims = { x: 3, y: 3, z: 3 };
   const board = createEmptyBoard();
-  // b at (0,0,0); two places (1,0,0)+(2,0,0) win. No single-place win.
   board.set(cellKey(0, 0, 0), "b");
   board.set(cellKey(0, 1, 0), "a");
   board.set(cellKey(1, 1, 0), "a");
@@ -256,9 +283,10 @@ function testExtraTurnWhenDoublePlaceWins() {
     placement: "free",
     difficulty: "hard",
     bonusPlacesRemaining: 0,
+    presetId: "3x3x3",
   });
 
-  assert(decision.action === "extra-turn", "use Extra when two places finish a win");
+  assert(decision.action === "none", "Extra turn disabled on 3×3×3");
 }
 
 function testNoClearOnEmptyBoard() {
@@ -272,6 +300,7 @@ function testNoClearOnEmptyBoard() {
     placement: "free",
     difficulty: "extreme",
     bonusPlacesRemaining: 0,
+    presetId: "4x4x4",
   });
   assert(decision.action === "none", "empty board: no power-up spend");
 }
@@ -288,5 +317,6 @@ testClearIgnoresEmptyAndOwnOnlyLines();
 testClearBreaksOpponentForkThreat();
 testClearUsedOnOpponentFork();
 testExtraTurnWhenDoublePlaceWins();
+testExtraTurnBannedOn3x3x3();
 testNoClearOnEmptyBoard();
 console.log("ai.selftest: ok");

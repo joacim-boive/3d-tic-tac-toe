@@ -1,12 +1,8 @@
-import type { PlayerId } from "./types";
+import type { PlayerId, PresetId } from "./types";
 
 export type PowerUpId = "extra-turn" | "clear-row" | "tip";
 
-export const POWER_UP_IDS: readonly PowerUpId[] = [
-  "extra-turn",
-  "clear-row",
-  "tip",
-] as const;
+export const POWER_UP_IDS: readonly PowerUpId[] = ["extra-turn", "clear-row", "tip"] as const;
 
 export const POWER_UP_LABELS: Record<PowerUpId, string> = {
   "extra-turn": "Extra turn",
@@ -53,6 +49,21 @@ export type SwarmTapOutcome = "dud" | "claim" | "deny";
 
 export type Rng = () => number;
 
+/**
+ * Extra turn is banned on 3×3×3 — a second place after one mark is often an
+ * instant forced win on win-length 3.
+ */
+export function powerUpsForPreset(presetId: PresetId): readonly PowerUpId[] {
+  if (presetId === "3x3x3") {
+    return POWER_UP_IDS.filter((id) => id !== "extra-turn");
+  }
+  return POWER_UP_IDS;
+}
+
+export function isPowerUpAllowed(kind: PowerUpId, presetId: PresetId): boolean {
+  return powerUpsForPreset(presetId).includes(kind);
+}
+
 export function emptyCounts(): PowerUpCounts {
   return { "extra-turn": 0, "clear-row": 0, tip: 0 };
 }
@@ -80,12 +91,13 @@ export function cloneInventory(inv: PowerUpInventory): PowerUpInventory {
   };
 }
 
-export function underCapKinds(counts: PowerUpCounts): PowerUpId[] {
-  return POWER_UP_IDS.filter((id) => counts[id] < MAX_PER_KIND);
+export function underCapKinds(counts: PowerUpCounts, presetId?: PresetId): PowerUpId[] {
+  const pool = presetId ? powerUpsForPreset(presetId) : POWER_UP_IDS;
+  return pool.filter((id) => counts[id] < MAX_PER_KIND);
 }
 
-export function hasInventoryRoom(counts: PowerUpCounts): boolean {
-  return underCapKinds(counts).length > 0;
+export function hasInventoryRoom(counts: PowerUpCounts, presetId?: PresetId): boolean {
+  return underCapKinds(counts, presetId).length > 0;
 }
 
 export function canSpend(counts: PowerUpCounts, kind: PowerUpId): boolean {
@@ -93,7 +105,12 @@ export function canSpend(counts: PowerUpCounts, kind: PowerUpId): boolean {
 }
 
 /** Increment kind if under cap; returns new counts or null if full. */
-export function awardPowerUp(counts: PowerUpCounts, kind: PowerUpId): PowerUpCounts | null {
+export function awardPowerUp(
+  counts: PowerUpCounts,
+  kind: PowerUpId,
+  presetId?: PresetId,
+): PowerUpCounts | null {
+  if (presetId && !isPowerUpAllowed(kind, presetId)) return null;
   if (counts[kind] >= MAX_PER_KIND) return null;
   return { ...counts, [kind]: counts[kind] + 1 };
 }
@@ -103,8 +120,12 @@ export function spendPowerUp(counts: PowerUpCounts, kind: PowerUpId): PowerUpCou
   return { ...counts, [kind]: counts[kind] - 1 };
 }
 
-export function pickRandomKind(counts: PowerUpCounts, rng: Rng): PowerUpId | null {
-  const open = underCapKinds(counts);
+export function pickRandomKind(
+  counts: PowerUpCounts,
+  rng: Rng,
+  presetId?: PresetId,
+): PowerUpId | null {
+  const open = underCapKinds(counts, presetId);
   if (open.length === 0) return null;
   return open[Math.floor(rng() * open.length)]!;
 }

@@ -1,7 +1,7 @@
 "use client";
 
 import { getPreset } from "@/game/presets";
-import { POWER_UP_IDS, POWER_UP_LABELS, type PowerUpId } from "@/game/powerUps";
+import { POWER_UP_LABELS, powerUpsForPreset, type PowerUpId } from "@/game/powerUps";
 import { useGameStore } from "@/game/store";
 import { canTipPreset } from "@/game/tipBoard";
 import { PLAYER_COLORS, PLAYER_LABELS, type PlayerId } from "@/game/types";
@@ -15,6 +15,7 @@ function InventoryRow({ player, actionable }: { player: PlayerId; actionable: bo
   const bonusPlacesRemaining = useGameStore((s) => s.bonusPlacesRemaining);
   const presetId = useGameStore((s) => s.presetId);
   const dims = getPreset(presetId).dims;
+  const kinds = powerUpsForPreset(presetId);
   const rowAwarded = pulse?.by === player;
 
   return (
@@ -24,7 +25,7 @@ function InventoryRow({ player, actionable }: { player: PlayerId; actionable: bo
     >
       <span className="powerups__who">{PLAYER_LABELS[player]}</span>
       <div className="powerups__chips">
-        {POWER_UP_IDS.map((id) => {
+        {kinds.map((id) => {
           const count = inventory[id];
           const tipBlocked = id === "tip" && !canTipPreset(dims);
           const active = powerUpMode === id || (id === "extra-turn" && bonusPlacesRemaining > 0);
