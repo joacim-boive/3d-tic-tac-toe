@@ -13,6 +13,7 @@ import {
   AI_CATCH_CHANCE,
   MAX_PER_KIND,
   SWARM_CHANCE,
+  SWARM_COOLDOWN_PLIES,
   SWARM_MIN_PLY,
   SWARM_PACKAGE_COUNT,
   aiCatchRoll,
@@ -89,6 +90,24 @@ function testSwarmGate() {
     }),
     "high rng → no",
   );
+  assert(
+    !shouldAttemptSwarm({
+      powerUpsEnabled: true,
+      occupiedCount: SWARM_MIN_PLY,
+      cooldownUntilPly: SWARM_MIN_PLY + SWARM_COOLDOWN_PLIES,
+      rng: rngYes,
+    }),
+    "cooldown blocks swarm",
+  );
+  assert(
+    shouldAttemptSwarm({
+      powerUpsEnabled: true,
+      occupiedCount: SWARM_MIN_PLY + SWARM_COOLDOWN_PLIES,
+      cooldownUntilPly: SWARM_MIN_PLY + SWARM_COOLDOWN_PLIES,
+      rng: rngYes,
+    }),
+    "at cooldown ply → allowed",
+  );
   const full = {
     "extra-turn": 2,
     "clear-row": 2,
@@ -105,6 +124,7 @@ function testSwarmGate() {
     "full inventory still allows competitive flyby",
   );
   assert(SWARM_CHANCE > 0 && SWARM_CHANCE < 1, "swarm chance sane");
+  assert(SWARM_COOLDOWN_PLIES >= 3, "cooldown after catch");
   assert(AI_CATCH_CHANCE > 0, "ai catch chance");
 }
 
@@ -117,6 +137,10 @@ function testPlanSwarmDeterministic() {
     a.packages.every((p, i) => p.x0 === b.packages[i]!.x0 && p.y0 === b.packages[i]!.y0),
     "same paths",
   );
+  // Staggered delays — not a simultaneous clump.
+  const delays = a.packages.map((p) => p.delayMs);
+  assert(delays[1]! > delays[0]!, "second package delayed after first");
+  assert(delays[2]! > delays[1]!, "third package delayed after second");
 }
 
 function testPickKindRespectsCap() {

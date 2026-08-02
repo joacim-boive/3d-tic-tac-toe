@@ -13,9 +13,11 @@ export const POWER_UP_LABELS: Record<PowerUpId, string> = {
 export const MAX_PER_KIND = 2;
 export const SWARM_PACKAGE_COUNT = 3;
 /** Earliest ply (occupiedCount) that may trigger a package swarm. */
-export const SWARM_MIN_PLY = 6;
-/** Chance to fire a swarm after a place once ply gate passes. */
-export const SWARM_CHANCE = 0.32;
+export const SWARM_MIN_PLY = 7;
+/** Chance to fire a swarm after a place once ply gate + cooldown pass. */
+export const SWARM_CHANCE = 0.2;
+/** After any successful catch, block new swarms for this many plies. */
+export const SWARM_COOLDOWN_PLIES = 5;
 /**
  * AI catch success when the human misses the live pack.
  * ~0.5 ≈ a sharp human who usually lands a good first or second tap in time.
@@ -137,19 +139,22 @@ export function pickRandomKind(
 export function shouldAttemptSwarm(opts: {
   powerUpsEnabled: boolean;
   occupiedCount: number;
+  /** Occupied-count gate after a recent award; 0 = no cooldown. */
+  cooldownUntilPly?: number;
   /** @deprecated Ignored — flybys run even when inventories are full (deny/sabotage). */
   earnerCounts?: PowerUpCounts;
   rng: Rng;
 }): boolean {
   if (!opts.powerUpsEnabled) return false;
   if (opts.occupiedCount < SWARM_MIN_PLY) return false;
+  if (opts.occupiedCount < (opts.cooldownUntilPly ?? 0)) return false;
   return opts.rng() < SWARM_CHANCE;
 }
 
 function edgePoint(rng: Rng, edge: 0 | 1 | 2 | 3): { x: number; y: number } {
-  // Middle 60% of each edge — paths cross the board instead of skirting corners.
-  const t = 0.2 + rng() * 0.6;
-  const inset = 0.03;
+  // Spread along most of the edge so crossings fan across the view.
+  const t = 0.08 + rng() * 0.84;
+  const inset = 0.06;
   switch (edge) {
     case 0:
       return { x: t, y: -inset };
@@ -162,14 +167,32 @@ function edgePoint(rng: Rng, edge: 0 | 1 | 2 | 3): { x: number; y: number } {
   }
 }
 
-/** Build deterministic flyby paths from a seed. */
+/** Fisher–Yates shuffle (mutates). */
+function shuffleInPlace<T>(items: T[], rng: Rng): T[] {
+  for (let i = items.length - 1; i > 0; i--) {
+    const j = Math.floor(rng() * (i + 1));
+    const tmp = items[i]!;
+    items[i] = items[j]!;
+    items[j] = tmp;
+  }
+  return items;
+}
+
+/** Build deterministic flyby paths from a seed — each package from a different direction. */
 export function planSwarm(seed: number, earner: PlayerId, rng: Rng): SwarmPlan {
   const liveIndex = Math.floor(rng() * SWARM_PACKAGE_COUNT) as 0 | 1 | 2;
+  // Three of four screen edges — packages enter from distinct directions.
+  const edgePool: Array<0 | 1 | 2 | 3> = [0, 1, 2, 3];
+  const starts = shuffleInPlace(edgePool, rng).slice(0, SWARM_PACKAGE_COUNT);
+
   const packages: SwarmPackagePlan[] = [];
   for (let i = 0; i < SWARM_PACKAGE_COUNT; i++) {
-    const startEdge = Math.floor(rng() * 4) as 0 | 1 | 2 | 3;
-    let endEdge = Math.floor(rng() * 4) as 0 | 1 | 2 | 3;
-    if (endEdge === startEdge) endEdge = ((startEdge + 2) % 4) as 0 | 1 | 2 | 3;
+    const startEdge = starts[i]!;
+    // Prefer a clearly different exit — opposite or adjacent, never same.
+    let endEdge = ((startEdge + 2) % 4) as 0 | 1 | 2 | 3;
+    if (rng() < 0.45) {
+      endEdge = ((startEdge + (rng() < 0.5 ? 1 : 3)) % 4) as 0 | 1 | 2 | 3;
+    }
     const start = edgePoint(rng, startEdge);
     const end = edgePoint(rng, endEdge);
     packages.push({
@@ -178,8 +201,10 @@ export function planSwarm(seed: number, earner: PlayerId, rng: Rng): SwarmPlan {
       y0: start.y,
       x1: end.x,
       y1: end.y,
-      speed: 0.85 + rng() * 0.3,
-      delayMs: Math.floor(rng() * 180),
+      // Wider speed band so they don't travel as a pack.
+      speed: 0.7 + rng() * 0.55,
+      // Stagger entries so each reads as its own flyby.
+      delayMs: i * 280 + Math.floor(rng() * 160),
     });
   }
   return { seed, liveIndex, earner, packages };

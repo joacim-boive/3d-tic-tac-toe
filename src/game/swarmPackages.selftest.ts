@@ -22,7 +22,9 @@ function testCornersSpread() {
   const b = packageWorldPos(1, 1, dims);
   assert(a.x < 0 && a.y > 0, "top-left of UV → −x +y");
   assert(b.x > 0 && b.y < 0, "bottom-right → +x −y");
-  assert(a.distanceTo(b) > 3, "corners are well separated across the board");
+  // Wider than the board so flybys cross the viewport, not just the cube.
+  assert(a.distanceTo(b) > 8, "corners span across the screen plane");
+  assert(Math.abs(a.x) > dims.x * 0.9, "horizontal reach past board edge");
 }
 
 testCenterMapsNearOrigin();

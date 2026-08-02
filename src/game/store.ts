@@ -27,6 +27,7 @@ import {
   randomSeed,
   shouldAttemptSwarm,
   spendPowerUp,
+  SWARM_COOLDOWN_PLIES,
   type PowerUpId,
   type PowerUpInventory,
   type SwarmPlan,
@@ -170,6 +171,8 @@ type GameState = {
   } | null;
   /** Precomputed AI catch attempt if the human never taps the live package. */
   swarmAiResult: { caught: boolean; kind?: PowerUpId } | null;
+  /** Block new swarms until occupiedCount reaches this (0 = none). */
+  swarmCooldownUntilPly: number;
   /** Current snapped tip orientation (tip mode). */
   tipEuler: TipEuler;
   /** Animated tip target (drag tumbles toward this). */
@@ -667,6 +670,7 @@ function maybeStartSwarm(
     !shouldAttemptSwarm({
       powerUpsEnabled: state.powerUpsEnabled,
       occupiedCount: state.occupiedCount,
+      cooldownUntilPly: state.swarmCooldownUntilPly,
       rng,
     })
   ) {
@@ -839,6 +843,7 @@ export const useGameStore = create<GameState>((set, get) => ({
   watchTipPlayback: false,
   pendingTipSync: null,
   swarmAiResult: null,
+  swarmCooldownUntilPly: 0,
   tipEuler: { ...IDENTITY_TIP_EULER },
   tipTargetEuler: { ...IDENTITY_TIP_EULER },
   tipFalling: false,
@@ -1378,6 +1383,7 @@ export const useGameStore = create<GameState>((set, get) => ({
       swarmBusy: false,
       swarmPopped,
       swarmAiResult: null,
+      swarmCooldownUntilPly: state.occupiedCount + SWARM_COOLDOWN_PLIES,
       powerUpToast: null,
     });
     pulseInventoryAward(set, by, kind);
@@ -1403,7 +1409,7 @@ export const useGameStore = create<GameState>((set, get) => ({
 
     // vs AI: if human never hit the live pack, AI may luck-claim on timeout.
     if (state.playMode === "ai" && aiResult) {
-      if (aiResult.caught && aiResult.kind) {
+      if (aiResult.caught && aiResult.kind && plan) {
         const next = awardPowerUp(state.inventory.b, aiResult.kind, state.presetId);
         if (next) {
           const inv = cloneInventory(state.inventory);
@@ -1412,8 +1418,10 @@ export const useGameStore = create<GameState>((set, get) => ({
             inventory: inv,
             swarm: null,
             swarmBusy: false,
-            swarmPopped: {},
+            // Mark claim so the 3D shatter FX fires (same as a human catch).
+            swarmPopped: { ...state.swarmPopped, [plan.liveIndex]: "claim" },
             swarmAiResult: null,
+            swarmCooldownUntilPly: state.occupiedCount + SWARM_COOLDOWN_PLIES,
             powerUpToast: null,
           });
           pulseInventoryAward(set, AI_PLAYER, aiResult.kind);
@@ -1573,6 +1581,7 @@ export const useGameStore = create<GameState>((set, get) => ({
           swarmBusy: false,
           swarmPopped: { ...state.swarmPopped, [index]: "claim" },
           swarmAiResult: null,
+          swarmCooldownUntilPly: state.occupiedCount + SWARM_COOLDOWN_PLIES,
           powerUpToast: null,
         });
         pulseInventoryAward(set, by, kind);
@@ -1629,6 +1638,7 @@ export const useGameStore = create<GameState>((set, get) => ({
       inventoryPulse: null,
       watchPowerUp: null,
       swarmAiResult: null,
+      swarmCooldownUntilPly: 0,
       tipEuler: { ...IDENTITY_TIP_EULER },
       tipTargetEuler: { ...IDENTITY_TIP_EULER },
       tipFalling: false,
@@ -1674,6 +1684,7 @@ export const useGameStore = create<GameState>((set, get) => ({
       inventoryPulse: null,
       watchPowerUp: null,
       swarmAiResult: null,
+      swarmCooldownUntilPly: 0,
       tipEuler: { ...IDENTITY_TIP_EULER },
       tipTargetEuler: { ...IDENTITY_TIP_EULER },
       tipFalling: false,
@@ -1711,6 +1722,7 @@ export const useGameStore = create<GameState>((set, get) => ({
       inventoryPulse: null,
       watchPowerUp: null,
       swarmAiResult: null,
+      swarmCooldownUntilPly: 0,
       tipEuler: { ...IDENTITY_TIP_EULER },
       tipTargetEuler: { ...IDENTITY_TIP_EULER },
       tipFalling: false,
@@ -1779,6 +1791,7 @@ export const useGameStore = create<GameState>((set, get) => ({
       inventoryPulse: null,
       watchPowerUp: null,
       swarmAiResult: null,
+      swarmCooldownUntilPly: 0,
       tipEuler: { ...IDENTITY_TIP_EULER },
       tipTargetEuler: { ...IDENTITY_TIP_EULER },
       tipFalling: false,
@@ -1845,6 +1858,7 @@ export const useGameStore = create<GameState>((set, get) => ({
       inventoryPulse: null,
       watchPowerUp: null,
       swarmAiResult: null,
+      swarmCooldownUntilPly: 0,
       tipEuler: { ...IDENTITY_TIP_EULER },
       tipTargetEuler: { ...IDENTITY_TIP_EULER },
       tipFalling: false,
@@ -1891,6 +1905,7 @@ export const useGameStore = create<GameState>((set, get) => ({
       watchTipPlayback: false,
       pendingTipSync: null,
       swarmAiResult: null,
+      swarmCooldownUntilPly: 0,
       tipEuler: { ...IDENTITY_TIP_EULER },
       tipTargetEuler: { ...IDENTITY_TIP_EULER },
       tipFalling: false,
@@ -1938,6 +1953,7 @@ export const useGameStore = create<GameState>((set, get) => ({
         swarmBusy: false,
         swarmPopped: {},
         swarmAiResult: null,
+        swarmCooldownUntilPly: 0,
         powerUpMode: null,
         opponentConnected: true,
       });
@@ -1966,6 +1982,7 @@ export const useGameStore = create<GameState>((set, get) => ({
       swarmBusy: false,
       swarmPopped: {},
       swarmAiResult: null,
+      swarmCooldownUntilPly: 0,
       powerUpMode: null,
       watchPowerUp: null,
       watchTipPlayback: false,
