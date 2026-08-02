@@ -8,7 +8,7 @@ import { useGameStore } from "@/game/store";
 import { PLAYER_COLORS, type BoardDims } from "@/game/types";
 import type { SliceAxis } from "./facingSliceAxis";
 import { deepDirection } from "./facingSliceAxis";
-import { hapticDepthStep } from "./haptic";
+import { hapticDepthStep, moveDepthHaptic, primeDepthHaptic, releaseDepthHaptic } from "./haptic";
 import { pickCellOnDepthPlane } from "./pickCellOnDepthPlane";
 import { useSliceHighlightStore } from "./sliceHighlightStore";
 import {
@@ -285,6 +285,7 @@ export function SelectionCursor({ dims, spacing = 1 }: SelectionCursorProps) {
       setAiming(false);
       aimSessionRef.current = null;
       triDepthRef.current = null;
+      releaseDepthHaptic();
       clearSticky();
       return;
     }
@@ -301,16 +302,22 @@ export function SelectionCursor({ dims, spacing = 1 }: SelectionCursorProps) {
 
     const endTriDepth = () => {
       triDepthRef.current = null;
+      releaseDepthHaptic();
     };
 
     const beginTriDepth = () => {
       const stickyNow = ensureStickyRef.current();
+      const points = listPointerPoints();
+      const y = pointerCentroidY(points);
+      const x =
+        points.length === 0 ? 0 : points.reduce((sum, p) => sum + p.x, 0) / points.length;
       triDepthRef.current = {
-        startY: pointerCentroidY(listPointerPoints()),
+        startY: y,
         startDepth: stickyNow.index,
         lastDepth: stickyNow.index,
         axis: stickyNow.axis,
       };
+      primeDepthHaptic(x, y, pointersRef.current.keys());
       // Pause orbit while changing depth.
       setAiming(true);
       setTouchAiming(false);
@@ -321,7 +328,11 @@ export function SelectionCursor({ dims, spacing = 1 }: SelectionCursorProps) {
     const updateTriDepth = () => {
       const session = triDepthRef.current;
       if (!session) return;
-      const y = pointerCentroidY(listPointerPoints());
+      const points = listPointerPoints();
+      const y = pointerCentroidY(points);
+      const x =
+        points.length === 0 ? 0 : points.reduce((sum, p) => sum + p.x, 0) / points.length;
+      moveDepthHaptic(x, y);
       const steps = depthStepsFromSwipeDelta(y - session.startY, TRI_SWIPE_PX);
       const dir = deepDirection(camera.position, session.axis);
       const depth = clampDepthIndex(session.startDepth + steps * dir, session.axis, dims);
@@ -471,12 +482,17 @@ export function SelectionCursor({ dims, spacing = 1 }: SelectionCursorProps) {
       if (remaining >= 3) {
         // Still in tri-depth — refresh anchor so lifting one finger doesn't jump.
         const stickyNow = ensureStickyRef.current();
+        const points = listPointerPoints();
+        const y = pointerCentroidY(points);
+        const x =
+          points.length === 0 ? 0 : points.reduce((sum, p) => sum + p.x, 0) / points.length;
         triDepthRef.current = {
-          startY: pointerCentroidY(listPointerPoints()),
+          startY: y,
           startDepth: stickyNow.index,
           lastDepth: stickyNow.index,
           axis: stickyNow.axis,
         };
+        primeDepthHaptic(x, y, pointersRef.current.keys());
         return;
       }
 
@@ -561,15 +577,17 @@ export function SelectionCursor({ dims, spacing = 1 }: SelectionCursorProps) {
     };
 
     el.addEventListener("pointerdown", onDown);
-    el.addEventListener("pointermove", onMove);
-    el.addEventListener("pointerup", onUp);
-    el.addEventListener("pointercancel", onUp);
+    // Capture on window so moves/ups still arrive after we point-capture onto the
+    // iOS haptic switch during three-finger depth.
+    window.addEventListener("pointermove", onMove, true);
+    window.addEventListener("pointerup", onUp, true);
+    window.addEventListener("pointercancel", onUp, true);
     return () => {
       resetGestureState();
       el.removeEventListener("pointerdown", onDown);
-      el.removeEventListener("pointermove", onMove);
-      el.removeEventListener("pointerup", onUp);
-      el.removeEventListener("pointercancel", onUp);
+      window.removeEventListener("pointermove", onMove, true);
+      window.removeEventListener("pointerup", onUp, true);
+      window.removeEventListener("pointercancel", onUp, true);
     };
   }, [
     gl,
