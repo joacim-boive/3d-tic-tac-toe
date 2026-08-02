@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import { pickAiMove } from "./ai";
+import { pickAiPowerUpSpend } from "./aiPowerUps";
 import {
   cellKey,
   checkWin,
@@ -19,13 +20,14 @@ import {
   cloneInventory,
   createPowerUpRng,
   emptyInventory,
-  fullInventory,
   hasInventoryRoom,
+  isPowerUpAllowed,
   pickRandomKind,
   planSwarm,
   randomSeed,
   shouldAttemptSwarm,
   spendPowerUp,
+  SWARM_COOLDOWN_PLIES,
   type PowerUpId,
   type PowerUpInventory,
   type SwarmPlan,
@@ -37,7 +39,6 @@ import {
   canTipPreset,
   eulerForTipDown,
   tipBoardFromEuler,
-  tipChoices,
   tipDownFromEuler,
   type TipDown,
   type TipEuler,
@@ -57,6 +58,8 @@ import type {
 import { PLAYER_LABELS, centerCell } from "./types";
 
 const AI_DELAY_MS = 400;
+/** How long the award chip bounce/highlight stays visible. */
+const INVENTORY_PULSE_MS = 1100;
 const HUMAN: PlayerId = "a";
 const AI_PLAYER: PlayerId = "b";
 const LOCAL_NAME_KEY = "voxel-toe-name";
@@ -65,6 +68,14 @@ const EMPTY_NAMES: PlayerNames = { a: "", b: "" };
 const EMPTY_VOTES: RematchVotes = { a: null, b: null };
 
 export type PowerUpMode = PowerUpId | null;
+
+/** Brief HUD cue after someone banks a caught package. */
+export type InventoryPulse = {
+  by: PlayerId;
+  kind: PowerUpId;
+  /** Monotonic id so re-awarding the same kind retriggers CSS animation. */
+  id: number;
+};
 
 /** Spectator overlay for an opponent's in-progress power-up (online). */
 export type WatchPowerUp =
@@ -133,6 +144,8 @@ type GameState = {
   powerUpMode: PowerUpMode;
   clearAxis: Axis;
   powerUpToast: string | null;
+  /** Who just banked a catch — HUD bounces that chip for ~1s. */
+  inventoryPulse: InventoryPulse | null;
   /**
    * Spectator view of opponent's in-progress power-up (online).
    * Clear: live shaft. Tip: floor-face hint without rotating our cube.
@@ -158,6 +171,8 @@ type GameState = {
   } | null;
   /** Precomputed AI catch attempt if the human never taps the live package. */
   swarmAiResult: { caught: boolean; kind?: PowerUpId } | null;
+  /** Block new swarms until occupiedCount reaches this (0 = none). */
+  swarmCooldownUntilPly: number;
   /** Current snapped tip orientation (tip mode). */
   tipEuler: TipEuler;
   /** Animated tip target (drag tumbles toward this). */
@@ -249,11 +264,7 @@ type GameState = {
     clearAxis?: Axis;
     cursor?: CellCoord;
   }) => void;
-  applyRemoteTipAim: (msg: {
-    by: PlayerId;
-    active: boolean;
-    toDown?: TipDown | null;
-  }) => void;
+  applyRemoteTipAim: (msg: { by: PlayerId; active: boolean; toDown?: TipDown | null }) => void;
   applyRemoteTipCommit: (msg: { by: PlayerId; tipEuler: TipEuler }) => void;
   applyRemoteSwarm: (plan: SwarmPlan) => void;
   applyRemoteSwarmResult: (
@@ -280,6 +291,30 @@ type GameState = {
 };
 
 let aiTimer: ReturnType<typeof setTimeout> | null = null;
+let inventoryPulseTimer: ReturnType<typeof setTimeout> | null = null;
+let inventoryPulseSeq = 0;
+
+function clearInventoryPulseTimer() {
+  if (inventoryPulseTimer) {
+    clearTimeout(inventoryPulseTimer);
+    inventoryPulseTimer = null;
+  }
+}
+
+function pulseInventoryAward(
+  set: (partial: Partial<GameState>) => void,
+  by: PlayerId,
+  kind: PowerUpId,
+) {
+  clearInventoryPulseTimer();
+  inventoryPulseSeq += 1;
+  const id = inventoryPulseSeq;
+  set({ inventoryPulse: { by, kind, id } });
+  inventoryPulseTimer = setTimeout(() => {
+    inventoryPulseTimer = null;
+    set({ inventoryPulse: null });
+  }, INVENTORY_PULSE_MS);
+}
 
 /** ponytail: session registers publisher; upgrade = explicit online middleware. */
 let localPlacePublisher: ((coord: CellCoord, by: PlayerId) => void) | null = null;
@@ -292,12 +327,7 @@ let localPowerUpNotifyPublisher:
   | ((kind: PowerUpId, by: PlayerId, phase: "activate" | "cancel" | "confirm") => void)
   | null = null;
 let localClearAimPublisher:
-  | ((msg: {
-      by: PlayerId;
-      active: boolean;
-      clearAxis?: Axis;
-      cursor?: CellCoord;
-    }) => void)
+  | ((msg: { by: PlayerId; active: boolean; clearAxis?: Axis; cursor?: CellCoord }) => void)
   | null = null;
 let localTipAimPublisher:
   | ((msg: { by: PlayerId; active: boolean; toDown?: TipDown | null }) => void)
@@ -332,12 +362,7 @@ export function setLocalPowerUpNotifyPublisher(
 
 export function setLocalClearAimPublisher(
   fn:
-    | ((msg: {
-        by: PlayerId;
-        active: boolean;
-        clearAxis?: Axis;
-        cursor?: CellCoord;
-      }) => void)
+    | ((msg: { by: PlayerId; active: boolean; clearAxis?: Axis; cursor?: CellCoord }) => void)
     | null,
 ): void {
   localClearAimPublisher = fn;
@@ -469,41 +494,39 @@ function scheduleAiMove(get: () => GameState, set: (partial: Partial<GameState>)
   }, thinkDelay);
 }
 
-/** AI may spend a banked power-up before placing (simple luck heuristics). */
-function maybeAiSpendPowerUp(
-  get: () => GameState,
-  set: (partial: Partial<GameState>) => void,
-) {
+/** AI spends banked power-ups with board-aware heuristics (not RNG). */
+function maybeAiSpendPowerUp(get: () => GameState, set: (partial: Partial<GameState>) => void) {
   const state = get();
   if (!state.powerUpsEnabled) return;
-  const counts = state.inventory.b;
-  const rng = createPowerUpRng(randomSeed() ^ (state.occupiedCount * 997));
-
   const dims = getPreset(state.presetId).dims;
 
-  if (canSpend(counts, "extra-turn") && state.bonusPlacesRemaining === 0 && rng() < 0.28) {
+  const decision = pickAiPowerUpSpend({
+    board: state.board,
+    dims,
+    aiPlayer: AI_PLAYER,
+    inventory: state.inventory.b,
+    placement: state.placement,
+    difficulty: state.aiDifficulty,
+    bonusPlacesRemaining: state.bonusPlacesRemaining,
+    presetId: state.presetId,
+  });
+
+  if (decision.action === "extra-turn") {
     get().activatePowerUp("extra-turn");
     return;
   }
 
-  if (canSpend(counts, "clear-row") && rng() < 0.12) {
-    const spent = spendPowerUp(counts, "clear-row");
+  if (decision.action === "clear-row") {
+    const spent = spendPowerUp(state.inventory.b, "clear-row");
     if (!spent) return;
-    const axis: Axis = (["x", "y", "z"] as const)[Math.floor(rng() * 3)]!;
-    const aMax = axis === "x" ? dims.y : axis === "y" ? dims.x : dims.x;
-    const bMax = axis === "x" ? dims.z : axis === "y" ? dims.z : dims.y;
-    const a = Math.floor(rng() * aMax);
-    const b = Math.floor(rng() * bMax);
-    let board = clearAxisLine(state.board, dims, axis, a, b);
+    let board = clearAxisLine(state.board, dims, decision.axis, decision.a, decision.b);
     if (state.placement === "drop") board = repackDrop(board, dims);
     finishPowerUpBoard(get, set, board, AI_PLAYER, spent, "Cyan cleared a row");
     return;
   }
 
-  if (canSpend(counts, "tip") && canTipPreset(dims) && rng() < 0.1) {
-    const choices = tipChoices();
-    const toDown = choices[Math.floor(rng() * choices.length)]!;
-    const tipEuler = eulerForTipDown(toDown);
+  if (decision.action === "tip") {
+    const tipEuler = eulerForTipDown(decision.toDown);
     // Same rotate → ball-drop playback as an online opponent commit.
     // Toast after settle (finishPowerUpBoard); status shows "Cyan tipping…" meanwhile.
     set({
@@ -535,8 +558,7 @@ function finishPowerUpBoard(
   const win = checkWinAny(board, dims);
   const nextPlayer = opponentOf(by);
 
-  const opponentToast =
-    state.playMode === "ai" && by === AI_PLAYER && _toast ? _toast : null;
+  const opponentToast = state.playMode === "ai" && by === AI_PLAYER && _toast ? _toast : null;
 
   const tipReset = {
     tipFalling: false,
@@ -648,6 +670,7 @@ function maybeStartSwarm(
     !shouldAttemptSwarm({
       powerUpsEnabled: state.powerUpsEnabled,
       occupiedCount: state.occupiedCount,
+      cooldownUntilPly: state.swarmCooldownUntilPly,
       rng,
     })
   ) {
@@ -663,7 +686,7 @@ function maybeStartSwarm(
     const caught = aiCatchRoll(catchRng);
     let kind: PowerUpId | undefined;
     if (caught) {
-      kind = pickRandomKind(state.inventory.b, catchRng) ?? undefined;
+      kind = pickRandomKind(state.inventory.b, catchRng, state.presetId) ?? undefined;
     }
     swarmAiResult = { caught: Boolean(caught && kind), kind };
   }
@@ -815,10 +838,12 @@ export const useGameStore = create<GameState>((set, get) => ({
   powerUpMode: null,
   clearAxis: "x",
   powerUpToast: null,
+  inventoryPulse: null,
   watchPowerUp: null,
   watchTipPlayback: false,
   pendingTipSync: null,
   swarmAiResult: null,
+  swarmCooldownUntilPly: 0,
   tipEuler: { ...IDENTITY_TIP_EULER },
   tipTargetEuler: { ...IDENTITY_TIP_EULER },
   tipFalling: false,
@@ -975,6 +1000,7 @@ export const useGameStore = create<GameState>((set, get) => ({
     }
 
     const by = state.currentPlayer;
+    if (!isPowerUpAllowed(kind, state.presetId)) return false;
     if (!canSpend(state.inventory[by], kind)) return false;
 
     if (kind === "extra-turn") {
@@ -1310,8 +1336,12 @@ export const useGameStore = create<GameState>((set, get) => ({
     }
 
     // Live package — race over. Claim if catcher has room, else deny/sabotage.
-    const kind = pickRandomKind(state.inventory[by], createPowerUpRng(plan.seed ^ 0xdeadbeef));
-    if (!kind || !hasInventoryRoom(state.inventory[by])) {
+    const kind = pickRandomKind(
+      state.inventory[by],
+      createPowerUpRng(plan.seed ^ 0xdeadbeef),
+      state.presetId,
+    );
+    if (!kind || !hasInventoryRoom(state.inventory[by], state.presetId)) {
       const swarmPopped = { ...state.swarmPopped, [index]: "deny" as const };
       set({
         swarm: null,
@@ -1327,7 +1357,7 @@ export const useGameStore = create<GameState>((set, get) => ({
       return;
     }
 
-    const next = awardPowerUp(state.inventory[by], kind);
+    const next = awardPowerUp(state.inventory[by], kind, state.presetId);
     if (!next) {
       const swarmPopped = { ...state.swarmPopped, [index]: "deny" as const };
       set({
@@ -1353,8 +1383,10 @@ export const useGameStore = create<GameState>((set, get) => ({
       swarmBusy: false,
       swarmPopped,
       swarmAiResult: null,
+      swarmCooldownUntilPly: state.occupiedCount + SWARM_COOLDOWN_PLIES,
       powerUpToast: null,
     });
+    pulseInventoryAward(set, by, kind);
     if (state.playMode === "online") {
       localSwarmResultPublisher?.(by, index, "claim", kind);
     }
@@ -1377,8 +1409,8 @@ export const useGameStore = create<GameState>((set, get) => ({
 
     // vs AI: if human never hit the live pack, AI may luck-claim on timeout.
     if (state.playMode === "ai" && aiResult) {
-      if (aiResult.caught && aiResult.kind) {
-        const next = awardPowerUp(state.inventory.b, aiResult.kind);
+      if (aiResult.caught && aiResult.kind && plan) {
+        const next = awardPowerUp(state.inventory.b, aiResult.kind, state.presetId);
         if (next) {
           const inv = cloneInventory(state.inventory);
           inv.b = next;
@@ -1386,10 +1418,13 @@ export const useGameStore = create<GameState>((set, get) => ({
             inventory: inv,
             swarm: null,
             swarmBusy: false,
-            swarmPopped: {},
+            // Mark claim so the 3D shatter FX fires (same as a human catch).
+            swarmPopped: { ...state.swarmPopped, [plan.liveIndex]: "claim" },
             swarmAiResult: null,
+            swarmCooldownUntilPly: state.occupiedCount + SWARM_COOLDOWN_PLIES,
             powerUpToast: null,
           });
+          pulseInventoryAward(set, AI_PLAYER, aiResult.kind);
           afterSwarm(get, set);
           return;
         }
@@ -1536,7 +1571,7 @@ export const useGameStore = create<GameState>((set, get) => ({
 
     // claim
     if (kind) {
-      const next = awardPowerUp(state.inventory[by], kind);
+      const next = awardPowerUp(state.inventory[by], kind, state.presetId);
       if (next) {
         const inv = cloneInventory(state.inventory);
         inv[by] = next;
@@ -1546,8 +1581,10 @@ export const useGameStore = create<GameState>((set, get) => ({
           swarmBusy: false,
           swarmPopped: { ...state.swarmPopped, [index]: "claim" },
           swarmAiResult: null,
+          swarmCooldownUntilPly: state.occupiedCount + SWARM_COOLDOWN_PLIES,
           powerUpToast: null,
         });
+        pulseInventoryAward(set, by, kind);
         afterSwarm(get, set);
         return;
       }
@@ -1564,6 +1601,7 @@ export const useGameStore = create<GameState>((set, get) => ({
 
   startGame: () => {
     clearAiTimer();
+    clearInventoryPulseTimer();
     const state = get();
     const dims = getPreset(state.presetId).dims;
     const placement = state.placement;
@@ -1589,7 +1627,7 @@ export const useGameStore = create<GameState>((set, get) => ({
       fallingKey: null,
       dropBusy: false,
       powerUpsEnabled,
-      inventory: powerUpsEnabled ? fullInventory() : emptyInventory(),
+      inventory: emptyInventory(),
       bonusPlacesRemaining: 0,
       pendingSwarmEarner: null,
       swarm: null,
@@ -1597,8 +1635,10 @@ export const useGameStore = create<GameState>((set, get) => ({
       swarmPopped: {},
       powerUpMode: null,
       powerUpToast: null,
+      inventoryPulse: null,
       watchPowerUp: null,
       swarmAiResult: null,
+      swarmCooldownUntilPly: 0,
       tipEuler: { ...IDENTITY_TIP_EULER },
       tipTargetEuler: { ...IDENTITY_TIP_EULER },
       tipFalling: false,
@@ -1607,6 +1647,7 @@ export const useGameStore = create<GameState>((set, get) => ({
 
   rematch: () => {
     clearAiTimer();
+    clearInventoryPulseTimer();
     const state = get();
     const dims = getPreset(state.presetId).dims;
     const nextStarter = opponentOf(state.startingPlayer);
@@ -1632,7 +1673,7 @@ export const useGameStore = create<GameState>((set, get) => ({
       fallingKey: null,
       dropBusy: false,
       powerUpsEnabled,
-      inventory: powerUpsEnabled ? fullInventory() : emptyInventory(),
+      inventory: emptyInventory(),
       bonusPlacesRemaining: 0,
       pendingSwarmEarner: null,
       swarm: null,
@@ -1640,8 +1681,10 @@ export const useGameStore = create<GameState>((set, get) => ({
       swarmPopped: {},
       powerUpMode: null,
       powerUpToast: null,
+      inventoryPulse: null,
       watchPowerUp: null,
       swarmAiResult: null,
+      swarmCooldownUntilPly: 0,
       tipEuler: { ...IDENTITY_TIP_EULER },
       tipTargetEuler: { ...IDENTITY_TIP_EULER },
       tipFalling: false,
@@ -1653,6 +1696,7 @@ export const useGameStore = create<GameState>((set, get) => ({
 
   returnToSetup: () => {
     clearAiTimer();
+    clearInventoryPulseTimer();
     set({
       phase: "setup",
       board: createEmptyBoard(),
@@ -1675,8 +1719,10 @@ export const useGameStore = create<GameState>((set, get) => ({
       swarmPopped: {},
       powerUpMode: null,
       powerUpToast: null,
+      inventoryPulse: null,
       watchPowerUp: null,
       swarmAiResult: null,
+      swarmCooldownUntilPly: 0,
       tipEuler: { ...IDENTITY_TIP_EULER },
       tipTargetEuler: { ...IDENTITY_TIP_EULER },
       tipFalling: false,
@@ -1734,7 +1780,7 @@ export const useGameStore = create<GameState>((set, get) => ({
       aiming: false,
       fallingKey: null,
       dropBusy: false,
-      inventory: fullInventory(),
+      inventory: emptyInventory(),
       bonusPlacesRemaining: 0,
       pendingSwarmEarner: null,
       swarm: null,
@@ -1742,8 +1788,10 @@ export const useGameStore = create<GameState>((set, get) => ({
       swarmPopped: {},
       powerUpMode: null,
       powerUpToast: null,
+      inventoryPulse: null,
       watchPowerUp: null,
       swarmAiResult: null,
+      swarmCooldownUntilPly: 0,
       tipEuler: { ...IDENTITY_TIP_EULER },
       tipTargetEuler: { ...IDENTITY_TIP_EULER },
       tipFalling: false,
@@ -1778,6 +1826,7 @@ export const useGameStore = create<GameState>((set, get) => ({
 
   resetForRematch: () => {
     const state = get();
+    clearInventoryPulseTimer();
     const dims = getPreset(state.presetId).dims;
     const nextStarter = opponentOf(state.startingPlayer);
     const startCursor =
@@ -1798,7 +1847,7 @@ export const useGameStore = create<GameState>((set, get) => ({
       aiming: false,
       fallingKey: null,
       dropBusy: false,
-      inventory: fullInventory(),
+      inventory: emptyInventory(),
       bonusPlacesRemaining: 0,
       pendingSwarmEarner: null,
       swarm: null,
@@ -1806,8 +1855,10 @@ export const useGameStore = create<GameState>((set, get) => ({
       swarmPopped: {},
       powerUpMode: null,
       powerUpToast: null,
+      inventoryPulse: null,
       watchPowerUp: null,
       swarmAiResult: null,
+      swarmCooldownUntilPly: 0,
       tipEuler: { ...IDENTITY_TIP_EULER },
       tipTargetEuler: { ...IDENTITY_TIP_EULER },
       tipFalling: false,
@@ -1818,6 +1869,7 @@ export const useGameStore = create<GameState>((set, get) => ({
 
   leaveOnline: () => {
     clearAiTimer();
+    clearInventoryPulseTimer();
     localPlacePublisher = null;
     localSwarmPublisher = null;
     localSwarmResultPublisher = null;
@@ -1848,10 +1900,12 @@ export const useGameStore = create<GameState>((set, get) => ({
       swarmPopped: {},
       powerUpMode: null,
       powerUpToast: null,
+      inventoryPulse: null,
       watchPowerUp: null,
       watchTipPlayback: false,
       pendingTipSync: null,
       swarmAiResult: null,
+      swarmCooldownUntilPly: 0,
       tipEuler: { ...IDENTITY_TIP_EULER },
       tipTargetEuler: { ...IDENTITY_TIP_EULER },
       tipFalling: false,
@@ -1899,6 +1953,7 @@ export const useGameStore = create<GameState>((set, get) => ({
         swarmBusy: false,
         swarmPopped: {},
         swarmAiResult: null,
+        swarmCooldownUntilPly: 0,
         powerUpMode: null,
         opponentConnected: true,
       });
@@ -1927,6 +1982,7 @@ export const useGameStore = create<GameState>((set, get) => ({
       swarmBusy: false,
       swarmPopped: {},
       swarmAiResult: null,
+      swarmCooldownUntilPly: 0,
       powerUpMode: null,
       watchPowerUp: null,
       watchTipPlayback: false,

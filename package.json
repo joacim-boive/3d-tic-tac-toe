@@ -25,6 +25,7 @@
     "check:sticky": "npx tsx src/scene/stickyDepth.selftest.ts",
     "check:powerups": "npx tsx src/game/powerUps.selftest.ts",
     "check:tip-playback": "npx tsx src/game/tipPlayback.selftest.ts",
+    "check:swarm": "npx tsx src/game/swarmPackages.selftest.ts",
     "eval:selfplay": "npx tsx src/game/selfPlay.cli.ts"
   },
   "dependencies": {

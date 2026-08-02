@@ -2,11 +2,18 @@
  * Assert-based self-check for power-up helpers — run with `npm run check:powerups`.
  */
 import { cellKey, cellToWorld, checkWinAny, createEmptyBoard, worldToCell } from "./board";
-import { axisLineCells, clearAxisLine, clearFixedFromCursor, nextClearAxis, repackDrop } from "./clearRow";
+import {
+  axisLineCells,
+  clearAxisLine,
+  clearFixedFromCursor,
+  nextClearAxis,
+  repackDrop,
+} from "./clearRow";
 import {
   AI_CATCH_CHANCE,
   MAX_PER_KIND,
   SWARM_CHANCE,
+  SWARM_COOLDOWN_PLIES,
   SWARM_MIN_PLY,
   SWARM_PACKAGE_COUNT,
   aiCatchRoll,
@@ -14,8 +21,10 @@ import {
   createPowerUpRng,
   emptyCounts,
   hasInventoryRoom,
+  isPowerUpAllowed,
   pickRandomKind,
   planSwarm,
+  powerUpsForPreset,
   shouldAttemptSwarm,
   spendPowerUp,
   underCapKinds,
@@ -81,6 +90,24 @@ function testSwarmGate() {
     }),
     "high rng → no",
   );
+  assert(
+    !shouldAttemptSwarm({
+      powerUpsEnabled: true,
+      occupiedCount: SWARM_MIN_PLY,
+      cooldownUntilPly: SWARM_MIN_PLY + SWARM_COOLDOWN_PLIES,
+      rng: rngYes,
+    }),
+    "cooldown blocks swarm",
+  );
+  assert(
+    shouldAttemptSwarm({
+      powerUpsEnabled: true,
+      occupiedCount: SWARM_MIN_PLY + SWARM_COOLDOWN_PLIES,
+      cooldownUntilPly: SWARM_MIN_PLY + SWARM_COOLDOWN_PLIES,
+      rng: rngYes,
+    }),
+    "at cooldown ply → allowed",
+  );
   const full = {
     "extra-turn": 2,
     "clear-row": 2,
@@ -97,6 +124,7 @@ function testSwarmGate() {
     "full inventory still allows competitive flyby",
   );
   assert(SWARM_CHANCE > 0 && SWARM_CHANCE < 1, "swarm chance sane");
+  assert(SWARM_COOLDOWN_PLIES >= 3, "cooldown after catch");
   assert(AI_CATCH_CHANCE > 0, "ai catch chance");
 }
 
@@ -109,6 +137,10 @@ function testPlanSwarmDeterministic() {
     a.packages.every((p, i) => p.x0 === b.packages[i]!.x0 && p.y0 === b.packages[i]!.y0),
     "same paths",
   );
+  // Staggered delays — not a simultaneous clump.
+  const delays = a.packages.map((p) => p.delayMs);
+  assert(delays[1]! > delays[0]!, "second package delayed after first");
+  assert(delays[2]! > delays[1]!, "third package delayed after second");
 }
 
 function testPickKindRespectsCap() {
@@ -119,13 +151,25 @@ function testPickKindRespectsCap() {
   assert(kind === "tip", "only tip open");
 }
 
+function testExtraTurnBannedOn3x3x3() {
+  assert(!isPowerUpAllowed("extra-turn", "3x3x3"), "extra banned");
+  assert(isPowerUpAllowed("clear-row", "3x3x3"), "clear ok");
+  assert(isPowerUpAllowed("tip", "3x3x3"), "tip ok");
+  assert(isPowerUpAllowed("extra-turn", "4x4x4"), "extra ok on 4³");
+  assert(powerUpsForPreset("3x3x3").length === 2, "two kinds on 3³");
+  assert(underCapKinds(emptyCounts(), "3x3x3").length === 2, "underCap skips extra");
+  assert(awardPowerUp(emptyCounts(), "extra-turn", "3x3x3") === null, "cannot award extra");
+  const kind = pickRandomKind(emptyCounts(), () => 0, "3x3x3");
+  assert(kind !== "extra-turn", "pick never returns extra on 3³");
+}
+
 function testAiCatch() {
   const yes = createPowerUpRng(1);
   // Burn until we see both outcomes over many rolls
   let hits = 0;
   const rng = createPowerUpRng(99);
   for (let i = 0; i < 3000; i++) if (aiCatchRoll(rng)) hits++;
-  assert(hits > 700 && hits < 1300, `ai catch ~1/3, got ${hits}/3000`);
+  assert(hits > 1200 && hits < 1800, `ai catch ~1/2, got ${hits}/3000`);
   assert(typeof yes() === "number", "rng works");
 }
 
@@ -229,8 +273,14 @@ function testTipRemapIncludesYaw() {
 
   const faceOnly = tipRemap(board, dims, down);
   const full = tipRemapFromEuler(board, dims, e);
-  const faceKey = faceOnly.map((r) => `${r.key}:${r.to.x},${r.to.y},${r.to.z}`).sort().join("|");
-  const fullKey = full.map((r) => `${r.key}:${r.to.x},${r.to.y},${r.to.z}`).sort().join("|");
+  const faceKey = faceOnly
+    .map((r) => `${r.key}:${r.to.x},${r.to.y},${r.to.z}`)
+    .sort()
+    .join("|");
+  const fullKey = full
+    .map((r) => `${r.key}:${r.to.x},${r.to.y},${r.to.z}`)
+    .sort()
+    .join("|");
   assert(faceKey !== fullKey, "yaw changes landing cells vs face-only");
 
   // Packed landing XZ equals rotated column (no lateral teleport after fall).
@@ -253,10 +303,7 @@ function testTipNavCombined() {
 
   const spun = tipEulerFromSwipe(e, right, 80, 0);
   assert(tipDownFromEuler(spun) === afterFlip, "yaw while tipped keeps same floor");
-  assert(
-    spun.x !== e.x || spun.y !== e.y || spun.z !== e.z,
-    "yaw while tipped actually turns",
-  );
+  assert(spun.x !== e.x || spun.y !== e.y || spun.z !== e.z, "yaw while tipped actually turns");
 
   // Flip then yaw then flip again should still change the floor.
   const again = tipEulerFromSwipe(spun, right, 0, -80);
@@ -279,6 +326,7 @@ testInventoryCaps();
 testSwarmGate();
 testPlanSwarmDeterministic();
 testPickKindRespectsCap();
+testExtraTurnBannedOn3x3x3();
 testAiCatch();
 testClearCursorAxis();
 testClearAndRepack();

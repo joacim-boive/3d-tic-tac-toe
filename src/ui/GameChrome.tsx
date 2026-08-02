@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useState, type ReactNode } from "react";
-import { getPreset } from "@/game/presets";
 import { useGameStore } from "@/game/store";
 import { tipDownFromEuler } from "@/game/tipBoard";
 import { PLAYER_COLORS } from "@/game/types";
@@ -35,7 +34,6 @@ export function GameChrome({ children }: GameChromeProps) {
   useGameControls();
   const touchUi = useCoarsePointer();
 
-  const presetId = useGameStore((s) => s.presetId);
   const playMode = useGameStore((s) => s.playMode);
   const placement = useGameStore((s) => s.placement);
   const dropBusy = useGameStore((s) => s.dropBusy);
@@ -61,7 +59,6 @@ export function GameChrome({ children }: GameChromeProps) {
   const tipTargetEuler = useGameStore((s) => s.tipTargetEuler);
   const displayName = useGameStore((s) => s.displayName);
 
-  const preset = getPreset(presetId);
   const turnColor = PLAYER_COLORS[currentPlayer];
   const paused = playMode === "online" && onlineStatus === "paused";
   const myTurn =
@@ -73,7 +70,7 @@ export function GameChrome({ children }: GameChromeProps) {
     const otherName = playerNames[other].trim() || displayName(other);
     statusText = `Waiting for ${otherName} to reconnect…`;
   } else if (swarmBusy) {
-    statusText = "Compete — claim or deny a package";
+    statusText = "Catch a package — tap a cylinder";
   } else if (dropBusy) {
     statusText = "Dropping…";
   } else if (status === "won" && winner) {
@@ -95,11 +92,11 @@ export function GameChrome({ children }: GameChromeProps) {
   } else if (playMode === "ai" && currentPlayer === "b") {
     statusText = "Cyan is thinking…";
   } else {
-    statusText = placement === "drop" ? `${displayName(currentPlayer)} to drop` : `${displayName(currentPlayer)} to place`;
+    statusText =
+      placement === "drop"
+        ? `${displayName(currentPlayer)} to drop`
+        : `${displayName(currentPlayer)} to place`;
   }
-
-  const modeLabel = playMode === "ai" ? "vs AI" : playMode === "online" ? "Online" : "Hotseat";
-  const placementLabel = placement === "drop" ? "Drop" : "Free";
 
   const onMenu = () => {
     if (playMode === "online") {
@@ -112,13 +109,6 @@ export function GameChrome({ children }: GameChromeProps) {
   return (
     <div className="game-shell">
       <header className="chrome chrome--top">
-        <div className="chrome__meta">
-          <span className="chrome__brand">Voxel Toe</span>
-          <span className="chrome__preset">{preset.label}</span>
-          <span className="chrome__mode">{modeLabel}</span>
-          <span className="chrome__mode">{placementLabel}</span>
-        </div>
-
         <div className="chrome__status" style={{ ["--turn" as string]: turnColor }}>
           <span className="chrome__dot" aria-hidden />
           <span>{statusText}</span>
@@ -168,21 +158,21 @@ export function GameChrome({ children }: GameChromeProps) {
             myTurn &&
             powerUpMode !== "clear-row" &&
             powerUpMode !== "tip" && (
-            <button
-              type="button"
-              className="chrome__btn chrome__btn--accent"
-              onClick={placeAtCursor}
-              disabled={dropBusy || swarmBusy}
-            >
-              {placement === "drop" ? "Drop" : "Place"}
-              {!touchUi && (
-                <>
-                  {" "}
-                  <kbd>Space</kbd>
-                </>
-              )}
-            </button>
-          )}
+              <button
+                type="button"
+                className="chrome__btn chrome__btn--accent"
+                onClick={placeAtCursor}
+                disabled={dropBusy || swarmBusy}
+              >
+                {placement === "drop" ? "Drop" : "Place"}
+                {!touchUi && (
+                  <>
+                    {" "}
+                    <kbd>Space</kbd>
+                  </>
+                )}
+              </button>
+            )}
           <button type="button" className="chrome__btn" onClick={onMenu}>
             Menu
             {!touchUi && (
