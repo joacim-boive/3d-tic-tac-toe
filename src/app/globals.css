@@ -422,7 +422,7 @@ button {
 
 .chrome--top {
   display: grid;
-  grid-template-columns: 1fr auto 1fr;
+  grid-template-columns: 1fr auto;
   align-items: center;
   gap: 0.75rem;
   padding: max(0.65rem, env(safe-area-inset-top)) 0.85rem 0.65rem;
@@ -437,36 +437,14 @@ button {
   box-sizing: border-box;
 }
 
-.chrome__meta {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: 0.45rem 0.75rem;
-}
-
-.chrome__brand {
-  font-family: var(--font-display);
-  font-weight: 700;
-  letter-spacing: 0.04em;
-}
-
-.chrome__preset {
-  font-weight: 650;
-  color: var(--ink);
-}
-
-.chrome__mode {
-  color: var(--ink-muted);
-  font-size: 0.85rem;
-}
-
 .chrome__status {
   display: inline-flex;
   align-items: center;
-  justify-content: center;
+  justify-content: flex-start;
   gap: 0.45rem;
   font-weight: 650;
   white-space: nowrap;
+  min-width: 0;
 }
 
 .chrome__dot {
@@ -557,7 +535,6 @@ button {
     grid-template-columns: 1fr;
     grid-template-areas:
       "actions"
-      "meta"
       "status";
     gap: 0.45rem;
   }
@@ -566,10 +543,6 @@ button {
     grid-area: actions;
     justify-content: flex-end;
     flex-wrap: nowrap;
-  }
-
-  .chrome__meta {
-    grid-area: meta;
   }
 
   .chrome__status {

@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useState, type ReactNode } from "react";
-import { getPreset } from "@/game/presets";
 import { useGameStore } from "@/game/store";
 import { tipDownFromEuler } from "@/game/tipBoard";
 import { PLAYER_COLORS } from "@/game/types";
@@ -35,7 +34,6 @@ export function GameChrome({ children }: GameChromeProps) {
   useGameControls();
   const touchUi = useCoarsePointer();
 
-  const presetId = useGameStore((s) => s.presetId);
   const playMode = useGameStore((s) => s.playMode);
   const placement = useGameStore((s) => s.placement);
   const dropBusy = useGameStore((s) => s.dropBusy);
@@ -61,7 +59,6 @@ export function GameChrome({ children }: GameChromeProps) {
   const tipTargetEuler = useGameStore((s) => s.tipTargetEuler);
   const displayName = useGameStore((s) => s.displayName);
 
-  const preset = getPreset(presetId);
   const turnColor = PLAYER_COLORS[currentPlayer];
   const paused = playMode === "online" && onlineStatus === "paused";
   const myTurn =
@@ -101,9 +98,6 @@ export function GameChrome({ children }: GameChromeProps) {
         : `${displayName(currentPlayer)} to place`;
   }
 
-  const modeLabel = playMode === "ai" ? "vs AI" : playMode === "online" ? "Online" : "Hotseat";
-  const placementLabel = placement === "drop" ? "Drop" : "Free";
-
   const onMenu = () => {
     if (playMode === "online") {
       void leaveOnlineSession();
@@ -115,13 +109,6 @@ export function GameChrome({ children }: GameChromeProps) {
   return (
     <div className="game-shell">
       <header className="chrome chrome--top">
-        <div className="chrome__meta">
-          <span className="chrome__brand">Voxel Toe</span>
-          <span className="chrome__preset">{preset.label}</span>
-          <span className="chrome__mode">{modeLabel}</span>
-          <span className="chrome__mode">{placementLabel}</span>
-        </div>
-
         <div className="chrome__status" style={{ ["--turn" as string]: turnColor }}>
           <span className="chrome__dot" aria-hidden />
           <span>{statusText}</span>
