@@ -2041,7 +2041,14 @@ export const useGameStore = create<GameState>((set, get) => ({
     const state = get();
     if (!state.dropBusy && state.fallingKey == null) return;
     const earner = state.pendingSwarmEarner;
-    set({ dropBusy: false, fallingKey: null, pendingSwarmEarner: null });
+    const dims = getPreset(state.presetId).dims;
+    // Leave the settled ball — snap aim to the next free cell in that column
+    // (or stay on top if full) so the selection box never frames a placed sphere.
+    const cursor =
+      state.placement === "drop"
+        ? snapDropCursor(state.cursor, state.board, dims)
+        : state.cursor;
+    set({ dropBusy: false, fallingKey: null, pendingSwarmEarner: null, cursor });
     if (earner && get().status === "playing" && get().bonusPlacesRemaining === 0) {
       // Only swarm when the turn has flipped (earner !== current) or was a normal place
       const cur = get().currentPlayer;

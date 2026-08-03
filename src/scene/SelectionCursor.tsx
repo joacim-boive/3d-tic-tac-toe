@@ -48,7 +48,7 @@ type TriDepthSession = {
  * Sticky-depth aim cursor.
  * 1-finger / Shift+move: pick freely on the sticky plane (including up/down).
  * 3-finger swipe up/down: change depth (up = deeper). Q/E or Shift+wheel on desktop.
- * Preview is the translucent cell box only (no ghost marker ball).
+ * Aim preview is the cell box only (no ghost marker ball). Sphere appears on drop/place.
  * Power-ups: swarm blocks pointers; clear-row tap cycles axis (cursor mesh hidden).
  */
 export function SelectionCursor({ dims, spacing = 1 }: SelectionCursorProps) {
@@ -73,6 +73,7 @@ export function SelectionCursor({ dims, spacing = 1 }: SelectionCursorProps) {
 
   const [touchAiming, setTouchAiming] = useState(false);
   const clearMode = powerUpMode === "clear-row";
+
 
   const raycaster = useMemo(() => new Raycaster(), []);
   const ndc = useMemo(() => new Vector2(), []);
@@ -589,6 +590,9 @@ export function SelectionCursor({ dims, spacing = 1 }: SelectionCursorProps) {
   const color = PLAYER_COLORS[currentPlayer];
   const columnH = placement === "drop" ? dims.y * spacing * 0.96 : cellSize;
   const columnY = placement === "drop" ? -cy : 0;
+  // Occupied cell (e.g. after a settle before snap): never frame a placed ball.
+  // During dropBusy the landing cell is already on the board — keep a dim box as the drop target.
+  const showCell = !occupied || dropBusy;
 
   return (
     <group position={[cx, cy, cz]}>
@@ -603,18 +607,22 @@ export function SelectionCursor({ dims, spacing = 1 }: SelectionCursorProps) {
           />
         </mesh>
       ) : null}
-      <mesh>
-        <boxGeometry args={[cellSize, cellSize, cellSize]} />
-        <meshBasicMaterial
-          color={color}
-          transparent
-          opacity={occupied || dropBusy ? 0.06 : 0.16}
-          depthWrite={false}
-        />
-      </mesh>
-      <lineSegments geometry={edges}>
-        <lineBasicMaterial color={color} transparent opacity={dropBusy ? 0.25 : 0.95} />
-      </lineSegments>
+      {showCell ? (
+        <>
+          <mesh>
+            <boxGeometry args={[cellSize, cellSize, cellSize]} />
+            <meshBasicMaterial
+              color={color}
+              transparent
+              opacity={occupied || dropBusy ? 0.06 : 0.16}
+              depthWrite={false}
+            />
+          </mesh>
+          <lineSegments geometry={edges}>
+            <lineBasicMaterial color={color} transparent opacity={dropBusy ? 0.25 : 0.95} />
+          </lineSegments>
+        </>
+      ) : null}
     </group>
   );
 }
