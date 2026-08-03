@@ -48,7 +48,7 @@ type TriDepthSession = {
  * Sticky-depth aim cursor.
  * 1-finger / Shift+move: pick freely on the sticky plane (including up/down).
  * 3-finger swipe up/down: change depth (up = deeper). Q/E or Shift+wheel on desktop.
- * While aiming: translucent cell box only (no ghost marker). Idle cursor shows both.
+ * Preview is the translucent cell box only (no ghost marker ball).
  * Power-ups: swarm blocks pointers; clear-row tap cycles axis (cursor mesh hidden).
  */
 export function SelectionCursor({ dims, spacing = 1 }: SelectionCursorProps) {
@@ -72,7 +72,6 @@ export function SelectionCursor({ dims, spacing = 1 }: SelectionCursorProps) {
   const clearSticky = useSliceHighlightStore((s) => s.clearSlice);
 
   const [touchAiming, setTouchAiming] = useState(false);
-  const showAim = aiming || touchAiming;
   const clearMode = powerUpMode === "clear-row";
 
   const raycaster = useMemo(() => new Raycaster(), []);
@@ -616,20 +615,6 @@ export function SelectionCursor({ dims, spacing = 1 }: SelectionCursorProps) {
       <lineSegments geometry={edges}>
         <lineBasicMaterial color={color} transparent opacity={dropBusy ? 0.25 : 0.95} />
       </lineSegments>
-      {!dropBusy && !showAim ? (
-        <mesh>
-          <sphereGeometry args={[0.28, 20, 16]} />
-          <meshStandardMaterial
-            color={color}
-            transparent
-            opacity={occupied ? 0.2 : 0.55}
-            emissive={color}
-            emissiveIntensity={0.2}
-            depthWrite={false}
-            roughness={0.3}
-          />
-        </mesh>
-      ) : null}
     </group>
   );
 }
