@@ -3,11 +3,19 @@
 import { OrbitControls } from "@react-three/drei";
 import { Canvas, useThree } from "@react-three/fiber";
 import { Suspense, useEffect, useState } from "react";
-import { MathUtils, TOUCH } from "three";
+import { MathUtils, MOUSE, TOUCH } from "three";
+import type { OrbitControls as OrbitControlsImpl } from "three-stdlib";
 import { getPreset } from "@/game/presets";
 import { useGameStore } from "@/game/store";
 import { TipBoardFrame } from "./TipBoardFrame";
 import { SwarmPackages } from "./SwarmPackages";
+
+/** Left-drag aims (SelectionCursor); right-drag orbits (mouse fallback). -1 = no action. */
+const DESKTOP_MOUSE_BUTTONS = {
+  LEFT: -1 as unknown as (typeof MOUSE)["ROTATE"],
+  MIDDLE: MOUSE.DOLLY,
+  RIGHT: MOUSE.ROTATE,
+};
 
 function camDistance(dims: { x: number; y: number; z: number }): number {
   return Math.max(dims.x, dims.y, dims.z) * 1.6 + 2;
@@ -45,6 +53,55 @@ function BlockNativeGestures() {
   return null;
 }
 
+/**
+ * Fine-pointer trackpad: two-finger scroll → orbit (no click).
+ * Shift+scroll → depth (SelectionCursor). Pinch (ctrl-wheel) → OrbitControls zoom.
+ */
+function TrackpadOrbit({ active }: { active: boolean }) {
+  const gl = useThree((s) => s.gl);
+  const controls = useThree((s) => s.controls) as OrbitControlsImpl | null;
+  const invalidate = useThree((s) => s.invalidate);
+
+  useEffect(() => {
+    if (!active || !controls) return;
+    const el = gl.domElement;
+
+    const onWheel = (e: WheelEvent) => {
+      // Pinch → ctrl-wheel; leave for OrbitControls dolly.
+      if (e.ctrlKey) return;
+      // Shift+scroll → depth in SelectionCursor.
+      if (e.shiftKey) return;
+      if (!controls.enabled || !controls.enableRotate) return;
+      e.preventDefault();
+      e.stopPropagation();
+
+      const h = el.clientHeight || 1;
+      const speed = controls.rotateSpeed;
+      // Same scale as OrbitControls mouse rotate (both axes use height).
+      // Invert vs raw wheel so drag direction matches expected camera motion.
+      const dAz = ((2 * Math.PI * e.deltaX) / h) * speed;
+      const dPol = ((2 * Math.PI * e.deltaY) / h) * speed;
+      if (dAz === 0 && dPol === 0) return;
+
+      controls.setAzimuthalAngle(controls.getAzimuthalAngle() + dAz);
+      controls.setPolarAngle(
+        MathUtils.clamp(
+          controls.getPolarAngle() + dPol,
+          controls.minPolarAngle,
+          controls.maxPolarAngle,
+        ),
+      );
+      controls.update();
+      invalidate();
+    };
+
+    el.addEventListener("wheel", onWheel, { passive: false, capture: true });
+    return () => el.removeEventListener("wheel", onWheel, true);
+  }, [active, controls, gl, invalidate]);
+
+  return null;
+}
+
 function SceneContent() {
   const presetId = useGameStore((s) => s.presetId);
   const placement = useGameStore((s) => s.placement);
@@ -63,6 +120,7 @@ function SceneContent() {
   // Tip: drag tips the box. Swarm: 3D packages own pointers (orbit off).
   // Spectator tip commit playback also locks orbit.
   const camLocked = tipMode || tipFalling || watchTipPlayback || swarmBusy;
+  const orbitActive = !camLocked && (reviewing || !aiming);
   // Drop mode: orbit around and over the top, never under the box.
   const maxPolar = reviewing ? Math.PI : dropMode ? MathUtils.DEG2RAD * 78 : Math.PI;
   const minPolar = reviewing ? 0 : dropMode ? MathUtils.DEG2RAD * 8 : 0;
@@ -80,7 +138,8 @@ function SceneContent() {
 
       {/*
         Tip / package swarm: OrbitControls off.
-        Otherwise: one-finger aim; two-finger orbit (touch).
+        Touch: 1-finger aim; 2-finger orbit/pinch; 3-finger depth.
+        Desktop: left-drag aim; 2-finger scroll orbit; Shift+scroll depth; pinch zoom; Space place.
         Viewport size must stay fixed when Tip toggles (mode controls overlay)
         so disabling orbit here does not look like a zoom change.
       */}
@@ -88,7 +147,7 @@ function SceneContent() {
         enablePan={!camLocked && (!touchUi || reviewing)}
         enableZoom={!camLocked}
         enableRotate={!camLocked}
-        enabled={!camLocked && (reviewing || !aiming)}
+        enabled={orbitActive}
         enableDamping
         dampingFactor={0.08}
         minDistance={camDist * 0.35}
@@ -96,6 +155,7 @@ function SceneContent() {
         minPolarAngle={minPolar}
         maxPolarAngle={maxPolar}
         target={[0, 0, 0]}
+        mouseButtons={DESKTOP_MOUSE_BUTTONS}
         touches={
           reviewing
             ? { ONE: TOUCH.ROTATE, TWO: TOUCH.DOLLY_PAN }
@@ -103,6 +163,7 @@ function SceneContent() {
         }
         makeDefault
       />
+      {!touchUi ? <TrackpadOrbit active={orbitActive} /> : null}
     </>
   );
 }

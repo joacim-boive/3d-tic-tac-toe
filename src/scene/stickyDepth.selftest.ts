@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import {
+  applyWheelDeltaToDepthAccum,
   depthStepsFromSwipeDelta,
   pointerCentroidY,
   reconcileStickyDepth,
@@ -39,5 +40,12 @@ assert.equal(pointerCentroidY([
 assert.equal(depthStepsFromSwipeDelta(-50, 50), 1);
 assert.equal(depthStepsFromSwipeDelta(50, 50), -1);
 assert.equal(depthStepsFromSwipeDelta(-20, 50), 0);
+
+// Wheel accum: scroll up (neg) → deeper; need full pxPerStep before a step.
+assert.deepEqual(applyWheelDeltaToDepthAccum(0, -20, 48), { deeperSteps: 0, accum: -20 });
+assert.deepEqual(applyWheelDeltaToDepthAccum(-20, -30, 48), { deeperSteps: 1, accum: -2 });
+assert.deepEqual(applyWheelDeltaToDepthAccum(0, 48, 48), { deeperSteps: -1, accum: 0 });
+assert.deepEqual(applyWheelDeltaToDepthAccum(0, -96, 48), { deeperSteps: 2, accum: 0 });
+assert.deepEqual(applyWheelDeltaToDepthAccum(0, 0, 48), { deeperSteps: 0, accum: 0 });
 
 console.log("stickyDepth.selftest: ok");

@@ -65,13 +65,10 @@ function PlayerMarkers({
     <instancedMesh ref={meshRef} args={[geometry, undefined, MAX_INSTANCES]} frustumCulled={false}>
       <meshStandardMaterial
         color={color}
-        transparent
-        opacity={0.88}
         roughness={0.28}
         metalness={0.2}
         emissive={color}
         emissiveIntensity={0.22}
-        depthWrite={false}
       />
     </instancedMesh>
   );

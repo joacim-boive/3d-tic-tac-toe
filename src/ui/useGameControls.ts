@@ -5,7 +5,7 @@ import { clearFixedFromCursor } from "@/game/clearRow";
 import { useGameStore } from "@/game/store";
 import { leaveOnlineSession } from "@/online/session";
 
-/** Keyboard + Shift aiming for the play session. */
+/** Keyboard play controls (aim is left-drag / touch — see SelectionCursor). */
 export function useGameControls() {
   const setAiming = useGameStore((s) => s.setAiming);
   const nudgeCursor = useGameStore((s) => s.nudgeCursor);
@@ -33,12 +33,6 @@ export function useGameControls() {
     if (phase !== "playing") return;
 
     const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "Shift") {
-        // Aiming allowed in clear mode; blocked during tip / swarm.
-        if (status === "playing" && !playLocked) setAiming(true);
-        return;
-      }
-
       const target = e.target as HTMLElement | null;
       if (target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA")) return;
 
@@ -117,18 +111,12 @@ export function useGameControls() {
       }
     };
 
-    const onKeyUp = (e: KeyboardEvent) => {
-      if (e.key === "Shift") setAiming(false);
-    };
-
     const onBlur = () => setAiming(false);
 
     window.addEventListener("keydown", onKeyDown);
-    window.addEventListener("keyup", onKeyUp);
     window.addEventListener("blur", onBlur);
     return () => {
       window.removeEventListener("keydown", onKeyDown);
-      window.removeEventListener("keyup", onKeyUp);
       window.removeEventListener("blur", onBlur);
       setAiming(false);
     };

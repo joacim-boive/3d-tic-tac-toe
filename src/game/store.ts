@@ -197,7 +197,7 @@ type GameState = {
   lastPlaced: CellCoord | null;
   /** Aiming cursor — always set while a game is in progress. */
   cursor: CellCoord;
-  /** True while Shift is held (aim mode; camera orbit paused). */
+  /** True while aiming (left-drag / touch / depth gesture); camera orbit paused. */
   aiming: boolean;
   /** Drop mode: cell key of the marker currently falling under physics. */
   fallingKey: string | null;

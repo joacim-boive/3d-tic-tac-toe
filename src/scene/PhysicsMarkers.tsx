@@ -185,13 +185,10 @@ function FallingMarker({
       <sphereGeometry args={[MARKER_RADIUS, 24, 18]} />
       <meshStandardMaterial
         color={color}
-        transparent
-        opacity={0.94}
         roughness={0.26}
         metalness={0.22}
         emissive={color}
         emissiveIntensity={baseEmissive}
-        depthWrite={false}
       />
     </mesh>
   );
@@ -227,13 +224,10 @@ function SettledMarker({
         <sphereGeometry args={[visualR, 24, 18]} />
         <meshStandardMaterial
           color={color}
-          transparent={!entry.winning}
-          opacity={entry.winning ? 1 : 0.92}
           roughness={0.26}
           metalness={0.22}
           emissive={color}
           emissiveIntensity={entry.winning ? 0.45 : 0.22}
-          depthWrite={entry.winning}
         />
       </mesh>
     </RigidBody>

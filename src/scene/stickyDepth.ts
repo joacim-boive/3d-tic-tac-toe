@@ -63,3 +63,26 @@ export function depthStepsFromSwipeDelta(deltaY: number, pxPerStep: number): num
   if (pxPerStep <= 0) return 0;
   return Math.round(-deltaY / pxPerStep);
 }
+
+/**
+ * Accumulate wheel deltaY into depth steps (trackpad / mouse).
+ * Scroll up (negative deltaY) → positive deeperSteps.
+ */
+export function applyWheelDeltaToDepthAccum(
+  accum: number,
+  deltaY: number,
+  pxPerStep: number,
+): { deeperSteps: number; accum: number } {
+  if (pxPerStep <= 0 || deltaY === 0) return { deeperSteps: 0, accum };
+  let a = accum + deltaY;
+  let deeperSteps = 0;
+  while (a <= -pxPerStep) {
+    deeperSteps += 1;
+    a += pxPerStep;
+  }
+  while (a >= pxPerStep) {
+    deeperSteps -= 1;
+    a -= pxPerStep;
+  }
+  return { deeperSteps, accum: a };
+}

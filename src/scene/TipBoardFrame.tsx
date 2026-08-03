@@ -493,13 +493,10 @@ function TipFallingBall({
       <sphereGeometry args={[MARKER_RADIUS, 24, 18]} />
       <meshStandardMaterial
         color={color}
-        transparent
-        opacity={0.94}
         roughness={0.26}
         metalness={0.22}
         emissive={color}
         emissiveIntensity={baseEmissive}
-        depthWrite={false}
       />
     </mesh>
   );
