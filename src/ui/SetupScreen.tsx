@@ -3,6 +3,11 @@
 import { useEffect, useState, useTransition } from "react";
 import { formatAppVersionLabel } from "@/appVersion";
 import { PRESETS } from "@/game/presets";
+import {
+  readSavedGameFromStorage,
+  savedGameMatchesSetup,
+  type SavedGame,
+} from "@/game/savedGame";
 import { hydrateLocalNameFromStorage, hydrateSetupFromStorage, useGameStore } from "@/game/store";
 import { isExtremeAllowed } from "@/game/ai";
 import type { AiDifficulty, PlacementMode, PlayMode, PresetId } from "@/game/types";
@@ -24,15 +29,21 @@ export function SetupScreen() {
   const setLocalName = useGameStore((s) => s.setLocalName);
   const setOnlineError = useGameStore((s) => s.setOnlineError);
   const startGame = useGameStore((s) => s.startGame);
+  const restoreGame = useGameStore((s) => s.restoreGame);
 
   const [joinCode, setJoinCode] = useState("");
   const [pending, startTransition] = useTransition();
   const [busy, setBusy] = useState(false);
+  const [restoreOffer, setRestoreOffer] = useState<SavedGame | null>(null);
 
   useEffect(() => {
     hydrateLocalNameFromStorage();
     hydrateSetupFromStorage();
   }, []);
+
+  useEffect(() => {
+    setRestoreOffer(null);
+  }, [presetId, playMode, placement, aiDifficulty, powerUpsEnabled]);
 
   const run = (fn: () => Promise<void>) => {
     setBusy(true);
@@ -46,6 +57,24 @@ export function SetupScreen() {
         setBusy(false);
       }
     });
+  };
+
+  const onStartClick = () => {
+    const saved = readSavedGameFromStorage();
+    if (
+      saved &&
+      savedGameMatchesSetup(saved, {
+        presetId,
+        playMode,
+        placement,
+        aiDifficulty,
+        powerUpsEnabled,
+      })
+    ) {
+      setRestoreOffer(saved);
+      return;
+    }
+    startGame();
   };
 
   return (
@@ -261,8 +290,46 @@ export function SetupScreen() {
             </button>
           </div>
         </>
+      ) : restoreOffer ? (
+        <div className="setup__restore" role="dialog" aria-labelledby="restore-title">
+          <div className="setup__restore-copy">
+            <h2 id="restore-title" className="setup__restore-title">
+              Resume game?
+            </h2>
+            <p className="setup__restore-detail">
+              {restoreOffer.playMode === "ai"
+                ? "Same grid and difficulty"
+                : "Same setup"}{" "}
+              — {restoreOffer.occupiedCount} mark
+              {restoreOffer.occupiedCount === 1 ? "" : "s"} on the board.
+            </p>
+          </div>
+          <div className="setup__restore-actions">
+            <button
+              type="button"
+              className="setup__start"
+              onClick={() => {
+                const saved = restoreOffer;
+                setRestoreOffer(null);
+                restoreGame(saved);
+              }}
+            >
+              Restore
+            </button>
+            <button
+              type="button"
+              className="setup__secondary"
+              onClick={() => {
+                setRestoreOffer(null);
+                startGame();
+              }}
+            >
+              New game
+            </button>
+          </div>
+        </div>
       ) : (
-        <button type="button" className="setup__start" onClick={startGame}>
+        <button type="button" className="setup__start" onClick={onStartClick}>
           Start game
         </button>
       )}

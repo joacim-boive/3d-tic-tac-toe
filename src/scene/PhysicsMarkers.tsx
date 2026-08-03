@@ -45,6 +45,8 @@ type MarkerEntry = {
   /** True only for the mark that completed the line. */
   winningMove: boolean;
   falling: boolean;
+  /** Stagger delay before release (restore drop-in). */
+  delayMs: number;
 };
 
 type DropPhase = {
@@ -109,6 +111,9 @@ function easeOutCubic(x: number): number {
   return 1 - (1 - x) ** 3;
 }
 
+/** Stagger window so restored balls don't all release at once. */
+const RESTORE_STAGGER_MAX_MS = 520;
+
 function FallingMarker({
   entry,
   dims,
@@ -119,40 +124,88 @@ function FallingMarker({
   spacing: number;
 }) {
   const finishDrop = useGameStore((s) => s.finishDrop);
+  const finishRestoreBall = useGameStore((s) => s.finishRestoreBall);
+  const restoreStartedAt = useGameStore((s) => s.restoreStartedAt);
   const meshRef = useRef<Mesh>(null);
   const finished = useRef(false);
-  const startedAt = useRef(performance.now());
+  const released = useRef(false);
+  const fallStartedAt = useRef(0);
+  const bornAt = useRef(performance.now());
   const spawnY = dropSpawnY(dims, spacing);
   const [tx, ty, tz] = cellToWorld(entry.coord, dims, spacing);
   const g = DROP_GRAVITY[1];
   const plan = useMemo(() => buildDropPhases(spawnY, ty, g), [spawnY, ty, g]);
   const color = useMemo(() => new Color(PLAYER_COLORS[entry.player]), [entry.player]);
   const baseEmissive = 0.28;
+  const delayMs = entry.delayMs;
+  const isRestore = restoreStartedAt != null;
 
   useEffect(() => {
+    // Restore uses an absolute store clock — don't reset on Strict remount.
+    if (isRestore) {
+      finished.current = false;
+      released.current = false;
+      return;
+    }
     finished.current = false;
-    startedAt.current = performance.now();
+    released.current = delayMs <= 0;
+    bornAt.current = performance.now();
+    fallStartedAt.current = bornAt.current;
     if (meshRef.current) {
       meshRef.current.position.set(tx, spawnY, tz);
       meshRef.current.scale.set(1, 1, 1);
+      meshRef.current.visible = delayMs <= 0;
     }
-  }, [tx, spawnY, tz, entry.key]);
+  }, [tx, spawnY, tz, entry.key, delayMs, isRestore]);
 
   useFrame(() => {
     if (finished.current || !meshRef.current) return;
-    const t = (performance.now() - startedAt.current) / 1000;
     const mesh = meshRef.current;
     const mat = mesh.material as MeshStandardMaterial;
+    const now = performance.now();
+
+    let t: number;
+    if (isRestore && restoreStartedAt != null) {
+      const elapsed = now - restoreStartedAt;
+      if (elapsed < delayMs) {
+        mesh.visible = false;
+        return;
+      }
+      if (!released.current) {
+        released.current = true;
+        mesh.visible = true;
+      }
+      t = (elapsed - delayMs) / 1000;
+    } else {
+      if (!released.current) {
+        if (now - bornAt.current < delayMs) {
+          mesh.visible = false;
+          return;
+        }
+        released.current = true;
+        fallStartedAt.current = now;
+        mesh.visible = true;
+        mesh.position.set(tx, spawnY, tz);
+        mesh.scale.set(1, 1, 1);
+      }
+      t = (now - fallStartedAt.current) / 1000;
+    }
 
     if (t >= plan.totalDuration) {
       finished.current = true;
+      mesh.visible = true;
       mesh.position.set(tx, ty, tz);
       mesh.scale.set(1, 1, 1);
       mat.emissiveIntensity = baseEmissive;
-      finishDrop();
+      if (isRestore) {
+        finishRestoreBall(entry.key);
+      } else {
+        finishDrop();
+      }
       return;
     }
 
+    mesh.visible = true;
     const y = sampleDropY(plan.phases, ty, g, t);
     mesh.position.set(tx, y, tz);
 
@@ -181,7 +234,12 @@ function FallingMarker({
   });
 
   return (
-    <mesh ref={meshRef} position={[tx, spawnY, tz]} castShadow={false}>
+    <mesh
+      ref={meshRef}
+      position={[tx, spawnY, tz]}
+      castShadow={false}
+      visible={!isRestore && delayMs <= 0}
+    >
       <sphereGeometry args={[MARKER_RADIUS, 24, 18]} />
       <meshStandardMaterial
         color={color}
@@ -254,6 +312,7 @@ export function PhysicsMarkers({ dims, spacing = 1 }: PhysicsMarkersProps) {
   const winningLine = useGameStore((s) => s.winningLine);
   const winningCell = useGameStore((s) => s.winningCell);
   const fallingKey = useGameStore((s) => s.fallingKey);
+  const restoreFallingKeys = useGameStore((s) => s.restoreFallingKeys);
 
   const winSet = useMemo(() => {
     const set = new Set<string>();
@@ -265,20 +324,35 @@ export function PhysicsMarkers({ dims, spacing = 1 }: PhysicsMarkersProps) {
     ? cellKey(winningCell.x, winningCell.y, winningCell.z)
     : null;
 
+  const restoreDelayByKey = useMemo(() => {
+    const map = new Map<string, number>();
+    if (!restoreFallingKeys || restoreFallingKeys.length === 0) return map;
+    const n = restoreFallingKeys.length;
+    const step = n <= 1 ? 0 : RESTORE_STAGGER_MAX_MS / (n - 1);
+    restoreFallingKeys.forEach((key, i) => {
+      map.set(key, i * step);
+    });
+    return map;
+  }, [restoreFallingKeys]);
+
   const entries = useMemo(() => {
     const list: MarkerEntry[] = [];
+    const restoreSet = restoreFallingKeys ? new Set(restoreFallingKeys) : null;
     for (const [key, player] of board) {
+      const restoreDelay = restoreDelayByKey.get(key);
+      const restoring = restoreSet?.has(key) ?? false;
       list.push({
         key,
         coord: parseCellKey(key),
         player,
         winning: winSet.has(key),
         winningMove: key === winningMoveKey,
-        falling: key === fallingKey,
+        falling: key === fallingKey || restoring,
+        delayMs: restoreDelay ?? 0,
       });
     }
     return list;
-  }, [board, winSet, winningMoveKey, fallingKey]);
+  }, [board, winSet, winningMoveKey, fallingKey, restoreFallingKeys, restoreDelayByKey]);
 
   return (
     <>

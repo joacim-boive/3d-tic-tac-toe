@@ -325,6 +325,45 @@ button {
   transform: scale(0.98);
 }
 
+.setup__restore {
+  margin-top: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  padding: 1rem 1.05rem;
+  border-radius: var(--radius);
+  border: 1px solid var(--line);
+  background: rgba(22, 32, 41, 0.75);
+}
+
+.setup__restore-title {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: 1.15rem;
+  font-weight: 700;
+}
+
+.setup__restore-detail {
+  margin: 0.25rem 0 0;
+  color: var(--ink-muted);
+  font-size: 0.92rem;
+  line-height: 1.35;
+}
+
+.setup__restore-actions {
+  display: flex;
+  gap: 0.55rem;
+}
+
+.setup__restore-actions .setup__start,
+.setup__restore-actions .setup__secondary {
+  margin-top: 0;
+  flex: 1;
+  padding: 0.7rem 1rem;
+  min-height: 44px;
+  font-size: 0.95rem;
+}
+
 .lobby__code {
   margin: 0;
   font-family: var(--font-display);

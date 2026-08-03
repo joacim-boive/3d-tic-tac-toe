@@ -33,6 +33,11 @@ import {
   type SwarmPlan,
   type SwarmTapOutcome,
 } from "./powerUps";
+import {
+  clearSavedGameFromStorage,
+  writeSavedGameToStorage,
+  type SavedGame,
+} from "./savedGame";
 import { readSetupPrefsFromStorage, writeSetupPrefsToStorage, type SetupPrefs } from "./setupPrefs";
 import {
   IDENTITY_TIP_EULER,
@@ -123,6 +128,61 @@ function persistSetupPrefs(state: {
   writeSetupPrefsToStorage(prefs);
 }
 
+function snapshotLocalGame(state: {
+  playMode: PlayMode;
+  status: GameStatus;
+  occupiedCount: number;
+  tipFalling: boolean;
+  powerUpMode: PowerUpMode;
+  swarmBusy: boolean;
+  presetId: PresetId;
+  placement: PlacementMode;
+  aiDifficulty: AiDifficulty;
+  powerUpsEnabled: boolean;
+  board: Board;
+  currentPlayer: PlayerId;
+  startingPlayer: PlayerId;
+  inventory: PowerUpInventory;
+  bonusPlacesRemaining: number;
+}): SavedGame | null {
+  if (state.playMode !== "hotseat" && state.playMode !== "ai") return null;
+  if (state.status !== "playing" || state.occupiedCount <= 0) return null;
+  // Skip mid-animation / mode boards — wait for a settled frame.
+  if (state.tipFalling || state.powerUpMode || state.swarmBusy) return null;
+  return {
+    presetId: state.presetId,
+    playMode: state.playMode,
+    placement: state.placement,
+    aiDifficulty: state.aiDifficulty,
+    powerUpsEnabled: state.powerUpsEnabled,
+    board: Array.from(state.board.entries()),
+    occupiedCount: state.occupiedCount,
+    currentPlayer: state.currentPlayer,
+    startingPlayer: state.startingPlayer,
+    inventory: cloneInventory(state.inventory),
+    bonusPlacesRemaining: state.bonusPlacesRemaining,
+  };
+}
+
+function persistLocalGame(state: Parameters<typeof snapshotLocalGame>[0]) {
+  const snap = snapshotLocalGame(state);
+  if (snap) writeSavedGameToStorage(snap);
+  else if (state.playMode === "hotseat" || state.playMode === "ai") {
+    if (state.status !== "playing" || state.occupiedCount <= 0) {
+      clearSavedGameFromStorage();
+    }
+  }
+}
+
+/** Bottom-up column order so stacked restore drops read as packing, not chaos. */
+function restoreDropOrder(board: Board): string[] {
+  return Array.from(board.keys()).sort((a, b) => {
+    const [ax, ay, az] = a.split(",").map(Number);
+    const [bx, by, bz] = b.split(",").map(Number);
+    return (ay! - by!) || (ax! - bx!) || (az! - bz!);
+  });
+}
+
 type GamePhase = "setup" | "lobby" | "playing";
 
 type GameState = {
@@ -203,6 +263,13 @@ type GameState = {
   fallingKey: string | null;
   /** Drop mode: block new places until the falling marker settles. */
   dropBusy: boolean;
+  /**
+   * Ordered keys animating in after a restore (staggered drop). Null when idle.
+   * Kept stable until every ball settles — mutating mid-flight restarts delays.
+   */
+  restoreFallingKeys: string[] | null;
+  /** performance.now() when restore drop-in began; absolute timeline for remounts. */
+  restoreStartedAt: number | null;
   localName: string;
   playerNames: PlayerNames;
   roomId: string | null;
@@ -221,6 +288,8 @@ type GameState = {
   setCursor: (coord: CellCoord) => void;
   nudgeCursor: (dx: number, dy: number, dz: number) => void;
   startGame: () => void;
+  /** Hydrate a matching local saved game and play staggered drop-in. */
+  restoreGame: (saved: SavedGame) => void;
   /** Clear the board and swap who opens (local rematch). */
   rematch: () => void;
   returnToSetup: () => void;
@@ -228,6 +297,8 @@ type GameState = {
   place: (coord: CellCoord) => boolean;
   applyRemotePlace: (coord: CellCoord, by: PlayerId) => boolean;
   finishDrop: () => void;
+  /** One restored ball finished its drop-in bounce. */
+  finishRestoreBall: (key: string) => void;
   displayName: (player: PlayerId) => string;
   beginOnlineLobby: (roomId: string, seat: PlayerId, name: string) => void;
   startOnlineGame: (names: PlayerNames, presetId: PresetId, placement?: PlacementMode) => void;
@@ -293,6 +364,16 @@ type GameState = {
 let aiTimer: ReturnType<typeof setTimeout> | null = null;
 let inventoryPulseTimer: ReturnType<typeof setTimeout> | null = null;
 let inventoryPulseSeq = 0;
+/** Keys that already reported settle for the current restore — survives Strict remounts. */
+let restoreSettledKeys = new Set<string>();
+
+function clearRestoreSession() {
+  restoreSettledKeys = new Set();
+}
+
+function beginRestoreSession() {
+  restoreSettledKeys = new Set();
+}
 
 function clearInventoryPulseTimer() {
   if (inventoryPulseTimer) {
@@ -467,6 +548,10 @@ function scheduleAiMove(get: () => GameState, set: (partial: Partial<GameState>)
       scheduleAiMove(get, set);
       return;
     }
+    if (state.restoreFallingKeys) {
+      scheduleAiMove(get, set);
+      return;
+    }
 
     maybeAiSpendPowerUp(get, set);
 
@@ -491,6 +576,7 @@ function scheduleAiMove(get: () => GameState, set: (partial: Partial<GameState>)
     if (!move) return;
 
     applyPlace(get, set, move, AI_PLAYER);
+    persistLocalGame(get());
   }, thinkDelay);
 }
 
@@ -591,6 +677,7 @@ function finishPowerUpBoard(
       ...tipReset,
     });
     if (state.playMode === "online") localStateSyncPublisher?.();
+    else persistLocalGame(get());
     return;
   }
 
@@ -617,6 +704,7 @@ function finishPowerUpBoard(
       ...tipReset,
     });
     if (state.playMode === "online") localStateSyncPublisher?.();
+    else persistLocalGame(get());
     return;
   }
 
@@ -645,6 +733,8 @@ function finishPowerUpBoard(
   }
   if (state.playMode === "online") {
     localStateSyncPublisher?.();
+  } else {
+    persistLocalGame(get());
   }
 }
 
@@ -712,6 +802,7 @@ function applyPlace(
   if (state.status !== "playing" || state.phase !== "playing") return false;
   if (state.playMode === "online" && state.onlineStatus === "paused") return false;
   if (state.dropBusy || state.swarmBusy || state.tipFalling) return false;
+  if (state.restoreFallingKeys) return false;
   if (state.powerUpMode === "clear-row" || state.powerUpMode === "tip") return false;
 
   const preset = getPreset(state.presetId);
@@ -862,6 +953,8 @@ export const useGameStore = create<GameState>((set, get) => ({
   aiming: false,
   fallingKey: null,
   dropBusy: false,
+  restoreFallingKeys: null,
+  restoreStartedAt: null,
   localName: "",
   playerNames: { ...EMPTY_NAMES },
   roomId: null,
@@ -1602,6 +1695,8 @@ export const useGameStore = create<GameState>((set, get) => ({
   startGame: () => {
     clearAiTimer();
     clearInventoryPulseTimer();
+    clearSavedGameFromStorage();
+    clearRestoreSession();
     const state = get();
     const dims = getPreset(state.presetId).dims;
     const placement = state.placement;
@@ -1626,6 +1721,8 @@ export const useGameStore = create<GameState>((set, get) => ({
       aiming: false,
       fallingKey: null,
       dropBusy: false,
+      restoreFallingKeys: null,
+      restoreStartedAt: null,
       powerUpsEnabled,
       inventory: emptyInventory(),
       bonusPlacesRemaining: 0,
@@ -1645,9 +1742,73 @@ export const useGameStore = create<GameState>((set, get) => ({
     });
   },
 
+  restoreGame: (saved) => {
+    clearAiTimer();
+    clearInventoryPulseTimer();
+    const dims = getPreset(saved.presetId).dims;
+    const board: Board = new Map(saved.board);
+    const hotseat = saved.playMode === "hotseat";
+    const powerUpsEnabled = hotseat ? false : saved.powerUpsEnabled;
+    const restoreKeys = restoreDropOrder(board);
+    const startCursor =
+      saved.placement === "drop"
+        ? snapDropCursor(centerCell(dims), board, dims)
+        : centerCell(dims);
+    const animating = restoreKeys.length > 0;
+    if (animating) beginRestoreSession();
+    else clearRestoreSession();
+    set({
+      phase: "playing",
+      playMode: saved.playMode,
+      presetId: saved.presetId,
+      placement: saved.placement,
+      aiDifficulty: saved.aiDifficulty,
+      powerUpsEnabled,
+      board,
+      occupiedCount: saved.occupiedCount,
+      startingPlayer: saved.startingPlayer,
+      currentPlayer: saved.currentPlayer,
+      status: "playing",
+      winner: null,
+      winningLine: [],
+      winningCell: null,
+      lastPlaced: null,
+      cursor: startCursor,
+      aiming: false,
+      fallingKey: null,
+      dropBusy: animating,
+      restoreFallingKeys: animating ? restoreKeys : null,
+      restoreStartedAt: animating ? performance.now() : null,
+      inventory: cloneInventory(saved.inventory),
+      bonusPlacesRemaining: saved.bonusPlacesRemaining,
+      pendingSwarmEarner: null,
+      swarm: null,
+      swarmBusy: false,
+      swarmPopped: {},
+      powerUpMode: null,
+      powerUpToast: null,
+      inventoryPulse: null,
+      watchPowerUp: null,
+      swarmAiResult: null,
+      swarmCooldownUntilPly: 0,
+      tipEuler: { ...IDENTITY_TIP_EULER },
+      tipTargetEuler: { ...IDENTITY_TIP_EULER },
+      tipFalling: false,
+      tipCheckpoint: null,
+      tipDirty: false,
+    });
+    if (!animating) {
+      const next = get();
+      if (next.playMode === "ai" && next.currentPlayer === AI_PLAYER) {
+        scheduleAiMove(get, set);
+      }
+    }
+  },
+
   rematch: () => {
     clearAiTimer();
     clearInventoryPulseTimer();
+    clearSavedGameFromStorage();
     const state = get();
     const dims = getPreset(state.presetId).dims;
     const nextStarter = opponentOf(state.startingPlayer);
@@ -1672,6 +1833,8 @@ export const useGameStore = create<GameState>((set, get) => ({
       aiming: false,
       fallingKey: null,
       dropBusy: false,
+      restoreFallingKeys: null,
+      restoreStartedAt: null,
       powerUpsEnabled,
       inventory: emptyInventory(),
       bonusPlacesRemaining: 0,
@@ -1697,6 +1860,10 @@ export const useGameStore = create<GameState>((set, get) => ({
   returnToSetup: () => {
     clearAiTimer();
     clearInventoryPulseTimer();
+    const state = get();
+    if (state.playMode === "hotseat" || state.playMode === "ai") {
+      persistLocalGame(state);
+    }
     set({
       phase: "setup",
       board: createEmptyBoard(),
@@ -1711,6 +1878,8 @@ export const useGameStore = create<GameState>((set, get) => ({
       aiming: false,
       fallingKey: null,
       dropBusy: false,
+      restoreFallingKeys: null,
+      restoreStartedAt: null,
       inventory: emptyInventory(),
       bonusPlacesRemaining: 0,
       pendingSwarmEarner: null,
@@ -1780,6 +1949,8 @@ export const useGameStore = create<GameState>((set, get) => ({
       aiming: false,
       fallingKey: null,
       dropBusy: false,
+      restoreFallingKeys: null,
+      restoreStartedAt: null,
       inventory: emptyInventory(),
       bonusPlacesRemaining: 0,
       pendingSwarmEarner: null,
@@ -1847,6 +2018,8 @@ export const useGameStore = create<GameState>((set, get) => ({
       aiming: false,
       fallingKey: null,
       dropBusy: false,
+      restoreFallingKeys: null,
+      restoreStartedAt: null,
       inventory: emptyInventory(),
       bonusPlacesRemaining: 0,
       pendingSwarmEarner: null,
@@ -1892,6 +2065,8 @@ export const useGameStore = create<GameState>((set, get) => ({
       aiming: false,
       fallingKey: null,
       dropBusy: false,
+      restoreFallingKeys: null,
+      restoreStartedAt: null,
       inventory: emptyInventory(),
       bonusPlacesRemaining: 0,
       pendingSwarmEarner: null,
@@ -2000,6 +2175,8 @@ export const useGameStore = create<GameState>((set, get) => ({
       aiming: false,
       fallingKey: null,
       dropBusy: false,
+      restoreFallingKeys: null,
+      restoreStartedAt: null,
       onlineStatus,
       opponentConnected: true,
     });
@@ -2014,6 +2191,7 @@ export const useGameStore = create<GameState>((set, get) => ({
     const state = get();
     if (state.status !== "playing") return false;
     if (state.dropBusy || state.swarmBusy || state.tipFalling) return false;
+    if (state.restoreFallingKeys) return false;
     if (state.watchTipPlayback) return false;
     if (state.powerUpMode === "clear-row" || state.powerUpMode === "tip") return false;
     if (state.playMode === "ai" && state.currentPlayer !== HUMAN) return false;
@@ -2023,6 +2201,7 @@ export const useGameStore = create<GameState>((set, get) => ({
     }
     const by = state.currentPlayer;
     const ok = applyPlace(get, set, coord, by);
+    if (ok) persistLocalGame(get());
     if (ok && state.playMode === "online") {
       const landed = get().cursor;
       localPlacePublisher?.(landed, by);
@@ -2040,6 +2219,7 @@ export const useGameStore = create<GameState>((set, get) => ({
   finishDrop: () => {
     const state = get();
     if (!state.dropBusy && state.fallingKey == null) return;
+    if (state.restoreFallingKeys) return;
     const earner = state.pendingSwarmEarner;
     const dims = getPreset(state.presetId).dims;
     // Leave the settled ball — snap aim to the next free cell in that column
@@ -2056,6 +2236,28 @@ export const useGameStore = create<GameState>((set, get) => ({
         maybeStartSwarm(get, set, earner);
       }
     }
+    const next = get();
+    if (
+      next.status === "playing" &&
+      next.playMode === "ai" &&
+      next.currentPlayer === AI_PLAYER &&
+      !next.swarmBusy
+    ) {
+      scheduleAiMove(get, set);
+    }
+  },
+
+  finishRestoreBall: (key) => {
+    const state = get();
+    const keys = state.restoreFallingKeys;
+    if (!keys || keys.length === 0) return;
+    if (restoreSettledKeys.has(key)) return;
+    restoreSettledKeys.add(key);
+    // Keep restoreFallingKeys stable until the last ball lands — shrinking the
+    // list reshuffles stagger delays and restarts every remaining marker.
+    if (restoreSettledKeys.size < keys.length) return;
+    clearRestoreSession();
+    set({ restoreFallingKeys: null, restoreStartedAt: null, dropBusy: false });
     const next = get();
     if (
       next.status === "playing" &&

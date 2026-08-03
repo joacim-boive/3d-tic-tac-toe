@@ -156,7 +156,7 @@ export function Grid({ dims, spacing = 1 }: GridProps) {
         .replace(
           "#include <color_fragment>",
           `#include <color_fragment>
-           float depthKeep = mix( 0.32, 1.0, vDepthFade );
+           float depthKeep = mix( 0.38, 1.0, vDepthFade );
            diffuseColor.a *= depthKeep * vSliceFade;`,
         );
     };
@@ -191,9 +191,9 @@ export function Grid({ dims, spacing = 1 }: GridProps) {
     <lineSegments geometry={geometry}>
       <lineBasicMaterial
         ref={materialRef}
-        color="#8a9bab"
+        color="#a8b6c4"
         transparent
-        opacity={0.48}
+        opacity={0.62}
         depthWrite={false}
       />
     </lineSegments>

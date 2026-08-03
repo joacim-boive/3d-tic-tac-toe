@@ -114,6 +114,8 @@ export function TipBoardFrame({ dims, dropMode }: TipBoardFrameProps) {
 
   const tipMode = powerUpMode === "tip";
   const tipVisual = tipMode || watchTipPlayback;
+  const restoring = useGameStore((s) => s.restoreFallingKeys != null);
+  const useDropMarkers = dropMode || restoring;
   const displayQuat = useRef(new Quaternion());
   const targetQuat = useRef(new Quaternion());
   /** Once commit fall starts, stay upright until tip UI fully exits — no re-aim snap. */
@@ -241,11 +243,11 @@ export function TipBoardFrame({ dims, dropMode }: TipBoardFrameProps) {
       <group ref={groupRef}>
         <Grid dims={dims} />
         <ActiveSlice dims={dims} />
-        {!tipVisual && !tipFalling ? <SelectionCursor dims={dims} /> : null}
+        {!tipVisual && !tipFalling && !restoring ? <SelectionCursor dims={dims} /> : null}
         <ClearRowHighlight dims={dims} />
         <TipFloorHint dims={dims} />
 
-        {dropMode ? (
+        {useDropMarkers ? (
           <Physics gravity={DROP_GRAVITY} colliders={false}>
             <BoardColliders dims={dims} />
             {!tipFalling ? <PhysicsMarkers dims={dims} /> : null}
