@@ -17,16 +17,20 @@ import {
   SWARM_MIN_PLY,
   SWARM_PACKAGE_COUNT,
   aiCatchRoll,
+  aiGrabDelayMs,
   awardPowerUp,
   createPowerUpRng,
   emptyCounts,
   hasInventoryRoom,
   isPowerUpAllowed,
+  pickAiSwarmTarget,
   pickRandomKind,
   planSwarm,
   powerUpsForPreset,
+  raceEndPopped,
   shouldAttemptSwarm,
   spendPowerUp,
+  SWARM_DURATION_MS,
   underCapKinds,
 } from "./powerUps";
 import {
@@ -171,6 +175,48 @@ function testAiCatch() {
   for (let i = 0; i < 3000; i++) if (aiCatchRoll(rng)) hits++;
   assert(hits > 1200 && hits < 1800, `ai catch ~1/2, got ${hits}/3000`);
   assert(typeof yes() === "number", "rng works");
+}
+
+function testRaceEndPopped() {
+  const plan = planSwarm(11, "a", createPowerUpRng(11));
+  const live = plan.liveIndex;
+  const dudFirst = ((live + 1) % SWARM_PACKAGE_COUNT) as 0 | 1 | 2;
+
+  const afterDud = raceEndPopped(plan, { [dudFirst]: "dud" }, "claim");
+  assert(afterDud[live] === "claim", "live stamped claim");
+  assert(afterDud[dudFirst] === "dud", "prior dud kept");
+  for (const pkg of plan.packages) {
+    assert(afterDud[pkg.id] != null, `pkg ${pkg.id} popped`);
+  }
+
+  const denyAll = raceEndPopped(plan, {}, "deny");
+  assert(denyAll[live] === "deny", "live stamped deny");
+  assert(
+    plan.packages.filter((p) => denyAll[p.id] === "dud").length === SWARM_PACKAGE_COUNT - 1,
+    "others are duds",
+  );
+}
+
+function testAiGrabDelay() {
+  const plan = planSwarm(5, "b", createPowerUpRng(5));
+  const live = plan.packages[plan.liveIndex]!;
+  const delay = aiGrabDelayMs(plan, createPowerUpRng(5));
+  const flight = SWARM_DURATION_MS * live.speed;
+  assert(delay >= live.delayMs + flight * 0.12 - 1, "grab after 12% flight");
+  assert(delay <= live.delayMs + flight * 0.67 + 1, "grab before 67% flight");
+}
+
+function testPickAiSwarmTarget() {
+  const plan = planSwarm(8, "a", createPowerUpRng(8));
+  const ids = new Set(plan.packages.map((p) => p.id));
+  let liveHits = 0;
+  const rng = createPowerUpRng(42);
+  for (let i = 0; i < 400; i++) {
+    const target = pickAiSwarmTarget(plan, rng);
+    assert(ids.has(target), "target is a package id");
+    if (target === plan.liveIndex) liveHits++;
+  }
+  assert(liveHits > 140 && liveHits < 260, `AI aims live ~1/2, got ${liveHits}/400`);
 }
 
 function testClearCursorAxis() {
@@ -328,6 +374,9 @@ testPlanSwarmDeterministic();
 testPickKindRespectsCap();
 testExtraTurnBannedOn3x3x3();
 testAiCatch();
+testRaceEndPopped();
+testAiGrabDelay();
+testPickAiSwarmTarget();
 testClearCursorAxis();
 testClearAndRepack();
 testTipCube();

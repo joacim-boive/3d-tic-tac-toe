@@ -19,7 +19,7 @@ export const SWARM_CHANCE = 0.2;
 /** After any successful catch, block new swarms for this many plies. */
 export const SWARM_COOLDOWN_PLIES = 5;
 /**
- * AI catch success when the human misses the live pack.
+ * Chance the AI aims at the live pack (else a dud) when racing the human.
  * ~0.5 ≈ a sharp human who usually lands a good first or second tap in time.
  */
 export const AI_CATCH_CHANCE = 0.5;
@@ -212,6 +212,43 @@ export function planSwarm(seed: number, earner: PlayerId, rng: Rng): SwarmPlan {
 
 export function aiCatchRoll(rng: Rng): boolean {
   return rng() < AI_CATCH_CHANCE;
+}
+
+/** Which package the AI will tap in the race (live on skill roll, else a dud). */
+export function pickAiSwarmTarget(plan: SwarmPlan, rng: Rng): number {
+  if (aiCatchRoll(rng)) return plan.liveIndex;
+  const duds = plan.packages.map((p) => p.id).filter((id) => id !== plan.liveIndex);
+  return duds[Math.floor(rng() * duds.length)]!;
+}
+
+/**
+ * Live claim/deny ends the race: stamp the live outcome and mark every other
+ * still-flying pack as a dud so the 3D shatter FX can fire for all of them
+ * before (or as) the swarm clears.
+ */
+export function raceEndPopped(
+  plan: SwarmPlan,
+  existing: Record<number, SwarmTapOutcome>,
+  liveOutcome: "claim" | "deny",
+): Record<number, SwarmTapOutcome> {
+  const next: Record<number, SwarmTapOutcome> = {
+    ...existing,
+    [plan.liveIndex]: liveOutcome,
+  };
+  for (const pkg of plan.packages) {
+    if (next[pkg.id] == null) next[pkg.id] = "dud";
+  }
+  return next;
+}
+
+/**
+ * AI reaction time — wide band so either seat can win the race.
+ * Timed against the live pack’s flight so a win still shatters on-screen.
+ */
+export function aiGrabDelayMs(plan: SwarmPlan, rng: Rng): number {
+  const live = plan.packages[plan.liveIndex]!;
+  const flight = SWARM_DURATION_MS * live.speed;
+  return Math.floor(live.delayMs + flight * (0.12 + rng() * 0.55));
 }
 
 /** Mulberry32 — shared tiny PRNG. */

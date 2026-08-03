@@ -80,7 +80,7 @@ export function GameChrome({ children }: GameChromeProps) {
   } else if (tipFalling) {
     statusText = "Balls falling…";
   } else if (watchTipPlayback) {
-    statusText = playMode === "ai" ? "Cyan tipping…" : "Opponent tipping…";
+    statusText = playMode === "ai" ? `${displayName("b")} tipping…` : "Opponent tipping…";
   } else if (watchPowerUp?.kind === "clear-row") {
     statusText = `${displayName(watchPowerUp.by)} aiming Clear…`;
   } else if (watchPowerUp?.kind === "tip") {
@@ -90,7 +90,7 @@ export function GameChrome({ children }: GameChromeProps) {
   } else if (bonusPlacesRemaining > 0) {
     statusText = `${displayName(currentPlayer)} — extra place`;
   } else if (playMode === "ai" && currentPlayer === "b") {
-    statusText = "Cyan is thinking…";
+    statusText = `${displayName("b")} is thinking…`;
   } else {
     statusText =
       placement === "drop"

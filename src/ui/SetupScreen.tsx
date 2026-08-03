@@ -89,7 +89,7 @@ export function SetupScreen() {
         </div>
         <h1 className="setup__title">3D Tic-Tac-Toe</h1>
         <p className="setup__lede">
-          Spin the cube. Drop or place coral and cyan. First to the line wins.
+          Spin the cube. Drop or place marks. First to the line wins.
         </p>
       </header>
 

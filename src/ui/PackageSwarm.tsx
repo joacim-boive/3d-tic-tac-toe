@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import { SWARM_DURATION_MS } from "@/game/powerUps";
+import { aiGrabDelayMs, createPowerUpRng, SWARM_DURATION_MS } from "@/game/powerUps";
 import { useGameStore } from "@/game/store";
 
 /**
@@ -12,25 +12,43 @@ export function PackageSwarm() {
   const swarm = useGameStore((s) => s.swarm);
   const swarmBusy = useGameStore((s) => s.swarmBusy);
   const swarmPopped = useGameStore((s) => s.swarmPopped);
+  const swarmAiResult = useGameStore((s) => s.swarmAiResult);
   const playMode = useGameStore((s) => s.playMode);
   const endSwarm = useGameStore((s) => s.endSwarm);
+  const catchSwarmPackage = useGameStore((s) => s.catchSwarmPackage);
   const ended = useRef(false);
 
   useEffect(() => {
     ended.current = false;
     if (!swarm || !swarmBusy) return;
     const maxDelay = Math.max(...swarm.packages.map((p) => p.delayMs));
-    const t = window.setTimeout(
-      () => {
-        if (!ended.current) {
-          ended.current = true;
-          endSwarm();
-        }
-      },
-      SWARM_DURATION_MS + maxDelay + 120,
-    );
-    return () => window.clearTimeout(t);
-  }, [swarm, swarmBusy, endSwarm]);
+    const fullMs = SWARM_DURATION_MS + maxDelay + 120;
+    const seed = swarm.seed;
+    const aiTarget = swarmAiResult?.targetIndex;
+
+    // vs AI: AI races the human — taps its aimed package after a reaction delay.
+    // Dud taps leave the live pack in play; live claim/deny ends the race.
+    let aiTimer: number | undefined;
+    if (playMode === "ai" && aiTarget != null) {
+      const grabAt = aiGrabDelayMs(swarm, createPowerUpRng(seed ^ 0xc2b2ae35));
+      aiTimer = window.setTimeout(() => {
+        const s = useGameStore.getState();
+        if (!s.swarmBusy || !s.swarm || s.swarm.seed !== seed) return;
+        catchSwarmPackage(aiTarget, "b");
+      }, Math.min(grabAt, fullMs - 80));
+    }
+
+    const t = window.setTimeout(() => {
+      if (!ended.current) {
+        ended.current = true;
+        endSwarm();
+      }
+    }, fullMs);
+    return () => {
+      window.clearTimeout(t);
+      if (aiTimer !== undefined) window.clearTimeout(aiTimer);
+    };
+  }, [swarm, swarmBusy, swarmAiResult, playMode, endSwarm, catchSwarmPackage]);
 
   useEffect(() => {
     if (!swarm) return;

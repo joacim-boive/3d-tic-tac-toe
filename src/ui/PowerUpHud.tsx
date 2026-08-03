@@ -4,7 +4,7 @@ import { getPreset } from "@/game/presets";
 import { POWER_UP_LABELS, powerUpsForPreset, type PowerUpId } from "@/game/powerUps";
 import { useGameStore } from "@/game/store";
 import { canTipPreset } from "@/game/tipBoard";
-import { PLAYER_COLORS, PLAYER_LABELS, type PlayerId } from "@/game/types";
+import { PLAYER_COLORS, type PlayerId } from "@/game/types";
 import { clearFixedFromCursor, type Axis } from "@/game/clearRow";
 
 function InventoryRow({ player, actionable }: { player: PlayerId; actionable: boolean }) {
@@ -14,6 +14,7 @@ function InventoryRow({ player, actionable }: { player: PlayerId; actionable: bo
   const powerUpMode = useGameStore((s) => s.powerUpMode);
   const bonusPlacesRemaining = useGameStore((s) => s.bonusPlacesRemaining);
   const presetId = useGameStore((s) => s.presetId);
+  const displayName = useGameStore((s) => s.displayName);
   const dims = getPreset(presetId).dims;
   const kinds = powerUpsForPreset(presetId);
   const rowAwarded = pulse?.by === player;
@@ -23,7 +24,7 @@ function InventoryRow({ player, actionable }: { player: PlayerId; actionable: bo
       className={`powerups__row${rowAwarded ? " is-awarded" : ""}`}
       style={{ ["--seat" as string]: PLAYER_COLORS[player] }}
     >
-      <span className="powerups__who">{PLAYER_LABELS[player]}</span>
+      <span className="powerups__who">{displayName(player)}</span>
       <div className="powerups__chips">
         {kinds.map((id) => {
           const count = inventory[id];

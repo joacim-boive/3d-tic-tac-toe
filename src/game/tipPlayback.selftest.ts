@@ -76,7 +76,10 @@ function testAiTipPlaybackSpendsAndHandsOff() {
   assert(!s.tipFalling, "fall cleared");
   assert(s.currentPlayer === "a", "hand off to human after AI tip");
   assert(s.inventory.b.tip === invBefore.b.tip - 1, "AI tip spent on settle");
-  assert(s.powerUpToast === "Cyan tipped the field", "toast after settle");
+  assert(
+    s.powerUpToast === `${s.displayName("b")} tipped the field`,
+    "toast after settle",
+  );
   assert(s.board.size === expected.size, "board remapped");
   for (const [k, p] of expected) {
     assert(s.board.get(k) === p, `cell ${k} matches tip remap`);

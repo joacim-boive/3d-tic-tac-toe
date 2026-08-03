@@ -13,8 +13,8 @@ import {
 } from "./board";
 import { clearAxisLine, nextClearAxis, repackDrop, type Axis } from "./clearRow";
 import { getPreset, resolvePresetId } from "./presets";
+import { nextVsAiNames } from "./playerAliases";
 import {
-  aiCatchRoll,
   awardPowerUp,
   canSpend,
   cloneInventory,
@@ -22,8 +22,10 @@ import {
   emptyInventory,
   hasInventoryRoom,
   isPowerUpAllowed,
+  pickAiSwarmTarget,
   pickRandomKind,
   planSwarm,
+  raceEndPopped,
   randomSeed,
   shouldAttemptSwarm,
   spendPowerUp,
@@ -229,8 +231,8 @@ type GameState = {
     bonusPlacesRemaining: number;
     onlineStatus: OnlineStatus;
   } | null;
-  /** Precomputed AI catch attempt if the human never taps the live package. */
-  swarmAiResult: { caught: boolean; kind?: PowerUpId } | null;
+  /** vs AI: which package the AI will tap in the race (null outside AI swarms). */
+  swarmAiResult: { targetIndex: number } | null;
   /** Block new swarms until occupiedCount reaches this (0 = none). */
   swarmCooldownUntilPly: number;
   /** Current snapped tip orientation (tip mode). */
@@ -607,14 +609,21 @@ function maybeAiSpendPowerUp(get: () => GameState, set: (partial: Partial<GameSt
     if (!spent) return;
     let board = clearAxisLine(state.board, dims, decision.axis, decision.a, decision.b);
     if (state.placement === "drop") board = repackDrop(board, dims);
-    finishPowerUpBoard(get, set, board, AI_PLAYER, spent, "Cyan cleared a row");
+    finishPowerUpBoard(
+      get,
+      set,
+      board,
+      AI_PLAYER,
+      spent,
+      `${get().displayName(AI_PLAYER)} cleared a row`,
+    );
     return;
   }
 
   if (decision.action === "tip") {
     const tipEuler = eulerForTipDown(decision.toDown);
     // Same rotate → ball-drop playback as an online opponent commit.
-    // Toast after settle (finishPowerUpBoard); status shows "Cyan tipping…" meanwhile.
+    // Toast after settle (finishPowerUpBoard); status shows "{AI} tipping…" meanwhile.
     set({
       powerUpToast: null,
       watchPowerUp: null,
@@ -769,16 +778,11 @@ function maybeStartSwarm(
 
   const plan = planSwarm(seed, earner, createPowerUpRng(seed ^ 0x9e3779b9));
 
-  // vs AI: human may claim or deny; if they never hit the live pack, AI rolls luck on timeout.
+  // vs AI: both race — AI taps a pre-aimed package after a reaction delay.
   let swarmAiResult: GameState["swarmAiResult"] = null;
   if (state.playMode === "ai") {
     const catchRng = createPowerUpRng(seed ^ 0x85ebca6b);
-    const caught = aiCatchRoll(catchRng);
-    let kind: PowerUpId | undefined;
-    if (caught) {
-      kind = pickRandomKind(state.inventory.b, catchRng, state.presetId) ?? undefined;
-    }
-    swarmAiResult = { caught: Boolean(caught && kind), kind };
+    swarmAiResult = { targetIndex: pickAiSwarmTarget(plan, catchRng) };
   }
 
   set({
@@ -1355,7 +1359,14 @@ export const useGameStore = create<GameState>((set, get) => ({
           });
           return;
         }
-        finishPowerUpBoard(get, set, board, AI_PLAYER, spent, "Cyan tipped the field");
+        finishPowerUpBoard(
+          get,
+          set,
+          board,
+          AI_PLAYER,
+          spent,
+          `${get().displayName(AI_PLAYER)} tipped the field`,
+        );
         return;
       }
       // Online spectator fallback if state sync never arrived.
@@ -1416,7 +1427,7 @@ export const useGameStore = create<GameState>((set, get) => ({
     const plan = state.swarm;
     if (state.swarmPopped[index]) return;
     if (state.playMode === "online" && state.seat !== by) return;
-    if (state.playMode === "ai" && by !== HUMAN) return;
+    if (state.playMode === "ai" && by !== HUMAN && by !== AI_PLAYER) return;
 
     // Dud — pop for everyone, swarm continues.
     if (index !== plan.liveIndex) {
@@ -1435,11 +1446,10 @@ export const useGameStore = create<GameState>((set, get) => ({
       state.presetId,
     );
     if (!kind || !hasInventoryRoom(state.inventory[by], state.presetId)) {
-      const swarmPopped = { ...state.swarmPopped, [index]: "deny" as const };
       set({
         swarm: null,
         swarmBusy: false,
-        swarmPopped,
+        swarmPopped: raceEndPopped(plan, state.swarmPopped, "deny"),
         swarmAiResult: null,
         powerUpToast: null,
       });
@@ -1452,11 +1462,10 @@ export const useGameStore = create<GameState>((set, get) => ({
 
     const next = awardPowerUp(state.inventory[by], kind, state.presetId);
     if (!next) {
-      const swarmPopped = { ...state.swarmPopped, [index]: "deny" as const };
       set({
         swarm: null,
         swarmBusy: false,
-        swarmPopped,
+        swarmPopped: raceEndPopped(plan, state.swarmPopped, "deny"),
         swarmAiResult: null,
         powerUpToast: null,
       });
@@ -1469,12 +1478,11 @@ export const useGameStore = create<GameState>((set, get) => ({
 
     const inv = cloneInventory(state.inventory);
     inv[by] = next;
-    const swarmPopped = { ...state.swarmPopped, [index]: "claim" as const };
     set({
       inventory: inv,
       swarm: null,
       swarmBusy: false,
-      swarmPopped,
+      swarmPopped: raceEndPopped(plan, state.swarmPopped, "claim"),
       swarmAiResult: null,
       swarmCooldownUntilPly: state.occupiedCount + SWARM_COOLDOWN_PLIES,
       powerUpToast: null,
@@ -1489,57 +1497,8 @@ export const useGameStore = create<GameState>((set, get) => ({
   endSwarm: () => {
     const state = get();
     if (!state.swarmBusy && !state.swarm) return;
-    const plan = state.swarm;
-    const aiResult = state.swarmAiResult;
-    const livePopped = plan ? state.swarmPopped[plan.liveIndex] : undefined;
-
-    // Live already claimed/denied — just clear.
-    if (livePopped === "claim" || livePopped === "deny") {
-      set({ swarm: null, swarmBusy: false, swarmAiResult: null, swarmPopped: {} });
-      afterSwarm(get, set);
-      return;
-    }
-
-    // vs AI: if human never hit the live pack, AI may luck-claim on timeout.
-    if (state.playMode === "ai" && aiResult) {
-      if (aiResult.caught && aiResult.kind && plan) {
-        const next = awardPowerUp(state.inventory.b, aiResult.kind, state.presetId);
-        if (next) {
-          const inv = cloneInventory(state.inventory);
-          inv.b = next;
-          set({
-            inventory: inv,
-            swarm: null,
-            swarmBusy: false,
-            // Mark claim so the 3D shatter FX fires (same as a human catch).
-            swarmPopped: { ...state.swarmPopped, [plan.liveIndex]: "claim" },
-            swarmAiResult: null,
-            swarmCooldownUntilPly: state.occupiedCount + SWARM_COOLDOWN_PLIES,
-            powerUpToast: null,
-          });
-          pulseInventoryAward(set, AI_PLAYER, aiResult.kind);
-          afterSwarm(get, set);
-          return;
-        }
-      }
-      set({
-        swarm: null,
-        swarmBusy: false,
-        swarmPopped: {},
-        swarmAiResult: null,
-        powerUpToast: null,
-      });
-      afterSwarm(get, set);
-      return;
-    }
-
-    set({
-      swarm: null,
-      swarmBusy: false,
-      swarmPopped: {},
-      swarmAiResult: null,
-      powerUpToast: null,
-    });
+    // Race already settled (claim/deny) or flyby timed out with no live hit.
+    set({ swarm: null, swarmBusy: false, swarmAiResult: null, swarmPopped: {} });
     afterSwarm(get, set);
   },
 
@@ -1651,10 +1610,13 @@ export const useGameStore = create<GameState>((set, get) => ({
     }
 
     if (outcome === "deny") {
+      const plan = state.swarm;
       set({
         swarm: null,
         swarmBusy: false,
-        swarmPopped: { ...state.swarmPopped, [index]: "deny" },
+        swarmPopped: plan
+          ? raceEndPopped(plan, state.swarmPopped, "deny")
+          : { ...state.swarmPopped, [index]: "deny" },
         swarmAiResult: null,
         powerUpToast: null,
       });
@@ -1668,11 +1630,14 @@ export const useGameStore = create<GameState>((set, get) => ({
       if (next) {
         const inv = cloneInventory(state.inventory);
         inv[by] = next;
+        const plan = state.swarm;
         set({
           inventory: inv,
           swarm: null,
           swarmBusy: false,
-          swarmPopped: { ...state.swarmPopped, [index]: "claim" },
+          swarmPopped: plan
+            ? raceEndPopped(plan, state.swarmPopped, "claim")
+            : { ...state.swarmPopped, [index]: "claim" },
           swarmAiResult: null,
           swarmCooldownUntilPly: state.occupiedCount + SWARM_COOLDOWN_PLIES,
           powerUpToast: null,
@@ -1682,13 +1647,18 @@ export const useGameStore = create<GameState>((set, get) => ({
         return;
       }
     }
-    set({
-      swarm: null,
-      swarmBusy: false,
-      swarmPopped: { ...state.swarmPopped, [index]: "deny" },
-      swarmAiResult: null,
-      powerUpToast: null,
-    });
+    {
+      const plan = state.swarm;
+      set({
+        swarm: null,
+        swarmBusy: false,
+        swarmPopped: plan
+          ? raceEndPopped(plan, state.swarmPopped, "deny")
+          : { ...state.swarmPopped, [index]: "deny" },
+        swarmAiResult: null,
+        powerUpToast: null,
+      });
+    }
     afterSwarm(get, set);
   },
 
@@ -1706,6 +1676,8 @@ export const useGameStore = create<GameState>((set, get) => ({
       placement === "drop"
         ? snapDropCursor(centerCell(dims), createEmptyBoard(), dims)
         : centerCell(dims);
+    const playerNames =
+      state.playMode === "ai" ? nextVsAiNames() : hotseat ? { ...EMPTY_NAMES } : state.playerNames;
     set({
       phase: "playing",
       board: createEmptyBoard(),
@@ -1739,6 +1711,7 @@ export const useGameStore = create<GameState>((set, get) => ({
       tipEuler: { ...IDENTITY_TIP_EULER },
       tipTargetEuler: { ...IDENTITY_TIP_EULER },
       tipFalling: false,
+      playerNames,
     });
   },
 
@@ -1757,6 +1730,12 @@ export const useGameStore = create<GameState>((set, get) => ({
     const animating = restoreKeys.length > 0;
     if (animating) beginRestoreSession();
     else clearRestoreSession();
+    const playerNames =
+      saved.playMode === "ai"
+        ? nextVsAiNames()
+        : hotseat
+          ? { ...EMPTY_NAMES }
+          : get().playerNames;
     set({
       phase: "playing",
       playMode: saved.playMode,
@@ -1796,6 +1775,7 @@ export const useGameStore = create<GameState>((set, get) => ({
       tipFalling: false,
       tipCheckpoint: null,
       tipDirty: false,
+      playerNames,
     });
     if (!animating) {
       const next = get();
@@ -1818,6 +1798,8 @@ export const useGameStore = create<GameState>((set, get) => ({
       state.placement === "drop"
         ? snapDropCursor(centerCell(dims), createEmptyBoard(), dims)
         : centerCell(dims);
+    const playerNames =
+      state.playMode === "ai" ? nextVsAiNames() : hotseat ? { ...EMPTY_NAMES } : state.playerNames;
     set({
       phase: "playing",
       board: createEmptyBoard(),
@@ -1851,6 +1833,7 @@ export const useGameStore = create<GameState>((set, get) => ({
       tipEuler: { ...IDENTITY_TIP_EULER },
       tipTargetEuler: { ...IDENTITY_TIP_EULER },
       tipFalling: false,
+      playerNames,
     });
     if (state.playMode === "ai" && nextStarter === AI_PLAYER) {
       scheduleAiMove(get, set);

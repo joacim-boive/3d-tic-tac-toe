@@ -27,6 +27,7 @@
     "check:powerups": "npx tsx src/game/powerUps.selftest.ts",
     "check:tip-playback": "npx tsx src/game/tipPlayback.selftest.ts",
     "check:swarm": "npx tsx src/game/swarmPackages.selftest.ts",
+    "check:aliases": "npx tsx src/game/playerAliases.selftest.ts",
     "check:update": "npx tsx src/ui/appUpdate.selftest.ts",
     "eval:selfplay": "npx tsx src/game/selfPlay.cli.ts"
   },
