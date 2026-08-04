@@ -8,7 +8,10 @@ import {
   createEmptyBoard,
   dropLanding,
   isDraw,
+  listDropLandings,
+  listEmptyCells,
   resolvePlaceCoord,
+  wouldPlaceWin,
   type Board,
 } from "./board";
 import { clearAxisLine, nextClearAxis, repackDrop, type Axis } from "./clearRow";
@@ -20,6 +23,7 @@ import {
   cloneInventory,
   createPowerUpRng,
   emptyInventory,
+  EXTRA_NO_FINISH_TOAST,
   hasInventoryRoom,
   isPowerUpAllowed,
   pickAiSwarmTarget,
@@ -146,11 +150,14 @@ function snapshotLocalGame(state: {
   startingPlayer: PlayerId;
   inventory: PowerUpInventory;
   bonusPlacesRemaining: number;
+  placedThisTurn: boolean;
 }): SavedGame | null {
   if (state.playMode !== "hotseat" && state.playMode !== "ai") return null;
   if (state.status !== "playing" || state.occupiedCount <= 0) return null;
   // Skip mid-animation / mode boards — wait for a settled frame.
   if (state.tipFalling || state.powerUpMode || state.swarmBusy) return null;
+  // Don't snapshot mid Extra-extend — wait until the turn fully ends.
+  if (state.placedThisTurn || state.bonusPlacesRemaining > 0) return null;
   return {
     presetId: state.presetId,
     playMode: state.playMode,
@@ -195,8 +202,13 @@ type GameState = {
   aiDifficulty: AiDifficulty;
   powerUpsEnabled: boolean;
   inventory: PowerUpInventory;
-  /** Extra places left after the next place (1 = place twice total). */
+  /** Extra places left after the next place (1 = place the bonus ball). */
   bonusPlacesRemaining: number;
+  /**
+   * True after the ordinary place this turn. Extra can only activate then;
+   * Clear/Tip stay pre-place only. Ends via Extra bonus place or `endTurn`.
+   */
+  placedThisTurn: boolean;
   /** Player who earned the pending swarm (for post-extra-turn deferral). */
   pendingSwarmEarner: PlayerId | null;
   swarm: SwarmPlan | null;
@@ -229,6 +241,7 @@ type GameState = {
     winningCell: CellCoord | null;
     inventory: PowerUpInventory;
     bonusPlacesRemaining: number;
+    placedThisTurn: boolean;
     onlineStatus: OnlineStatus;
   } | null;
   /** vs AI: which package the AI will tap in the race (null outside AI swarms). */
@@ -313,6 +326,8 @@ type GameState = {
   leaveOnline: () => void;
   activatePowerUp: (kind: PowerUpId) => boolean;
   cancelPowerUpMode: () => void;
+  /** End the turn after an ordinary place without spending Extra. */
+  endTurn: () => boolean;
   setClearAxis: (axis: Axis) => void;
   cycleClearAxis: () => void;
   confirmClearRow: (a: number, b: number) => boolean;
@@ -360,6 +375,7 @@ type GameState = {
     inventory?: PowerUpInventory;
     powerUpsEnabled?: boolean;
     bonusPlacesRemaining?: number;
+    placedThisTurn?: boolean;
   }) => void;
 };
 
@@ -566,8 +582,14 @@ function scheduleAiMove(get: () => GameState, set: (partial: Partial<GameState>)
       return;
     }
 
+    // After ordinary place: Extra declined → end turn (no second place).
+    if (afterSpend.placedThisTurn && afterSpend.bonusPlacesRemaining === 0) {
+      endTurnInternal(get, set);
+      return;
+    }
+
     const preset = getPreset(afterSpend.presetId);
-    const move = pickAiMove(
+    let move = pickAiMove(
       afterSpend.board,
       preset.dims,
       afterSpend.aiDifficulty,
@@ -577,9 +599,76 @@ function scheduleAiMove(get: () => GameState, set: (partial: Partial<GameState>)
     );
     if (!move) return;
 
+    // Bonus Extra place cannot finish — skip winning cells.
+    if (afterSpend.bonusPlacesRemaining > 0) {
+      if (
+        wouldPlaceWin(
+          afterSpend.board,
+          preset.dims,
+          move,
+          AI_PLAYER,
+          afterSpend.placement,
+        )
+      ) {
+        const fallback = pickNonFinishingAiMove(
+          afterSpend.board,
+          preset.dims,
+          afterSpend.placement,
+          AI_PLAYER,
+          afterSpend.aiDifficulty,
+          afterSpend.occupiedCount,
+        );
+        if (!fallback) {
+          // No safe Extra cell — refund and end turn.
+          const awarded = awardPowerUp(afterSpend.inventory.b, "extra-turn");
+          const inv = cloneInventory(afterSpend.inventory);
+          if (awarded) inv.b = awarded;
+          set({
+            inventory: inv,
+            bonusPlacesRemaining: 0,
+            powerUpMode: null,
+          });
+          endTurnInternal(get, set);
+          return;
+        }
+        move = fallback;
+      }
+    }
+
     applyPlace(get, set, move, AI_PLAYER);
     persistLocalGame(get());
+
+    const afterPlace = get();
+    if (
+      afterPlace.status === "playing" &&
+      afterPlace.currentPlayer === AI_PLAYER &&
+      afterPlace.placedThisTurn &&
+      !afterPlace.dropBusy
+    ) {
+      // Ordinary place kept the turn open for Extra — decide next beat.
+      scheduleAiMove(get, set);
+    }
   }, thinkDelay);
+}
+
+/** Prefer a strong non-finishing Extra place; used when the top pick would clinch. */
+function pickNonFinishingAiMove(
+  board: Board,
+  dims: { x: number; y: number; z: number },
+  placement: GameState["placement"],
+  aiPlayer: PlayerId,
+  difficulty: GameState["aiDifficulty"],
+  occupiedCount: number,
+): CellCoord | null {
+  const move = pickAiMove(board, dims, difficulty, aiPlayer, occupiedCount, placement);
+  if (move && !wouldPlaceWin(board, dims, move, aiPlayer, placement)) return move;
+
+  const cells =
+    placement === "drop" ? listDropLandings(board, dims) : listEmptyCells(board, dims);
+  for (const cell of cells) {
+    if (!wouldPlaceWin(board, dims, cell, aiPlayer, placement)) return cell;
+  }
+  return null;
 }
 
 /** AI spends banked power-ups with board-aware heuristics (not RNG). */
@@ -596,6 +685,7 @@ function maybeAiSpendPowerUp(get: () => GameState, set: (partial: Partial<GameSt
     placement: state.placement,
     difficulty: state.aiDifficulty,
     bonusPlacesRemaining: state.bonusPlacesRemaining,
+    placedThisTurn: state.placedThisTurn,
     presetId: state.presetId,
   });
 
@@ -637,6 +727,39 @@ function maybeAiSpendPowerUp(get: () => GameState, set: (partial: Partial<GameSt
   }
 }
 
+/** Flip the seat after an ordinary place when Extra is declined. */
+function endTurnInternal(get: () => GameState, set: (partial: Partial<GameState>) => void): boolean {
+  const state = get();
+  if (state.status !== "playing" || state.phase !== "playing") return false;
+  if (!state.placedThisTurn || state.bonusPlacesRemaining > 0) return false;
+  if (state.dropBusy || state.swarmBusy || state.tipFalling || state.watchTipPlayback) {
+    return false;
+  }
+
+  const by = state.currentPlayer;
+  const nextPlayer = opponentOf(by);
+  const earner = state.pendingSwarmEarner ?? by;
+  set({
+    currentPlayer: nextPlayer,
+    placedThisTurn: false,
+    powerUpMode: null,
+    pendingSwarmEarner: null,
+    aiming: false,
+  });
+
+  maybeStartSwarm(get, set, earner);
+  persistLocalGame(get());
+  if (state.playMode === "online") {
+    localStateSyncPublisher?.();
+  }
+
+  const after = get();
+  if (!after.swarmBusy && after.playMode === "ai" && after.currentPlayer === AI_PLAYER) {
+    scheduleAiMove(get, set);
+  }
+  return true;
+}
+
 function finishPowerUpBoard(
   get: () => GameState,
   set: (partial: Partial<GameState>) => void,
@@ -674,6 +797,7 @@ function finishPowerUpBoard(
       winningCell: win.line[0] ?? null,
       powerUpMode: null,
       bonusPlacesRemaining: 0,
+      placedThisTurn: false,
       powerUpToast: opponentToast,
       watchPowerUp: null,
       watchTipPlayback: false,
@@ -701,6 +825,7 @@ function finishPowerUpBoard(
       winningCell: null,
       powerUpMode: null,
       bonusPlacesRemaining: 0,
+      placedThisTurn: false,
       powerUpToast: opponentToast,
       watchPowerUp: null,
       watchTipPlayback: false,
@@ -728,6 +853,7 @@ function finishPowerUpBoard(
     winningCell: null,
     powerUpMode: null,
     bonusPlacesRemaining: 0,
+    placedThisTurn: false,
     powerUpToast: opponentToast,
     watchPowerUp: null,
     watchTipPlayback: false,
@@ -796,6 +922,20 @@ function maybeStartSwarm(
   }
 }
 
+function canExtendWithExtra(state: {
+  powerUpsEnabled: boolean;
+  playMode: PlayMode;
+  presetId: PresetId;
+  inventory: PowerUpInventory;
+  currentPlayer: PlayerId;
+}): boolean {
+  // Hotseat has no power-up HUD — don't leave a stranded Extra window.
+  if (state.playMode === "hotseat") return false;
+  if (!state.powerUpsEnabled) return false;
+  if (!isPowerUpAllowed("extra-turn", state.presetId)) return false;
+  return canSpend(state.inventory[state.currentPlayer], "extra-turn");
+}
+
 function applyPlace(
   get: () => GameState,
   set: (partial: Partial<GameState>) => void,
@@ -808,10 +948,19 @@ function applyPlace(
   if (state.dropBusy || state.swarmBusy || state.tipFalling) return false;
   if (state.restoreFallingKeys) return false;
   if (state.powerUpMode === "clear-row" || state.powerUpMode === "tip") return false;
+  // After ordinary place, must spend Extra (bonus) or endTurn — no free second ball.
+  if (state.placedThisTurn && state.bonusPlacesRemaining === 0) return false;
 
   const preset = getPreset(state.presetId);
   const resolved = resolvePlaceCoord(state.board, preset.dims, coord, state.placement);
   if (!resolved) return false;
+
+  const isBonusPlace = state.bonusPlacesRemaining > 0;
+  // Extra ball cannot clinch the match.
+  if (isBonusPlace && wouldPlaceWin(state.board, preset.dims, resolved, player, state.placement)) {
+    set({ powerUpToast: EXTRA_NO_FINISH_TOAST });
+    return false;
+  }
 
   const key = cellKey(resolved.x, resolved.y, resolved.z);
   const nextBoard = new Map(state.board);
@@ -834,6 +983,7 @@ function applyPlace(
       fallingKey: dropAnim ? key : null,
       dropBusy: dropAnim,
       bonusPlacesRemaining: 0,
+      placedThisTurn: false,
       powerUpMode: null,
       pendingSwarmEarner: null,
       onlineStatus: state.playMode === "online" ? "ended" : state.onlineStatus,
@@ -856,6 +1006,7 @@ function applyPlace(
       fallingKey: dropAnim ? key : null,
       dropBusy: dropAnim,
       bonusPlacesRemaining: 0,
+      placedThisTurn: false,
       powerUpMode: null,
       pendingSwarmEarner: null,
       onlineStatus: state.playMode === "online" ? "ended" : state.onlineStatus,
@@ -864,8 +1015,40 @@ function applyPlace(
     return true;
   }
 
-  // Extra turn: skip flip while bonus remains
-  if (state.bonusPlacesRemaining > 0) {
+  // Extra bonus place: consume bonus and flip.
+  if (isBonusPlace) {
+    const nextPlayer: PlayerId = player === "a" ? "b" : "a";
+    const swarmEarner = state.pendingSwarmEarner ?? player;
+    set({
+      board: nextBoard,
+      occupiedCount,
+      currentPlayer: nextPlayer,
+      status: "playing",
+      winner: null,
+      winningLine: [],
+      winningCell: null,
+      lastPlaced: resolved,
+      cursor: resolved,
+      fallingKey: dropAnim ? key : null,
+      dropBusy: dropAnim,
+      bonusPlacesRemaining: 0,
+      placedThisTurn: false,
+      powerUpMode: null,
+      pendingSwarmEarner: dropAnim ? swarmEarner : null,
+      powerUpToast: null,
+    });
+    if (!dropAnim) {
+      maybeStartSwarm(get, set, swarmEarner);
+      const after = get();
+      if (!after.swarmBusy && after.playMode === "ai" && after.currentPlayer === AI_PLAYER) {
+        scheduleAiMove(get, set);
+      }
+    }
+    return true;
+  }
+
+  // Ordinary first place — keep the turn open if Extra is banked.
+  if (canExtendWithExtra({ ...state, currentPlayer: player })) {
     set({
       board: nextBoard,
       occupiedCount,
@@ -874,17 +1057,16 @@ function applyPlace(
       winner: null,
       winningLine: [],
       winningCell: null,
+      lastPlaced: resolved,
       cursor: resolved,
       fallingKey: dropAnim ? key : null,
       dropBusy: dropAnim,
-      bonusPlacesRemaining: state.bonusPlacesRemaining - 1,
+      bonusPlacesRemaining: 0,
+      placedThisTurn: true,
       powerUpMode: null,
       pendingSwarmEarner: player,
+      powerUpToast: null,
     });
-    // AI Extra: this place consumed the bonus; schedule the real follow-up place.
-    if (!dropAnim && state.playMode === "ai" && player === AI_PLAYER) {
-      scheduleAiMove(get, set);
-    }
     return true;
   }
 
@@ -903,6 +1085,7 @@ function applyPlace(
     fallingKey: dropAnim ? key : null,
     dropBusy: dropAnim,
     powerUpMode: null,
+    placedThisTurn: false,
     pendingSwarmEarner: dropAnim ? swarmEarner : null,
   });
 
@@ -926,6 +1109,7 @@ export const useGameStore = create<GameState>((set, get) => ({
   powerUpsEnabled: true,
   inventory: emptyInventory(),
   bonusPlacesRemaining: 0,
+  placedThisTurn: false,
   pendingSwarmEarner: null,
   swarm: null,
   swarmBusy: false,
@@ -1101,6 +1285,8 @@ export const useGameStore = create<GameState>((set, get) => ({
     if (!canSpend(state.inventory[by], kind)) return false;
 
     if (kind === "extra-turn") {
+      // Must place an ordinary ball first; Extra only extends the turn.
+      if (!state.placedThisTurn) return false;
       if (state.bonusPlacesRemaining > 0) return false;
       const spent = spendPowerUp(state.inventory[by], kind);
       if (!spent) return false;
@@ -1123,6 +1309,9 @@ export const useGameStore = create<GameState>((set, get) => ({
       }
       return true;
     }
+
+    // Clear / Tip replace the place — not after you've already placed.
+    if (state.placedThisTurn) return false;
 
     if (kind === "tip") {
       const dims = getPreset(state.presetId).dims;
@@ -1164,7 +1353,7 @@ export const useGameStore = create<GameState>((set, get) => ({
     const mode = state.powerUpMode;
     const by = state.currentPlayer;
     if (mode === "extra-turn" && state.bonusPlacesRemaining > 0) {
-      // Refund if no place has consumed the bonus yet
+      // Refund if no place has consumed the bonus yet; stay in Extra window.
       const awarded = awardPowerUp(state.inventory[by], "extra-turn");
       const inv = cloneInventory(state.inventory);
       if (awarded) inv[by] = awarded;
@@ -1212,6 +1401,16 @@ export const useGameStore = create<GameState>((set, get) => ({
       tipDirty: false,
       watchPowerUp: null,
     });
+  },
+
+  endTurn: () => {
+    const state = get();
+    if (state.playMode === "ai" && state.currentPlayer !== HUMAN) return false;
+    if (state.playMode === "online") {
+      if (state.onlineStatus !== "playing") return false;
+      if (state.seat == null || state.currentPlayer !== state.seat) return false;
+    }
+    return endTurnInternal(get, set);
   },
 
   confirmClearRow: (a, b) => {
@@ -1318,6 +1517,7 @@ export const useGameStore = create<GameState>((set, get) => ({
           winningCell: pending.winningCell,
           inventory: pending.inventory,
           bonusPlacesRemaining: pending.bonusPlacesRemaining,
+          placedThisTurn: pending.placedThisTurn,
           onlineStatus: pending.onlineStatus,
           tipFalling: false,
           tipEuler: { ...IDENTITY_TIP_EULER },
@@ -1698,6 +1898,7 @@ export const useGameStore = create<GameState>((set, get) => ({
       powerUpsEnabled,
       inventory: emptyInventory(),
       bonusPlacesRemaining: 0,
+      placedThisTurn: false,
       pendingSwarmEarner: null,
       swarm: null,
       swarmBusy: false,
@@ -1760,6 +1961,7 @@ export const useGameStore = create<GameState>((set, get) => ({
       restoreStartedAt: animating ? performance.now() : null,
       inventory: cloneInventory(saved.inventory),
       bonusPlacesRemaining: saved.bonusPlacesRemaining,
+      placedThisTurn: false,
       pendingSwarmEarner: null,
       swarm: null,
       swarmBusy: false,
@@ -1820,6 +2022,7 @@ export const useGameStore = create<GameState>((set, get) => ({
       powerUpsEnabled,
       inventory: emptyInventory(),
       bonusPlacesRemaining: 0,
+      placedThisTurn: false,
       pendingSwarmEarner: null,
       swarm: null,
       swarmBusy: false,
@@ -1865,6 +2068,7 @@ export const useGameStore = create<GameState>((set, get) => ({
       restoreStartedAt: null,
       inventory: emptyInventory(),
       bonusPlacesRemaining: 0,
+      placedThisTurn: false,
       pendingSwarmEarner: null,
       swarm: null,
       swarmBusy: false,
@@ -1936,6 +2140,7 @@ export const useGameStore = create<GameState>((set, get) => ({
       restoreStartedAt: null,
       inventory: emptyInventory(),
       bonusPlacesRemaining: 0,
+      placedThisTurn: false,
       pendingSwarmEarner: null,
       swarm: null,
       swarmBusy: false,
@@ -2005,6 +2210,7 @@ export const useGameStore = create<GameState>((set, get) => ({
       restoreStartedAt: null,
       inventory: emptyInventory(),
       bonusPlacesRemaining: 0,
+      placedThisTurn: false,
       pendingSwarmEarner: null,
       swarm: null,
       swarmBusy: false,
@@ -2052,6 +2258,7 @@ export const useGameStore = create<GameState>((set, get) => ({
       restoreStartedAt: null,
       inventory: emptyInventory(),
       bonusPlacesRemaining: 0,
+      placedThisTurn: false,
       pendingSwarmEarner: null,
       swarm: null,
       swarmBusy: false,
@@ -2104,6 +2311,7 @@ export const useGameStore = create<GameState>((set, get) => ({
           winningCell: snap.winningCell ?? null,
           inventory,
           bonusPlacesRemaining: snap.bonusPlacesRemaining ?? 0,
+          placedThisTurn: snap.placedThisTurn ?? false,
           onlineStatus,
         },
         pendingSwarmEarner: null,
@@ -2135,6 +2343,7 @@ export const useGameStore = create<GameState>((set, get) => ({
       inventory,
       powerUpsEnabled: snap.powerUpsEnabled ?? get().powerUpsEnabled,
       bonusPlacesRemaining: snap.bonusPlacesRemaining ?? 0,
+      placedThisTurn: snap.placedThisTurn ?? false,
       pendingSwarmEarner: null,
       swarm: null,
       swarmBusy: false,
@@ -2167,6 +2376,10 @@ export const useGameStore = create<GameState>((set, get) => ({
 
   placeAtCursor: () => {
     const state = get();
+    // After ordinary place with Extra available: Space ends the turn.
+    if (state.placedThisTurn && state.bonusPlacesRemaining === 0) {
+      return state.endTurn();
+    }
     return state.place(state.cursor);
   },
 

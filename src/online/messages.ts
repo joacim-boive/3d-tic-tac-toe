@@ -109,6 +109,7 @@ export type StateMessage = {
   inventory?: PowerUpInventory;
   powerUpsEnabled?: boolean;
   bonusPlacesRemaining?: number;
+  placedThisTurn?: boolean;
 };
 
 export type RoomMessage =

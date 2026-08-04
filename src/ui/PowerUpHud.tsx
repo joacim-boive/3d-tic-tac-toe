@@ -13,6 +13,7 @@ function InventoryRow({ player, actionable }: { player: PlayerId; actionable: bo
   const activatePowerUp = useGameStore((s) => s.activatePowerUp);
   const powerUpMode = useGameStore((s) => s.powerUpMode);
   const bonusPlacesRemaining = useGameStore((s) => s.bonusPlacesRemaining);
+  const placedThisTurn = useGameStore((s) => s.placedThisTurn);
   const presetId = useGameStore((s) => s.presetId);
   const displayName = useGameStore((s) => s.displayName);
   const dims = getPreset(presetId).dims;
@@ -30,7 +31,14 @@ function InventoryRow({ player, actionable }: { player: PlayerId; actionable: bo
           const count = inventory[id];
           const tipBlocked = id === "tip" && !canTipPreset(dims);
           const active = powerUpMode === id || (id === "extra-turn" && bonusPlacesRemaining > 0);
-          const canUse = actionable && count > 0 && !tipBlocked && !powerUpMode;
+          const canUse =
+            actionable &&
+            count > 0 &&
+            !tipBlocked &&
+            !powerUpMode &&
+            (id === "extra-turn"
+              ? placedThisTurn && bonusPlacesRemaining === 0
+              : !placedThisTurn);
           const awarded = pulse?.by === player && pulse.kind === id;
           return (
             <button
@@ -41,9 +49,11 @@ function InventoryRow({ player, actionable }: { player: PlayerId; actionable: bo
               title={
                 tipBlocked
                   ? "Tip requires a cube board"
-                  : awarded
-                    ? `Caught ${POWER_UP_LABELS[id]}!`
-                    : `${POWER_UP_LABELS[id]} ×${count}`
+                  : id === "extra-turn" && !placedThisTurn && count > 0
+                    ? "Place a ball first, then use Extra"
+                    : awarded
+                      ? `Caught ${POWER_UP_LABELS[id]}!`
+                      : `${POWER_UP_LABELS[id]} ×${count}`
               }
               onClick={() => activatePowerUp(id)}
             >
@@ -74,12 +84,14 @@ export function PowerUpHud() {
   const clearAxis = useGameStore((s) => s.clearAxis);
   const setClearAxis = useGameStore((s) => s.setClearAxis);
   const cancelPowerUpMode = useGameStore((s) => s.cancelPowerUpMode);
+  const endTurn = useGameStore((s) => s.endTurn);
   const confirmClearRow = useGameStore((s) => s.confirmClearRow);
   const tipFalling = useGameStore((s) => s.tipFalling);
   const cursor = useGameStore((s) => s.cursor);
   const swarmBusy = useGameStore((s) => s.swarmBusy);
   const dropBusy = useGameStore((s) => s.dropBusy);
   const bonusPlacesRemaining = useGameStore((s) => s.bonusPlacesRemaining);
+  const placedThisTurn = useGameStore((s) => s.placedThisTurn);
 
   if (!powerUpsEnabled || playMode === "hotseat") return null;
 
@@ -94,6 +106,10 @@ export function PowerUpHud() {
         currentPlayer === seat &&
         onlineStatus === "playing"));
 
+  const showExtraWindow =
+    myTurn && placedThisTurn && bonusPlacesRemaining === 0 && powerUpMode !== "clear-row";
+  const showExtraCancel = bonusPlacesRemaining > 0 && powerUpMode === "extra-turn";
+
   return (
     <div className="powerups">
       <div className="powerups__inventories">
@@ -101,11 +117,16 @@ export function PowerUpHud() {
         <InventoryRow player="b" actionable={myTurn && currentPlayer === "b"} />
       </div>
 
-      {bonusPlacesRemaining > 0 || powerUpMode === "extra-turn" ? (
+      {showExtraWindow || showExtraCancel ? (
         <div className="powerups__mode">
-          {bonusPlacesRemaining > 0 && powerUpMode === "extra-turn" ? (
+          {showExtraCancel ? (
             <button type="button" className="chrome__btn" onClick={cancelPowerUpMode}>
               Cancel
+            </button>
+          ) : null}
+          {showExtraWindow ? (
+            <button type="button" className="chrome__btn chrome__btn--accent" onClick={() => endTurn()}>
+              Done
             </button>
           ) : null}
         </div>

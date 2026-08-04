@@ -2,7 +2,7 @@
  * AI power-up spend policy — static heuristics (no LLM).
  * Clear/Tip consume the turn; Extra turn adds a second place.
  */
-import { evaluate, findWinningMove } from "./ai";
+import { evaluate } from "./ai";
 import { cellKey, checkWin, listDropLandings, listEmptyCells, type Board } from "./board";
 import { axisLineCells, clearAxisLine, CLEAR_AXES, repackDrop, type Axis } from "./clearRow";
 import { canSpend, isPowerUpAllowed, type PowerUpCounts } from "./powerUps";
@@ -30,6 +30,8 @@ export type AiPowerUpContext = {
   placement: PlacementMode;
   difficulty: AiDifficulty;
   bonusPlacesRemaining: number;
+  /** True after the ordinary place this turn — Extra may extend; Clear/Tip may not. */
+  placedThisTurn: boolean;
   presetId: PresetId;
 };
 
@@ -186,38 +188,30 @@ function bestClear(
 }
 
 /**
- * Extra turn is valuable when two places win, or the first place sets up a
- * forced win on the bonus place, or we create an unstoppable fork.
+ * Extra may only fire after the ordinary place, and the bonus ball cannot
+ * finish a line — so we only spend it to plant a non-winning fork / dual threat.
  */
-function shouldUseExtraTurn(
+function shouldUseExtraBonus(
   board: Board,
   dims: BoardDims,
   placement: PlacementMode,
   aiPlayer: PlayerId,
 ): boolean {
   const empties = legalEmpties(board, dims, placement);
-  // Already winning in one — Extra is wasted; just place.
-  if (findWinningMove(board, dims, aiPlayer, empties)) return false;
-
-  for (const first of empties) {
-    const key1 = cellKey(first.x, first.y, first.z);
-    board.set(key1, aiPlayer);
-    if (checkWin(board, dims, first, aiPlayer)) {
-      board.delete(key1);
+  for (const cell of empties) {
+    const key = cellKey(cell.x, cell.y, cell.z);
+    board.set(key, aiPlayer);
+    if (checkWin(board, dims, cell, aiPlayer)) {
+      // Bonus place cannot clinch — skip finishing cells.
+      board.delete(key);
       continue;
     }
-    const secondEmpties = legalEmpties(board, dims, placement);
-    // Bonus place wins immediately.
-    if (findWinningMove(board, dims, aiPlayer, secondEmpties)) {
-      board.delete(key1);
+    const followUps = legalEmpties(board, dims, placement);
+    if (countWinningReplies(board, dims, aiPlayer, followUps) >= 2) {
+      board.delete(key);
       return true;
     }
-    // Two places create a fork (≥2 winning replies for opponent to face).
-    if (countWinningReplies(board, dims, aiPlayer, secondEmpties) >= 2) {
-      board.delete(key1);
-      return true;
-    }
-    board.delete(key1);
+    board.delete(key);
   }
   return false;
 }
@@ -301,8 +295,23 @@ export function pickAiPowerUpSpend(ctx: AiPowerUpContext): AiPowerUpDecision {
     placement,
     difficulty,
     bonusPlacesRemaining,
+    placedThisTurn,
     presetId,
   } = ctx;
+
+  // Extra only after the ordinary place; Clear/Tip only before it.
+  if (placedThisTurn) {
+    if (
+      difficulty !== "easy" &&
+      isPowerUpAllowed("extra-turn", presetId) &&
+      canSpend(inventory, "extra-turn") &&
+      bonusPlacesRemaining === 0 &&
+      shouldUseExtraBonus(board, dims, placement, aiPlayer)
+    ) {
+      return { action: "extra-turn" };
+    }
+    return { action: "none" };
+  }
 
   if (difficulty === "easy") {
     // Easy: only clear to break a double threat; never Extra/Tip gambling.
@@ -319,23 +328,13 @@ export function pickAiPowerUpSpend(ctx: AiPowerUpContext): AiPowerUpDecision {
     return { action: "none" };
   }
 
-  // 1) Extra turn when a double place finishes or forks (not on 3×3×3).
-  if (
-    isPowerUpAllowed("extra-turn", presetId) &&
-    canSpend(inventory, "extra-turn") &&
-    bonusPlacesRemaining === 0 &&
-    shouldUseExtraTurn(board, dims, placement, aiPlayer)
-  ) {
-    return { action: "extra-turn" };
-  }
-
   const empties = legalEmpties(board, dims, placement);
   const humanThreats = countWinningReplies(board, dims, opponentOf(aiPlayer), empties);
   const clear = canSpend(inventory, "clear-row")
     ? bestClear(board, dims, placement, aiPlayer)
     : null;
 
-  // 2) Clear to break forks / multi-threats, or opportunistic when no urgent block.
+  // Clear to break forks / multi-threats, or opportunistic when no urgent block.
   if (clear && clear.score >= clearThreshold(difficulty)) {
     if (humanThreats >= 2) {
       return { action: "clear-row", axis: clear.axis, a: clear.a, b: clear.b };
@@ -346,7 +345,7 @@ export function pickAiPowerUpSpend(ctx: AiPowerUpContext): AiPowerUpDecision {
     }
   }
 
-  // 3) Tip last — high bar; swingy and spends the turn.
+  // Tip last — high bar; swingy and spends the turn.
   if (canSpend(inventory, "tip") && canTipPreset(dims)) {
     const tip = bestTip(board, dims, placement, aiPlayer);
     if (tip && tip.score >= tipThreshold(difficulty)) {

@@ -169,6 +169,7 @@ function testClearIgnoresEmptyAndOwnOnlyLines() {
     placement: "free",
     difficulty: "extreme",
     bonusPlacesRemaining: 0,
+    placedThisTurn: false,
     presetId: "3x3x3",
   });
 
@@ -211,6 +212,7 @@ function testClearBreaksOpponentForkThreat() {
     placement: "free",
     difficulty: "extreme",
     bonusPlacesRemaining: 0,
+    placedThisTurn: false,
     presetId: "4x4x4",
   });
 
@@ -237,6 +239,7 @@ function testClearUsedOnOpponentFork() {
     placement: "free",
     difficulty: "extreme",
     bonusPlacesRemaining: 0,
+    placedThisTurn: false,
     presetId: "4x4x4",
   });
 
@@ -247,12 +250,56 @@ function testExtraTurnWhenDoublePlaceWins() {
   // Use 4×4×4 — Extra is banned on 3×3×3.
   const dims: BoardDims = { x: 4, y: 4, z: 4 };
   const board = createEmptyBoard();
-  // b has 3 on a row; two places finish the 4-in-a-row.
+  // Only finishing Extra cells available — must not spend Extra to clinch.
   board.set(cellKey(0, 0, 0), "b");
   board.set(cellKey(1, 0, 0), "b");
+  board.set(cellKey(2, 0, 0), "b");
   board.set(cellKey(0, 1, 0), "a");
   board.set(cellKey(1, 1, 0), "a");
   board.set(cellKey(2, 1, 0), "a");
+
+  const beforePlace = pickAiPowerUpSpend({
+    board,
+    dims,
+    aiPlayer: "b",
+    inventory: { "extra-turn": 1, "clear-row": 0, tip: 0 },
+    placement: "free",
+    difficulty: "hard",
+    bonusPlacesRemaining: 0,
+    placedThisTurn: false,
+    presetId: "4x4x4",
+  });
+  assert(beforePlace.action === "none", "Extra cannot activate before the ordinary place");
+
+  const afterPlace = pickAiPowerUpSpend({
+    board,
+    dims,
+    aiPlayer: "b",
+    inventory: { "extra-turn": 1, "clear-row": 0, tip: 0 },
+    placement: "free",
+    difficulty: "hard",
+    bonusPlacesRemaining: 0,
+    placedThisTurn: true,
+    presetId: "4x4x4",
+  });
+  assert(
+    afterPlace.action === "none",
+    "Extra is not spent only to finish a line (bonus can't clinch)",
+  );
+}
+
+function testExtraTurnForForkAfterPlace() {
+  const dims: BoardDims = { x: 4, y: 4, z: 4 };
+  const board = createEmptyBoard();
+  // Extra at (2,2,0) is not a win, but creates two win-in-1 replies:
+  // (3,2,0) on the y=2 row and (2,3,0) on the x=2 column.
+  board.set(cellKey(0, 2, 0), "b");
+  board.set(cellKey(1, 2, 0), "b");
+  board.set(cellKey(2, 0, 0), "b");
+  board.set(cellKey(2, 1, 0), "b");
+  board.set(cellKey(3, 3, 3), "a");
+  board.set(cellKey(3, 3, 2), "a");
+  board.set(cellKey(3, 2, 3), "a");
 
   const decision = pickAiPowerUpSpend({
     board,
@@ -262,10 +309,10 @@ function testExtraTurnWhenDoublePlaceWins() {
     placement: "free",
     difficulty: "hard",
     bonusPlacesRemaining: 0,
+    placedThisTurn: true,
     presetId: "4x4x4",
   });
-
-  assert(decision.action === "extra-turn", "use Extra when two places finish a win");
+  assert(decision.action === "extra-turn", "use Extra after place to plant a fork");
 }
 
 function testExtraTurnBannedOn3x3x3() {
@@ -283,6 +330,7 @@ function testExtraTurnBannedOn3x3x3() {
     placement: "free",
     difficulty: "hard",
     bonusPlacesRemaining: 0,
+    placedThisTurn: false,
     presetId: "3x3x3",
   });
 
@@ -300,6 +348,7 @@ function testNoClearOnEmptyBoard() {
     placement: "free",
     difficulty: "extreme",
     bonusPlacesRemaining: 0,
+    placedThisTurn: false,
     presetId: "4x4x4",
   });
   assert(decision.action === "none", "empty board: no power-up spend");
@@ -317,6 +366,7 @@ testClearIgnoresEmptyAndOwnOnlyLines();
 testClearBreaksOpponentForkThreat();
 testClearUsedOnOpponentFork();
 testExtraTurnWhenDoublePlaceWins();
+testExtraTurnForForkAfterPlace();
 testExtraTurnBannedOn3x3x3();
 testNoClearOnEmptyBoard();
 console.log("ai.selftest: ok");

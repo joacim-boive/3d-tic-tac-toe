@@ -39,6 +39,7 @@ export function GameChrome({ children }: GameChromeProps) {
   const dropBusy = useGameStore((s) => s.dropBusy);
   const swarmBusy = useGameStore((s) => s.swarmBusy);
   const bonusPlacesRemaining = useGameStore((s) => s.bonusPlacesRemaining);
+  const placedThisTurn = useGameStore((s) => s.placedThisTurn);
   const powerUpMode = useGameStore((s) => s.powerUpMode);
   const tipFalling = useGameStore((s) => s.tipFalling);
   const watchPowerUp = useGameStore((s) => s.watchPowerUp);
@@ -88,7 +89,9 @@ export function GameChrome({ children }: GameChromeProps) {
   } else if (powerUpMode === "clear-row") {
     statusText = "Clear — aim · tap to switch axis";
   } else if (bonusPlacesRemaining > 0) {
-    statusText = `${displayName(currentPlayer)} — extra place`;
+    statusText = `${displayName(currentPlayer)} — extra place (can't finish)`;
+  } else if (placedThisTurn) {
+    statusText = `${displayName(currentPlayer)} — Extra or Done`;
   } else if (playMode === "ai" && currentPlayer === "b") {
     statusText = `${displayName("b")} is thinking…`;
   } else {

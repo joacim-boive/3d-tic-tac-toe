@@ -63,6 +63,7 @@ function buildStateMessage(): StateMessage {
     inventory: s.inventory,
     powerUpsEnabled: s.powerUpsEnabled,
     bonusPlacesRemaining: s.bonusPlacesRemaining,
+    placedThisTurn: s.placedThisTurn,
   };
 }
 
@@ -81,6 +82,7 @@ function applyStateMessage(msg: StateMessage) {
     inventory: msg.inventory,
     powerUpsEnabled: msg.powerUpsEnabled,
     bonusPlacesRemaining: msg.bonusPlacesRemaining,
+    placedThisTurn: msg.placedThisTurn,
   });
 }
 
