@@ -3,7 +3,7 @@
 import { useFrame, useThree } from "@react-three/fiber";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { BoxGeometry, EdgesGeometry, Raycaster, Vector2, Vector3 } from "three";
-import { cellKey, cellToWorld } from "@/game/board";
+import { cellKey, cellToWorld, wouldPlaceWin } from "@/game/board";
 import { useGameStore } from "@/game/store";
 import { PLAYER_COLORS, type BoardDims } from "@/game/types";
 import type { SliceAxis } from "./facingSliceAxis";
@@ -67,6 +67,7 @@ export function SelectionCursor({ dims, spacing = 1 }: SelectionCursorProps) {
   const occupiedCount = useGameStore((s) => s.occupiedCount);
   const swarmBusy = useGameStore((s) => s.swarmBusy);
   const powerUpMode = useGameStore((s) => s.powerUpMode);
+  const bonusPlacesRemaining = useGameStore((s) => s.bonusPlacesRemaining);
   const cycleClearAxis = useGameStore((s) => s.cycleClearAxis);
   const sticky = useSliceHighlightStore((s) => s.slice);
   const setSticky = useSliceHighlightStore((s) => s.setSlice);
@@ -75,8 +76,9 @@ export function SelectionCursor({ dims, spacing = 1 }: SelectionCursorProps) {
   const [touchAiming, setTouchAiming] = useState(false);
   const clearMode = powerUpMode === "clear-row";
 
-
-  const raycaster = useMemo(() => new Raycaster(), []);
+  const finishBlocked =
+    bonusPlacesRemaining > 0 &&
+    wouldPlaceWin(board, dims, cursor, currentPlayer, placement);  const raycaster = useMemo(() => new Raycaster(), []);
   const ndc = useMemo(() => new Vector2(), []);
   const point = useMemo(() => new Vector3(), []);
   const dragRef = useRef({
@@ -607,7 +609,7 @@ export function SelectionCursor({ dims, spacing = 1 }: SelectionCursorProps) {
 
   const occupied = board.has(cellKey(cursor.x, cursor.y, cursor.z));
   const [cx, cy, cz] = cellToWorld(cursor, dims, spacing);
-  const color = PLAYER_COLORS[currentPlayer];
+  const color = finishBlocked ? "#8b9aab" : PLAYER_COLORS[currentPlayer];
   const columnH = placement === "drop" ? dims.y * spacing * 0.96 : cellSize;
   const columnY = placement === "drop" ? -cy : 0;
   // Occupied cell (e.g. after a settle before snap): never frame a placed ball.
@@ -622,7 +624,7 @@ export function SelectionCursor({ dims, spacing = 1 }: SelectionCursorProps) {
           <meshBasicMaterial
             color={color}
             transparent
-            opacity={occupied || dropBusy ? 0.04 : 0.1}
+            opacity={occupied || dropBusy ? 0.04 : finishBlocked ? 0.06 : 0.1}
             depthWrite={false}
           />
         </mesh>
@@ -634,12 +636,16 @@ export function SelectionCursor({ dims, spacing = 1 }: SelectionCursorProps) {
             <meshBasicMaterial
               color={color}
               transparent
-              opacity={occupied || dropBusy ? 0.06 : 0.16}
+              opacity={occupied || dropBusy ? 0.06 : finishBlocked ? 0.1 : 0.16}
               depthWrite={false}
             />
           </mesh>
           <lineSegments geometry={edges}>
-            <lineBasicMaterial color={color} transparent opacity={dropBusy ? 0.25 : 0.95} />
+            <lineBasicMaterial
+              color={color}
+              transparent
+              opacity={dropBusy ? 0.25 : finishBlocked ? 0.7 : 0.95}
+            />
           </lineSegments>
         </>
       ) : null}

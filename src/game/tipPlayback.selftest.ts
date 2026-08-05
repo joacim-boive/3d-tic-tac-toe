@@ -35,6 +35,7 @@ function testAiTipPlaybackSpendsAndHandsOff() {
     powerUpsEnabled: true,
     inventory: invBefore,
     bonusPlacesRemaining: 0,
+    placedThisTurn: false,
     powerUpMode: null,
     powerUpToast: null,
     watchPowerUp: null,

@@ -89,7 +89,10 @@ export function useGameControls() {
           break;
         case "Escape":
           // Power-up modes: Esc cancels (same as Cancel), not leave to menu.
-          if ((clearMode || powerUpMode === "tip") && !tipFalling) {
+          if (
+            (clearMode || powerUpMode === "tip" || powerUpMode === "extra-turn") &&
+            !tipFalling
+          ) {
             e.preventDefault();
             cancelPowerUpMode();
             break;

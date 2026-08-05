@@ -170,6 +170,21 @@ export function resolvePlaceCoord(
   return coord;
 }
 
+/** True if placing at `coord` (respecting Drop landing) would complete a win. */
+export function wouldPlaceWin(
+  board: Board,
+  dims: BoardDims,
+  coord: CellCoord,
+  player: PlayerId,
+  placement: "free" | "drop",
+): boolean {
+  const resolved = resolvePlaceCoord(board, dims, coord, placement);
+  if (!resolved) return false;
+  const next = new Map(board);
+  next.set(cellKey(resolved.x, resolved.y, resolved.z), player);
+  return checkWin(next, dims, resolved, player) !== null;
+}
+
 /** Rejection sampling until density is high, then linear scan. */
 export function randomEmptyCell(
   board: Board,

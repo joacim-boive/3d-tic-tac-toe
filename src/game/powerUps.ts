@@ -10,6 +10,9 @@ export const POWER_UP_LABELS: Record<PowerUpId, string> = {
   tip: "Tip field",
 };
 
+/** Shown when aiming / placing the Extra ball on a finishing cell. */
+export const EXTRA_NO_FINISH_TOAST = "Extra can't finish a line";
+
 export const MAX_PER_KIND = 2;
 export const SWARM_PACKAGE_COUNT = 3;
 /** Earliest ply (occupiedCount) that may trigger a package swarm. */
@@ -56,7 +59,8 @@ export type Rng = () => number;
 
 /**
  * Extra turn is banned on 3×3×3 — a second place after one mark is often an
- * instant forced win on win-length 3.
+ * instant forced win on win-length 3. On larger boards Extra activates only
+ * after the ordinary place, and the bonus ball cannot finish a line.
  */
 export function powerUpsForPreset(presetId: PresetId): readonly PowerUpId[] {
   if (presetId === "3x3x3") {
