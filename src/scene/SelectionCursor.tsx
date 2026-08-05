@@ -13,9 +13,10 @@ import { useSliceHighlightStore } from "./sliceHighlightStore";
 import {
   applyWheelDeltaToDepthAccum,
   clampDepthIndex,
+  depthDeltaYFromPointers,
   depthStepsFromSwipeDelta,
-  pointerCentroidY,
   reconcileStickyDepth,
+  shouldEnterModifierDepth,
   stepStickyDepth,
 } from "./stickyDepth";
 
@@ -26,7 +27,7 @@ type SelectionCursorProps = {
 
 const DRAG_PX = 10;
 const MULTI_WAIT_MS = 120;
-/** 3-finger vertical swipe / trackpad scroll: pixels per depth layer. */
+/** Vertical swipe / trackpad scroll: pixels per depth layer. */
 const DEPTH_SWIPE_PX = 48;
 
 function isTouchPointer(type: string): boolean {
@@ -39,17 +40,18 @@ type AimSession = {
   mode: "touch" | "desktop";
 };
 
-type TriDepthSession = {
-  startY: number;
+type ModifierDepthSession = {
   startDepth: number;
   axis: SliceAxis;
+  /** Per-pointer client position when the depth session began (or finger joined). */
+  starts: Map<number, { x: number; y: number }>;
 };
 
 /**
  * Sticky-depth aim cursor.
  * 1-finger / left-drag: pick freely on the sticky plane (including up/down).
- * Touch + fine trackpad with multi-touch: 3-finger swipe = depth.
- * Desktop trackpad: two-finger scroll = orbit; Shift+scroll = depth; pinch = zoom; Q/E = depth.
+ * Touch: while aiming, plant a second finger + vertical drag = depth (orbit stays off).
+ * Two fingers from rest = orbit/pinch. Desktop: Shift+scroll / Q/E = depth.
  * Aim preview is the cell box only (no ghost marker ball). Click/tap moves aim; Space places.
  * Power-ups: swarm blocks pointers; clear-row tap cycles axis (cursor mesh hidden).
  */
@@ -93,7 +95,7 @@ export function SelectionCursor({ dims, spacing = 1 }: SelectionCursorProps) {
   const aimDelayRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pendingAimRef = useRef({ x: 0, y: 0 });
   const aimSessionRef = useRef<AimSession | null>(null);
-  const triDepthRef = useRef<TriDepthSession | null>(null);
+  const modDepthRef = useRef<ModifierDepthSession | null>(null);
   const dropBusyRef = useRef(dropBusy);
   dropBusyRef.current = dropBusy;
   const swarmBusyRef = useRef(swarmBusy);
@@ -194,7 +196,7 @@ export function SelectionCursor({ dims, spacing = 1 }: SelectionCursorProps) {
       if (!touchAiming) aimSessionRef.current = null;
       return;
     }
-    if (touchAiming || triDepthRef.current) return;
+    if (touchAiming || modDepthRef.current) return;
 
     let session = aimSessionRef.current;
     if (!session || session.mode !== "desktop") {
@@ -296,7 +298,7 @@ export function SelectionCursor({ dims, spacing = 1 }: SelectionCursorProps) {
       setTouchAiming(false);
       setAiming(false);
       aimSessionRef.current = null;
-      triDepthRef.current = null;
+      modDepthRef.current = null;
       clearSticky();
       return;
     }
@@ -311,29 +313,54 @@ export function SelectionCursor({ dims, spacing = 1 }: SelectionCursorProps) {
 
     const listPointerPoints = () => [...pointersRef.current.values()];
 
-    const endTriDepth = () => {
-      triDepthRef.current = null;
+    const snapshotPointerStarts = () => {
+      const starts = new Map<number, { x: number; y: number }>();
+      for (const [id, pos] of pointersRef.current) {
+        starts.set(id, { x: pos.x, y: pos.y });
+      }
+      return starts;
     };
 
-    const beginTriDepth = () => {
+    const endModifierDepth = () => {
+      modDepthRef.current = null;
+    };
+
+    const beginModifierDepth = () => {
       const stickyNow = ensureStickyRef.current();
-      triDepthRef.current = {
-        startY: pointerCentroidY(listPointerPoints()),
+      modDepthRef.current = {
         startDepth: stickyNow.index,
         axis: stickyNow.axis,
+        starts: snapshotPointerStarts(),
       };
-      // Pause orbit while changing depth.
+      // Keep aiming true so OrbitControls stays paused for the depth gesture.
       setAiming(true);
       setTouchAiming(false);
       aimSessionRef.current = null;
       dragRef.current.touchAim = false;
+      dragRef.current.multi = true;
+      dragRef.current.moved = true;
     };
 
-    const updateTriDepth = () => {
-      const session = triDepthRef.current;
+    const reanchorModifierDepth = () => {
+      const stickyNow = ensureStickyRef.current();
+      modDepthRef.current = {
+        startDepth: stickyNow.index,
+        axis: stickyNow.axis,
+        starts: snapshotPointerStarts(),
+      };
+    };
+
+    const updateModifierDepth = () => {
+      const session = modDepthRef.current;
       if (!session) return;
-      const y = pointerCentroidY(listPointerPoints());
-      const steps = depthStepsFromSwipeDelta(y - session.startY, DEPTH_SWIPE_PX);
+      // Late-joining fingers need a start anchor so they don't jump depth.
+      for (const [id, pos] of pointersRef.current) {
+        if (!session.starts.has(id)) {
+          session.starts.set(id, { x: pos.x, y: pos.y });
+        }
+      }
+      const deltaY = depthDeltaYFromPointers(session.starts, pointersRef.current);
+      const steps = depthStepsFromSwipeDelta(deltaY, DEPTH_SWIPE_PX);
       const dir = deepDirection(camera.position, session.axis);
       const depth = clampDepthIndex(session.startDepth + steps * dir, session.axis, dims);
       publishStickyRef.current(session.axis, depth);
@@ -352,14 +379,14 @@ export function SelectionCursor({ dims, spacing = 1 }: SelectionCursorProps) {
         y: 0,
       };
       aimSessionRef.current = null;
-      endTriDepth();
+      endModifierDepth();
       setTouchAiming(false);
       setAiming(false);
     };
 
     const beginTouchAim = () => {
       if (dragRef.current.multi || pointersRef.current.size !== 1) return;
-      if (triDepthRef.current) return;
+      if (modDepthRef.current) return;
       if (swarmBusyRef.current) return;
       dragRef.current.touchAim = true;
       setTouchAiming(true);
@@ -388,6 +415,17 @@ export function SelectionCursor({ dims, spacing = 1 }: SelectionCursorProps) {
       );
     };
 
+    const yieldToOrbit = () => {
+      clearAimDelay();
+      dragRef.current.multi = true;
+      dragRef.current.touchAim = false;
+      dragRef.current.moved = true;
+      aimSessionRef.current = null;
+      endModifierDepth();
+      setTouchAiming(false);
+      setAiming(false);
+    };
+
     const onDown = (e: PointerEvent) => {
       if (swarmBusyRef.current) return;
       const touch = isTouchPointer(e.pointerType);
@@ -402,27 +440,20 @@ export function SelectionCursor({ dims, spacing = 1 }: SelectionCursorProps) {
       pointersRef.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
       const count = pointersRef.current.size;
 
-      if (count >= 3) {
+      if (count >= 2) {
         clearAimDelay();
-        dragRef.current.multi = true;
-        dragRef.current.touchAim = false;
-        dragRef.current.moved = true;
-        aimSessionRef.current = null;
-        setTouchAiming(false);
-        beginTriDepth();
-        return;
-      }
-
-      if (count === 2) {
-        // Two-finger orbit / pinch — yield to OrbitControls.
-        clearAimDelay();
-        dragRef.current.multi = true;
-        dragRef.current.touchAim = false;
-        dragRef.current.moved = true;
-        aimSessionRef.current = null;
-        endTriDepth();
-        setTouchAiming(false);
-        setAiming(false);
+        // Already aiming → second finger is a depth modifier (orbit stays paused).
+        if (touch && shouldEnterModifierDepth(dragRef.current.touchAim, count)) {
+          beginModifierDepth();
+          return;
+        }
+        // Already in modifier depth (e.g. 3rd finger) — re-anchor, keep depth mode.
+        if (modDepthRef.current) {
+          reanchorModifierDepth();
+          return;
+        }
+        // Two+ fingers from rest → orbit / pinch.
+        yieldToOrbit();
         return;
       }
 
@@ -450,9 +481,8 @@ export function SelectionCursor({ dims, spacing = 1 }: SelectionCursorProps) {
         pointersRef.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
       }
 
-      if (pointersRef.current.size >= 3) {
-        if (!triDepthRef.current) beginTriDepth();
-        updateTriDepth();
+      if (modDepthRef.current) {
+        updateModifierDepth();
         return;
       }
 
@@ -499,20 +529,15 @@ export function SelectionCursor({ dims, spacing = 1 }: SelectionCursorProps) {
       pointersRef.current.delete(e.pointerId);
       const remaining = pointersRef.current.size;
 
-      if (remaining >= 3) {
-        // Still in tri-depth — refresh anchor so lifting one finger doesn't jump.
-        const stickyNow = ensureStickyRef.current();
-        triDepthRef.current = {
-          startY: pointerCentroidY(listPointerPoints()),
-          startDepth: stickyNow.index,
-          axis: stickyNow.axis,
-        };
+      if (modDepthRef.current && remaining >= 2) {
+        // Still in modifier depth — re-anchor so lifting a finger doesn't jump.
+        reanchorModifierDepth();
         return;
       }
 
-      if (remaining === 2) {
-        // Dropped to orbit — hand off to OrbitControls.
-        endTriDepth();
+      if (remaining >= 2) {
+        // Multi-touch orbit / pinch — hand off to OrbitControls.
+        endModifierDepth();
         setAiming(false);
         setTouchAiming(false);
         aimSessionRef.current = null;
@@ -522,7 +547,7 @@ export function SelectionCursor({ dims, spacing = 1 }: SelectionCursorProps) {
       }
 
       if (remaining === 0) {
-        endTriDepth();
+        endModifierDepth();
         clearAimDelay();
         dragRef.current.active = false;
         dragRef.current.touchAim = false;
@@ -532,12 +557,12 @@ export function SelectionCursor({ dims, spacing = 1 }: SelectionCursorProps) {
         setAiming(false);
         // Sticky plane stays lit after depth / aim ends.
       } else if (remaining === 1) {
-        const wasTri = triDepthRef.current !== null;
-        endTriDepth();
+        const wasDepth = modDepthRef.current !== null;
+        endModifierDepth();
         const left = listPointerPoints()[0];
-        // After 3-finger depth, keep free aim on the sticky plane with the
+        // After modifier depth, keep free aim on the sticky plane with the
         // remaining finger — no need to lift and re-drag.
-        if (wasTri && left && touch && !swarmBusyRef.current) {
+        if (wasDepth && left && touch && !swarmBusyRef.current) {
           dragRef.current = {
             active: true,
             moved: true,

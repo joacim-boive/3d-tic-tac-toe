@@ -46,12 +46,41 @@ export function stepStickyDepth(
   };
 }
 
-/** Average client Y of active pointers — used for 3-finger vertical depth. */
-export function pointerCentroidY(points: ReadonlyArray<{ x: number; y: number }>): number {
+type PointerPoint = { x: number; y: number };
+
+/** Average client Y of active pointers. */
+export function pointerCentroidY(points: ReadonlyArray<PointerPoint>): number {
   if (points.length === 0) return 0;
   let sum = 0;
   for (const p of points) sum += p.y;
   return sum / points.length;
+}
+
+/**
+ * Touch depth enters only when a second (or later) finger lands while already
+ * aiming — two fingers from rest stay orbit/pinch.
+ */
+export function shouldEnterModifierDepth(touchAiming: boolean, pointerCount: number): boolean {
+  return touchAiming && pointerCount >= 2;
+}
+
+/**
+ * Vertical delta for modifier-depth: the finger with the largest |ΔY| from its
+ * session start wins. A stationary modifier contributes ~0; the dragging finger
+ * drives depth (avoids centroid halving sensitivity).
+ */
+export function depthDeltaYFromPointers(
+  starts: ReadonlyMap<number, PointerPoint>,
+  current: ReadonlyMap<number, PointerPoint>,
+): number {
+  let best = 0;
+  for (const [id, pos] of current) {
+    const start = starts.get(id);
+    if (!start) continue;
+    const dy = pos.y - start.y;
+    if (Math.abs(dy) > Math.abs(best)) best = dy;
+  }
+  return best;
 }
 
 /**
