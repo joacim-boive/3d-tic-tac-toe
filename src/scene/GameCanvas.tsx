@@ -138,7 +138,8 @@ function SceneContent() {
 
       {/*
         Tip / package swarm: OrbitControls off.
-        Touch: 1-finger aim; 2-finger orbit/pinch; 3-finger depth.
+        Touch: 1-finger aim; while aiming, 2nd finger + vertical drag = depth;
+        2-finger from rest = orbit/pinch.
         Desktop: left-drag aim; 2-finger scroll orbit; Shift+scroll depth; pinch zoom; Space place.
         Viewport size must stay fixed when Tip toggles (mode controls overlay)
         so disabling orbit here does not look like a zoom change.
