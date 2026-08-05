@@ -1,10 +1,15 @@
 "use client";
 
-import { useFrame } from "@react-three/fiber";
+import { useFrame, useThree } from "@react-three/fiber";
 import { useEffect, useMemo, useRef, useState, type MutableRefObject } from "react";
 import { Color, type Group, type Mesh, type MeshStandardMaterial, Vector3 } from "three";
 import { SWARM_DURATION_MS, type SwarmPackagePlan, type SwarmTapOutcome } from "@/game/powerUps";
-import { packageWorldPos } from "@/game/swarmMath";
+import {
+  createEmptySwarmFlyFrame,
+  packageWorldPos,
+  swarmFlyFrameFromCamera,
+  type SwarmFlyFrame,
+} from "@/game/swarmMath";
 import { useGameStore } from "@/game/store";
 import type { BoardDims, PlayerId } from "@/game/types";
 
@@ -64,7 +69,7 @@ function sampleFlight(
   nowMs: number,
   startMs: number,
   out: Vector3,
-  dims: BoardDims,
+  frame: SwarmFlyFrame,
 ): { pos: Vector3; visible: boolean; t: number } {
   const duration = SWARM_DURATION_MS * pkg.speed;
   const local = nowMs - startMs - pkg.delayMs;
@@ -72,7 +77,7 @@ function sampleFlight(
   const t = Math.min(1, local / duration);
   const u = pkg.x0 + (pkg.x1 - pkg.x0) * t;
   const v = pkg.y0 + (pkg.y1 - pkg.y0) * t;
-  packageWorldPos(u, v, dims, out);
+  packageWorldPos(u, v, frame, out);
   return { pos: out, visible: t < 1 || local < duration + 40, t };
 }
 
@@ -119,10 +124,12 @@ function buildBurst(
 }
 
 /**
- * 3D power-up flyby: bright cylinders streak across the board.
+ * 3D power-up flyby: bright cylinders streak across the player's viewport.
+ * Paths track the live camera frustum so zoom never puts packages out of reach.
  * Catch / dud / deny shatters them into kinematic glass shards (no Rapier).
  */
 export function SwarmPackages({ dims }: SwarmPackagesProps) {
+  const { camera } = useThree();
   const swarm = useGameStore((s) => s.swarm);
   const swarmBusy = useGameStore((s) => s.swarmBusy);
   const swarmPopped = useGameStore((s) => s.swarmPopped);
@@ -135,11 +142,13 @@ export function SwarmPackages({ dims }: SwarmPackagesProps) {
   const positionsRef = useRef(new Map<number, Vector3>());
   const colorsRef = useRef(new Map<number, string>());
   const handledPopsRef = useRef(new Set<string>());
+  const frameRef = useRef(createEmptySwarmFlyFrame());
   const [bursts, setBursts] = useState<Burst[]>([]);
   const clockRef = useRef(0);
 
   useFrame((_, dt) => {
     clockRef.current += dt;
+    swarmFlyFrameFromCamera(camera, dims, frameRef.current);
   });
 
   // New swarm → reset flight clock + pop tracking.
@@ -167,7 +176,7 @@ export function SwarmPackages({ dims }: SwarmPackagesProps) {
       const handleKey = `${seed}:${id}:${outcome}`;
       if (handledPopsRef.current.has(handleKey)) continue;
       const origin =
-        positionsRef.current.get(id) ?? packageWorldPos(0.5, 0.5, dims);
+        positionsRef.current.get(id) ?? packageWorldPos(0.5, 0.5, frameRef.current);
       handledPopsRef.current.add(handleKey);
       const color = colorsRef.current.get(id) ?? PACKAGE_COLORS[0]!;
       next.push(buildBurst(handleKey, origin, color, outcome, seed, id, now));
@@ -175,7 +184,7 @@ export function SwarmPackages({ dims }: SwarmPackagesProps) {
     if (next.length > 0) {
       setBursts((prev) => [...prev.filter((b) => clockRef.current - b.born < SHARD_LIFE), ...next]);
     }
-  }, [swarmPopped, swarm, dims]);
+  }, [swarmPopped, swarm]);
 
   useEffect(() => {
     if (bursts.length === 0) return;
@@ -210,10 +219,10 @@ export function SwarmPackages({ dims }: SwarmPackagesProps) {
             <FlyingCylinder
               key={`${swarm.seed}-${pkg.id}`}
               pkg={pkg}
-              dims={dims}
               color={PACKAGE_COLORS[pkg.id % PACKAGE_COLORS.length]!}
               startMsRef={startMsRef}
               positionsRef={positionsRef}
+              frameRef={frameRef}
               popped={swarmPopped[pkg.id]}
               canCatch={canCatch && !swarmPopped[pkg.id]}
               onCatch={() => {
@@ -224,7 +233,7 @@ export function SwarmPackages({ dims }: SwarmPackagesProps) {
                 const origin =
                   positionsRef.current.get(pkg.id)?.clone() ??
                   before ??
-                  new Vector3(0, 0, packageWorldPos(0.5, 0.5, dims).z);
+                  packageWorldPos(0.5, 0.5, frameRef.current);
                 spawnPopBurst(
                   pkg.id,
                   origin,
@@ -255,10 +264,10 @@ function scratchPos(
 
 type FlyingCylinderProps = {
   pkg: SwarmPackagePlan;
-  dims: BoardDims;
   color: string;
   startMsRef: MutableRefObject<number>;
   positionsRef: MutableRefObject<Map<number, Vector3>>;
+  frameRef: MutableRefObject<SwarmFlyFrame>;
   popped?: SwarmTapOutcome;
   canCatch: boolean;
   onCatch: () => void;
@@ -266,10 +275,10 @@ type FlyingCylinderProps = {
 
 function FlyingCylinder({
   pkg,
-  dims,
   color,
   startMsRef,
   positionsRef,
+  frameRef,
   popped,
   canCatch,
   onCatch,
@@ -287,7 +296,7 @@ function FlyingCylinder({
       performance.now(),
       startMsRef.current,
       scratch.current,
-      dims,
+      frameRef.current,
     );
     // Keep last known world pos even after the cylinder leaves — AI timeout
     // shatter reads this when the swarm clears.
@@ -328,7 +337,7 @@ function FlyingCylinder({
           performance.now(),
           startMsRef.current,
           scratch.current,
-          dims,
+          frameRef.current,
         );
         let stored = positionsRef.current.get(pkg.id);
         if (!stored) {
