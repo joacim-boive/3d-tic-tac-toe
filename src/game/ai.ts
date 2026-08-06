@@ -40,23 +40,18 @@ const EXTREME_SMALL_DEPTH = 9;
 const EXTREME_BUDGET_MS = 900;
 /** Extra plies Extreme may add along forcing (threat) lines. */
 const EXTREME_THREAT_EXTENSIONS = 1;
-/**
- * Extreme occasionally plays a safe alternative instead of the principal move.
- * Keeps it strong vs Hard while leaving room for Impossible above it.
- */
-const EXTREME_SLIP_RATE = 0.14;
 
 /** Impossible: large boards. */
 const IMPOSSIBLE_LARGE_DEPTH = 8;
 /** Impossible: 4×4×4. */
-const IMPOSSIBLE_MID_DEPTH = 11;
+const IMPOSSIBLE_MID_DEPTH = 12;
 /** Impossible: 3×3×3 if ever invoked. */
-const IMPOSSIBLE_SMALL_DEPTH = 12;
+const IMPOSSIBLE_SMALL_DEPTH = 13;
 /**
  * Impossible burns a long think — near the Mobile Safari comfort edge.
- * Meant to feel nearly unbeatable; still a soft deadline.
+ * Aimed at a clearer step above Extreme than think-time alone (~3.5s) delivered.
  */
-const IMPOSSIBLE_BUDGET_MS = 3500;
+const IMPOSSIBLE_BUDGET_MS = 5000;
 const IMPOSSIBLE_THREAT_EXTENSIONS = 2;
 /** Impossible only: resolve immediate wins/blocks at leaves. */
 const IMPOSSIBLE_QUIESCE_PLIES = 6;
@@ -82,8 +77,6 @@ export type AiSearchOptions = {
   budgetMs?: number;
   /** Cap iterative-deepening depth. */
   maxDepth?: number;
-  /** Extreme only: chance to play a safe non-PV alternative (0 disables). */
-  slipRate?: number;
 };
 
 type SearchTier = "hard" | "extreme" | "impossible";
@@ -729,11 +722,6 @@ function preferSafeMove(
   return safe[0]!;
 }
 
-/**
- * Impossible: after iterative deepening, re-search the top safe root candidates
- * at a fixed depth so a single shallow PV miss doesn't stick.
- */
-
 function minimax(
   board: Board,
   dims: BoardDims,
@@ -973,7 +961,10 @@ function searchMove(
   }
 
   if (advanced && best) {
-    const safePick = preferSafeMove(
+    // Extreme: refuse win/fork gifts only — Hard cannot punish force gifts, so
+    // Extreme stays sharp vs Hard. Impossible refuses force gifts too and prefers
+    // safe threats, which is the main bot-measurable step above Extreme.
+    return preferSafeMove(
       board,
       dims,
       aiPlayer,
@@ -982,23 +973,8 @@ function searchMove(
       best,
       rng,
       difficulty === "impossible",
-      "full",
+      difficulty === "impossible" ? "full" : "basic",
     );
-    // Extreme: rare safe slip so Impossible has a measurable step up.
-    const slip =
-      difficulty === "extreme" ? (options.slipRate ?? EXTREME_SLIP_RATE) : 0;
-    if (safePick && slip > 0 && rng() < slip) {
-      const safeAlts = empties.filter(
-        (cell) =>
-          !sameCell(cell, safePick) &&
-          !givesOpponentTactic(board, dims, aiPlayer, cell, placement, "full"),
-      );
-      if (safeAlts.length > 0) {
-        const pool = safeAlts.slice(0, Math.min(3, safeAlts.length));
-        return pool[Math.floor(rng() * pool.length)]!;
-      }
-    }
-    return safePick;
   }
   return best;
 }

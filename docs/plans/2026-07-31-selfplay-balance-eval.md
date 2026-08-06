@@ -36,7 +36,7 @@ npm run eval:selfplay -- --preset 4x4x4 --placement free \
   --difficulty extreme --vs hard --swap --games 40 --progress
 ```
 
-Omitting `--budget` on a `--vs` matchup uses each level’s browser think-time (Hard ~80ms, Extreme ~900ms, Impossible ~3500ms). The report includes:
+Omitting `--budget` on a `--vs` matchup uses each level’s browser think-time (Hard ~80ms, Extreme ~900ms, Impossible ~5000ms). The report includes:
 
 - **Primary / Opponent wins** — raw head-to-head
 - **Primary as first / as second** — split by seat (4×4×4 free has a large opener bias)
