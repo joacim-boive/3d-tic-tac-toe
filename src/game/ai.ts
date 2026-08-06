@@ -49,12 +49,12 @@ const IMPOSSIBLE_MID_DEPTH = 12;
 const IMPOSSIBLE_SMALL_DEPTH = 13;
 /**
  * Impossible burns a long think — near the Mobile Safari comfort edge.
- * Aimed at a clearer step above Extreme than think-time alone (~3.5s) delivered.
+ * Same search as Extreme, plus dual-force tactics and deeper/longer ID.
+ * Extra heuristics (quiescence, prefer-threat, opening search) previously
+ * made Impossible *weaker* than Extreme in bot matchups — do not reintroduce.
  */
 const IMPOSSIBLE_BUDGET_MS = 5000;
 const IMPOSSIBLE_THREAT_EXTENSIONS = 2;
-/** Impossible only: resolve immediate wins/blocks at leaves. */
-const IMPOSSIBLE_QUIESCE_PLIES = 6;
 
 const WIN_SCORE = 1_000_000;
 /** Leaf bonus for an open (need − 1) window — creates an immediate threat next ply. */
@@ -557,9 +557,6 @@ type SearchContext = {
   rootEvalOrder: boolean;
   /** Extreme+: prefer immediate win/block cells in interior ordering. */
   tacticalOrder: boolean;
-  /** Impossible: light win/block quiescence at leaves. */
-  useQuiesce: boolean;
-  quiescePlies: number;
 };
 
 function playerZobristSlot(player: PlayerId): number {
@@ -592,60 +589,6 @@ function hashBoard(board: Board, dims: BoardDims, zobrist: Uint32Array): number 
     h ^= zobrist[idx]!;
   }
   return h;
-}
-
-
-/**
- * Impossible horizon: chase immediate wins and forced blocks only.
- * (Heavier quiescence previously hurt Impossible vs Extreme.)
- */
-function quiesce(
-  board: Board,
-  dims: BoardDims,
-  toMove: PlayerId,
-  occupiedCount: number,
-  pliesLeft: number,
-  ctx: SearchContext,
-): SearchResult {
-  if (performance.now() >= ctx.deadline) {
-    return { score: 0, move: null, aborted: true };
-  }
-
-  const standPat = evaluate(board, dims, ctx.aiPlayer, ctx.placement);
-  if (pliesLeft <= 0) {
-    return { score: standPat, move: null, aborted: false };
-  }
-
-  const empties = legalEmpties(board, dims, ctx.placement);
-  if (empties.length === 0 || isDraw(occupiedCount, dims)) {
-    return { score: 0, move: null, aborted: false };
-  }
-
-  const win = findWinningMove(board, dims, toMove, empties);
-  if (win) {
-    const score = toMove === ctx.aiPlayer ? WIN_SCORE + pliesLeft : -WIN_SCORE - pliesLeft;
-    return { score, move: win, aborted: false };
-  }
-
-  const mustBlock = findWinningMove(board, dims, opponentOf(toMove), empties);
-  if (!mustBlock) {
-    return { score: standPat, move: null, aborted: false };
-  }
-
-  const key = cellKey(mustBlock.x, mustBlock.y, mustBlock.z);
-  board.set(key, toMove);
-  xorPiece(ctx, dims, mustBlock, toMove);
-  const won = checkWin(board, dims, mustBlock, toMove);
-  let child: SearchResult;
-  if (won) {
-    const score = toMove === ctx.aiPlayer ? WIN_SCORE + pliesLeft : -WIN_SCORE - pliesLeft;
-    child = { score, move: null, aborted: false };
-  } else {
-    child = quiesce(board, dims, opponentOf(toMove), occupiedCount + 1, pliesLeft - 1, ctx);
-  }
-  board.delete(key);
-  xorPiece(ctx, dims, mustBlock, toMove);
-  return { score: child.score, move: mustBlock, aborted: child.aborted };
 }
 
 /**
@@ -682,7 +625,6 @@ function givesOpponentTactic(
 /**
  * Extreme/Impossible root filter: prefer the search move, but refuse to walk into an
  * immediate opponent win/fork/force if a safer legal place exists.
- * Impossible also prefers a safe move that creates a threat of its own.
  */
 function preferSafeMove(
   board: Board,
@@ -692,35 +634,17 @@ function preferSafeMove(
   placement: PlacementMode,
   preferred: CellCoord | null,
   rng: Rng,
-  preferThreat = false,
   safetyMode: "basic" | "full" = "full",
 ): CellCoord | null {
   const ordered = preferred
     ? [preferred, ...empties.filter((c) => !sameCell(c, preferred))]
     : empties;
-  const safe: CellCoord[] = [];
   for (const cell of ordered) {
     if (!givesOpponentTactic(board, dims, aiPlayer, cell, placement, safetyMode)) {
-      safe.push(cell);
+      return cell;
     }
   }
-  if (safe.length === 0) {
-    return preferred ?? bestQuietMove(board, dims, aiPlayer, empties, placement, rng);
-  }
-  if (preferThreat) {
-    for (const cell of safe) {
-      if (isTwoPlyForceAt(board, dims, aiPlayer, cell, empties, placement)) return cell;
-    }
-    for (const cell of safe) {
-      const key = cellKey(cell.x, cell.y, cell.z);
-      board.set(key, aiPlayer);
-      const replies = legalEmpties(board, dims, placement);
-      const threatens = findWinningMove(board, dims, aiPlayer, replies) !== null;
-      board.delete(key);
-      if (threatens) return cell;
-    }
-  }
-  return safe[0]!;
+  return preferred ?? bestQuietMove(board, dims, aiPlayer, empties, placement, rng);
 }
 
 function minimax(
@@ -771,9 +695,6 @@ function minimax(
   }
 
   if (depthLeft === 0) {
-    if (ctx.useQuiesce) {
-      return quiesce(board, dims, toMove, occupiedCount, ctx.quiescePlies, ctx);
-    }
     return {
       score: evaluate(board, dims, ctx.aiPlayer, ctx.placement),
       move: null,
@@ -913,9 +834,8 @@ function searchMove(
   if (forced) return forced;
 
   // Early game: shallow α-β + open-window counts overvalue corners (esp. Drop).
-  // Impossible only quiets the empty-board opening; Extreme/Hard quiet two plies.
-  const quietOpeningPlies = difficulty === "impossible" ? 0 : 2;
-  if (occupiedCount <= quietOpeningPlies) {
+  // Trust center/column quiet eval for the opening instead.
+  if (occupiedCount <= 2) {
     return bestQuietMove(board, dims, aiPlayer, empties, placement, rng);
   }
 
@@ -944,8 +864,6 @@ function searchMove(
     extensionsLeft,
     rootEvalOrder: advanced,
     tacticalOrder: advanced,
-    useQuiesce: difficulty === "impossible",
-    quiescePlies: IMPOSSIBLE_QUIESCE_PLIES,
   };
 
   let best = bestQuietMove(board, dims, aiPlayer, empties, placement, rng);
@@ -962,17 +880,7 @@ function searchMove(
   }
 
   if (advanced && best) {
-    return preferSafeMove(
-      board,
-      dims,
-      aiPlayer,
-      empties,
-      placement,
-      best,
-      rng,
-      difficulty === "impossible",
-      "full",
-    );
+    return preferSafeMove(board, dims, aiPlayer, empties, placement, best, rng, "full");
   }
   return best;
 }
