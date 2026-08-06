@@ -992,6 +992,7 @@ button {
     linear-gradient(165deg, rgba(28, 40, 52, 0.97), rgba(14, 20, 27, 0.98));
   box-shadow: 0 24px 60px rgba(0, 0, 0, 0.45);
   overflow: hidden;
+  touch-action: pan-y;
   animation: onboard-panel-in 0.42s cubic-bezier(0.22, 1.15, 0.36, 1) both;
 }
 
