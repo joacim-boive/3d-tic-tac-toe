@@ -41,18 +41,17 @@ const EXTREME_BUDGET_MS = 900;
 /** Extra plies Extreme may add along forcing (threat) lines. */
 const EXTREME_THREAT_EXTENSIONS = 1;
 
-/** Impossible: large boards — same depth caps as Extreme; extra strength is time + dual-force. */
+/** Impossible: large boards — same depth caps as Extreme; dual-force is the step up. */
 const IMPOSSIBLE_LARGE_DEPTH = 6;
-/** Impossible: 4×4×4 — match Extreme; deeper caps lost to Extreme in matchups. */
+/** Impossible: 4×4×4 — match Extreme (deeper ID lost matchups). */
 const IMPOSSIBLE_MID_DEPTH = 8;
 /** Impossible: 3×3×3 if ever invoked. */
 const IMPOSSIBLE_SMALL_DEPTH = 9;
 /**
- * Impossible burns a long think so iterative deepening finishes Extreme’s depth
- * caps more often. Dual-force tactics are the only Impossible-only move rule.
- * Going past Extreme’s depth/extensions previously *lost* to Extreme in bots.
+ * Same wall-clock as Extreme. Extra think-time reached deeper ID iterations that
+ * *lost* to Extreme in bots; Impossible’s edge is dual-force tactics only.
  */
-const IMPOSSIBLE_BUDGET_MS = 5000;
+const IMPOSSIBLE_BUDGET_MS = 900;
 const IMPOSSIBLE_THREAT_EXTENSIONS = 1;
 
 const WIN_SCORE = 1_000_000;

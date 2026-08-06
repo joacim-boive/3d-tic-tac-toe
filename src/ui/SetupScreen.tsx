@@ -251,11 +251,11 @@ export function SetupScreen() {
             })}
           </div>
           {aiDifficulty === "impossible" ? (
-            <p className="setup__hint">Impossible thinks longest — winning is a genuine achievement.</p>
+            <p className="setup__hint">Impossible plays Extreme’s game plus dual-force setups.</p>
           ) : aiDifficulty === "extreme" ? (
             <p className="setup__hint">Extreme blocks force traps and refuses to walk into them.</p>
           ) : isExtremeAllowed(presetId) ? (
-            <p className="setup__hint">Impossible is the top tier — nearly unbeatable.</p>
+            <p className="setup__hint">Impossible adds dual-force tactics on top of Extreme.</p>
           ) : null}
         </section>
       ) : null}
