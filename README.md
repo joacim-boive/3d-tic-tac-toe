@@ -67,10 +67,10 @@ npm run check:win  # win-detection self-check
 npm run check:drop # gravity drop-landing self-check
 npm run check:selfplay  # self-play harness smoke test
 npm run eval:selfplay -- --all --games 2000 --difficulty medium
-npm run eval:selfplay -- --preset 4x4x4 --difficulty extreme --vs hard --swap --games 40 --budget 700
+npm run eval:selfplay -- --preset 4x4x4 --difficulty extreme --vs hard --swap --games 40
 ```
 
-Self-play eval prints first/second win rate, draw rate, average game length, and common openings — useful when tuning presets or trying new mechanics. With `--vs` + `--swap`, it also reports primary vs opponent wins for head-to-head difficulty comparisons.
+Self-play eval prints first/second win rate, draw rate, average game length, and common openings — useful when tuning presets or trying new mechanics. With `--vs` + `--swap`, it also reports primary vs opponent wins for head-to-head difficulty comparisons (matchups default to each level’s browser think-time).
 
 ## Deploy
 

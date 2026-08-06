@@ -115,7 +115,7 @@ function testBlocksOpponentFork() {
 
 /**
  * Force-then-fork: after (0,2,0) creates a single threat, the forced block still
- * leaves a fork. Medium misses the defensive occupy; Hard/Extreme must take it
+ * leaves a fork. Medium/Hard miss the defensive occupy; Extreme must take it
  * even with a tiny search budget (forced tactics, not α-β).
  */
 function testBlocksTwoPlyForce() {
@@ -135,7 +135,18 @@ function testBlocksTwoPlyForce() {
   assert(force !== null, "fixture must contain a two-ply force");
   assert(sameCell(force, { x: 0, y: 2, z: 0 }), "expected force cell");
 
-  for (const difficulty of ["hard", "extreme"] as const) {
+  const extreme = pickAiMove(board, dims, "extreme", "b", board.size, "free", {
+    budgetMs: 1,
+    maxDepth: 1,
+    rng: () => 0,
+  });
+  assert(extreme !== null, "extreme should move");
+  assert(
+    sameCell(extreme, { x: 0, y: 2, z: 0 }),
+    `extreme must occupy the force cell, got (${extreme.x},${extreme.y},${extreme.z})`,
+  );
+
+  for (const difficulty of ["medium", "hard"] as const) {
     const move = pickAiMove(board, dims, difficulty, "b", board.size, "free", {
       budgetMs: 1,
       maxDepth: 1,
@@ -143,19 +154,10 @@ function testBlocksTwoPlyForce() {
     });
     assert(move !== null, `${difficulty} should move`);
     assert(
-      sameCell(move, { x: 0, y: 2, z: 0 }),
-      `${difficulty} must occupy the force cell, got (${move.x},${move.y},${move.z})`,
+      !sameCell(move, { x: 0, y: 2, z: 0 }),
+      `${difficulty} is not required to see two-ply forces (ladder check)`,
     );
   }
-
-  const medium = pickAiMove(board, dims, "medium", "b", board.size, "free", {
-    rng: () => 0,
-  });
-  assert(medium !== null, "medium should move");
-  assert(
-    !sameCell(medium, { x: 0, y: 2, z: 0 }),
-    "medium is not required to see two-ply forces (ladder check)",
-  );
 }
 
 function testTakesTwoPlyForce() {

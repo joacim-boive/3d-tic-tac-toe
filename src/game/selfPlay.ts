@@ -51,6 +51,8 @@ export type SelfPlayConfig = {
   seed?: number;
   /** Hard-search wall-clock budget; Infinity = finish each depth (offline eval). */
   budgetMs?: number;
+  /** Override budget for the `--vs` / second seat only. */
+  vsBudgetMs?: number;
   maxDepth?: number;
   /** Optional progress every N games. */
   onProgress?: (played: number, total: number) => void;
@@ -71,6 +73,14 @@ export type SelfPlayStats = {
    */
   primaryWins: number;
   opponentWins: number;
+  /** Primary wins in games where primary opened (matchups only; else 0). */
+  primaryWinsAsFirst: number;
+  /** Games where primary opened. */
+  primaryOpenedGames: number;
+  /** Primary wins in games where primary sat second. */
+  primaryWinsAsSecond: number;
+  /** Games where primary sat second. */
+  primarySecondGames: number;
 };
 
 export type SelfPlayGameResult = {
@@ -96,7 +106,8 @@ export function playOneGame(
   placement: PlacementMode,
   difficultyA: AiDifficulty,
   difficultyB: AiDifficulty,
-  search: AiSearchOptions,
+  searchA: AiSearchOptions,
+  searchB: AiSearchOptions,
   openingPlies: number,
 ): SelfPlayGameResult {
   const board = createEmptyBoard();
@@ -107,6 +118,7 @@ export function playOneGame(
 
   for (let plies = 0; plies < maxPlies; plies++) {
     const difficulty = toMove === "a" ? difficultyA : difficultyB;
+    const search = toMove === "a" ? searchA : searchB;
     const move = pickAiMove(board, dims, difficulty, toMove, occupied, placement, search);
     if (!move) {
       return {
@@ -153,9 +165,14 @@ export function playOneGame(
 export function runSelfPlay(config: SelfPlayConfig): SelfPlayStats {
   const openingPlies = config.openingPlies ?? 2;
   const rng = createRng(config.seed ?? 0xc0ffee);
-  const search: AiSearchOptions = {
+  const searchA: AiSearchOptions = {
     rng,
     budgetMs: config.budgetMs,
+    maxDepth: config.maxDepth,
+  };
+  const searchB: AiSearchOptions = {
+    rng,
+    budgetMs: config.vsBudgetMs ?? config.budgetMs,
     maxDepth: config.maxDepth,
   };
   const vs = config.vsDifficulty ?? config.difficulty;
@@ -168,18 +185,26 @@ export function runSelfPlay(config: SelfPlayConfig): SelfPlayStats {
   let totalPlies = 0;
   let primaryWins = 0;
   let opponentWins = 0;
+  let primaryWinsAsFirst = 0;
+  let primaryOpenedGames = 0;
+  let primaryWinsAsSecond = 0;
+  let primarySecondGames = 0;
 
   const t0 = performance.now();
   for (let i = 0; i < config.games; i++) {
     const swapped = swap && i % 2 === 1;
     const difficultyA = swapped ? vs : config.difficulty;
     const difficultyB = swapped ? config.difficulty : vs;
+    // Keep each policy on its own budget when seats swap.
+    const seatSearchA = swapped ? searchB : searchA;
+    const seatSearchB = swapped ? searchA : searchB;
     const result = playOneGame(
       config.dims,
       config.placement,
       difficultyA,
       difficultyB,
-      search,
+      seatSearchA,
+      seatSearchB,
       openingPlies,
     );
     totalPlies += result.plies;
@@ -187,12 +212,20 @@ export function runSelfPlay(config: SelfPlayConfig): SelfPlayStats {
     else if (result.winner === "b") secondWins += 1;
     else draws += 1;
 
+    const primaryIsFirst = difficultyA === config.difficulty;
+    if (primaryIsFirst) primaryOpenedGames += 1;
+    else primarySecondGames += 1;
+
     if (result.winner === "a") {
-      if (difficultyA === config.difficulty) primaryWins += 1;
-      else opponentWins += 1;
+      if (difficultyA === config.difficulty) {
+        primaryWins += 1;
+        primaryWinsAsFirst += 1;
+      } else opponentWins += 1;
     } else if (result.winner === "b") {
-      if (difficultyB === config.difficulty) primaryWins += 1;
-      else opponentWins += 1;
+      if (difficultyB === config.difficulty) {
+        primaryWins += 1;
+        primaryWinsAsSecond += 1;
+      } else opponentWins += 1;
     }
 
     openings.set(result.opening, (openings.get(result.opening) ?? 0) + 1);
@@ -210,6 +243,10 @@ export function runSelfPlay(config: SelfPlayConfig): SelfPlayStats {
     elapsedMs,
     primaryWins,
     opponentWins,
+    primaryWinsAsFirst,
+    primaryOpenedGames,
+    primaryWinsAsSecond,
+    primarySecondGames,
   };
 }
 
@@ -262,6 +299,26 @@ export function formatSelfPlayReport(stats: SelfPlayStats, meta: SelfPlayReportM
       `Primary (${meta.difficulty}) wins: ${stats.primaryWins}  (${pct(stats.primaryWins)})`,
       `Opponent (${vs}) wins:     ${stats.opponentWins}  (${pct(stats.opponentWins)})`,
     );
+    if (stats.primaryOpenedGames > 0) {
+      const asFirstRate = (100 * stats.primaryWinsAsFirst) / stats.primaryOpenedGames;
+      lines.push(
+        `Primary as first:  ${stats.primaryWinsAsFirst}/${stats.primaryOpenedGames}  (${asFirstRate.toFixed(1)}%)`,
+      );
+    }
+    if (stats.primarySecondGames > 0) {
+      const asSecondRate = (100 * stats.primaryWinsAsSecond) / stats.primarySecondGames;
+      lines.push(
+        `Primary as second: ${stats.primaryWinsAsSecond}/${stats.primarySecondGames}  (${asSecondRate.toFixed(1)}%)`,
+      );
+    }
+    if (stats.primaryOpenedGames > 0 && stats.primarySecondGames > 0) {
+      const asFirstRate = (100 * stats.primaryWinsAsFirst) / stats.primaryOpenedGames;
+      const asSecondRate = (100 * stats.primaryWinsAsSecond) / stats.primarySecondGames;
+      const strength = (asFirstRate + asSecondRate) / 2;
+      lines.push(
+        `Seat-averaged strength: ${strength.toFixed(1)}%  (50% ≈ even; opener bias cancelled)`,
+      );
+    }
   }
 
   lines.push(`Average game length: ${avgLen} plies`, "Most common openings:");

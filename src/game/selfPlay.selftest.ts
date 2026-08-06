@@ -24,7 +24,8 @@ function testRngDeterministic() {
 
 function testSingleGameTerminates() {
   const dims = getPreset("3x3x3").dims;
-  const result = playOneGame(dims, "free", "medium", "medium", { rng: createRng(1) }, 2);
+  const search = { rng: createRng(1) };
+  const result = playOneGame(dims, "free", "medium", "medium", search, search, 2);
   assert(result.plies >= 5, "3×3×3 games should last at least 5 plies");
   assert(result.plies <= 27, "cannot exceed board size");
   assert(result.opening.includes(","), "opening fingerprint should list cells");

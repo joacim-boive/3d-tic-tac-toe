@@ -32,10 +32,10 @@ Use a head-to-head matchup with seat swaps:
 
 ```bash
 npm run eval:selfplay -- --preset 4x4x4 --placement free \
-  --difficulty extreme --vs hard --swap --games 40 --budget 700 --progress
+  --difficulty extreme --vs hard --swap --games 40 --progress
 ```
 
-Read **Primary (extreme) wins** vs **Opponent (hard) wins**. A clearly stronger Extreme should win well above 50% after draws (seat swaps remove opener bias). Re-run with the same `--seed` when comparing AI changes.
+Omitting `--budget` on a `--vs` matchup uses each level’s browser think-time (Hard ~80ms, Extreme ~700ms). Read **Primary (extreme) wins** vs **Opponent (hard) wins**. A clearly stronger Extreme should win well above 50% after draws (seat swaps remove opener bias). Re-run with the same `--seed` when comparing AI changes.
 
 Tactical regressions also live in `npm run check:ai` (forks + force-then-fork occupy/block).
 

@@ -39,7 +39,7 @@ const EXTREME_SMALL_DEPTH = 9;
  */
 const EXTREME_BUDGET_MS = 700;
 /** Extra plies Extreme may add along forcing (threat) lines. */
-const EXTREME_THREAT_EXTENSIONS = 2;
+const EXTREME_THREAT_EXTENSIONS = 1;
 
 const WIN_SCORE = 1_000_000;
 /** Leaf bonus for an open (need − 1) window — creates an immediate threat next ply. */
@@ -456,6 +456,8 @@ type SearchContext = {
   useTt: boolean;
   /** Remaining threat-extension budget along this path. */
   extensionsLeft: number;
+  /** One-ply root eval ordering (Extreme). Hard skips it to preserve depth. */
+  rootEvalOrder: boolean;
 };
 
 function playerZobristSlot(player: PlayerId): number {
@@ -510,14 +512,14 @@ function minimax(
   // TT is move-ordering only (no score cutoffs) — avoids incorrect α-β reuse.
   const ttHit = ctx.useTt ? ctx.tt.get(ctx.hash) : undefined;
   const empties =
-    depthLeft === ctx.rootDepth
+    depthLeft === ctx.rootDepth && ctx.rootEvalOrder && prefer == null
       ? orderRootByEval(
           board,
           dims,
           ctx.aiPlayer,
           rawEmpties,
           ctx.placement,
-          prefer ?? ttHit?.move ?? null,
+          ttHit?.move ?? null,
         )
       : orderEmpties(rawEmpties, dims, prefer ?? ttHit?.move ?? null, killer, ctx.history);
 
@@ -553,8 +555,13 @@ function minimax(
     } else {
       let childDepth = depthLeft - 1;
       let restoredExtensions = ctx.extensionsLeft;
-      // Threat extension: if this place leaves an immediate win-in-1, search one ply deeper.
-      if (ctx.extensionsLeft > 0) {
+      // Threat extension near the horizon only — full-tree extensions blow the mobile budget
+      // and can leave Extreme shallower than Hard under the same wall clock.
+      if (
+        ctx.extensionsLeft > 0 &&
+        depthLeft <= 2 &&
+        performance.now() + 40 < ctx.deadline
+      ) {
         const replies = legalEmpties(board, dims, ctx.placement);
         if (findWinningMove(board, dims, toMove, replies) !== null) {
           childDepth += 1;
@@ -633,7 +640,14 @@ function searchMove(
   rng: Rng,
   difficulty: "hard" | "extreme",
 ): CellCoord | null {
-  const forced = forcedTacticalMove(board, dims, aiPlayer, empties, placement, true);
+  const forced = forcedTacticalMove(
+    board,
+    dims,
+    aiPlayer,
+    empties,
+    placement,
+    difficulty === "extreme",
+  );
   if (forced) return forced;
 
   // Early game: shallow α-β + window-window counts overvalue corners (esp. Drop).
@@ -664,6 +678,7 @@ function searchMove(
     tt: new Map(),
     useTt,
     extensionsLeft,
+    rootEvalOrder: difficulty === "extreme",
   };
 
   let best = bestQuietMove(board, dims, aiPlayer, empties, placement, rng);
