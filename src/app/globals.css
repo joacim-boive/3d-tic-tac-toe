@@ -992,6 +992,7 @@ button {
     linear-gradient(165deg, rgba(28, 40, 52, 0.97), rgba(14, 20, 27, 0.98));
   box-shadow: 0 24px 60px rgba(0, 0, 0, 0.45);
   overflow: hidden;
+  touch-action: pan-y;
   animation: onboard-panel-in 0.42s cubic-bezier(0.22, 1.15, 0.36, 1) both;
 }
 
@@ -1251,6 +1252,10 @@ button {
   bottom: 0.85rem;
 }
 
+.onboard-gesture--depth {
+  bottom: 0.45rem;
+}
+
 .onboard-gesture--keys kbd,
 .onboard-fake-btn kbd {
   font-family: var(--font-body);
@@ -1284,6 +1289,69 @@ button {
   }
   50% {
     transform: translate(10px, -6px) rotate(10deg);
+  }
+}
+
+/* Depth: one finger holds aim; the other drags vertically. */
+.onboard-fingers--depth {
+  align-items: center;
+  gap: 0.85rem;
+  animation: none;
+}
+
+.onboard-fingers__dot--hold {
+  opacity: 0.7;
+  box-shadow: 0 0 0 3px rgba(232, 238, 244, 0.18);
+  animation: onboard-finger-hold 2.4s ease-in-out infinite;
+}
+
+.onboard-fingers__drag {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 0.85rem;
+  height: 2.1rem;
+}
+
+.onboard-fingers__trail {
+  position: absolute;
+  top: 0.15rem;
+  bottom: 0.15rem;
+  left: 50%;
+  width: 2px;
+  transform: translateX(-50%);
+  border-radius: 2px;
+  background: linear-gradient(
+    180deg,
+    rgba(62, 207, 200, 0.05),
+    rgba(62, 207, 200, 0.55),
+    rgba(62, 207, 200, 0.05)
+  );
+}
+
+.onboard-fingers__dot--move {
+  position: relative;
+  z-index: 1;
+  animation: onboard-finger-depth-drag 2.4s ease-in-out infinite;
+}
+
+@keyframes onboard-finger-hold {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(0.92);
+  }
+}
+
+@keyframes onboard-finger-depth-drag {
+  0%,
+  100% {
+    transform: translateY(0.55rem);
+  }
+  50% {
+    transform: translateY(-0.55rem);
   }
 }
 
@@ -1756,6 +1824,8 @@ button {
   .onboard-cube--spin,
   .onboard-cube__cursor,
   .onboard-fingers,
+  .onboard-fingers__dot--hold,
+  .onboard-fingers__dot--move,
   .onboard-trackpad::after,
   .onboard-hand--drag,
   .onboard-hand--tap,
