@@ -44,7 +44,7 @@ Options:
   --opening-plies <n>     opening fingerprint length    (default: 2)
   --budget <ms|Infinity|default>
                           Search budget. "default" = each difficulty's browser budget
-                          (Hard ~80ms, Extreme ~500ms, Impossible ~3500ms). Omit with --vs → default;
+                          (Hard ~80ms, Extreme ~900ms, Impossible ~3500ms). Omit with --vs → default;
                           omit without --vs → Infinity (offline deep symmetric).
   --vs-budget <ms|Infinity|default>
                           Budget for the --vs seat only (matchups)

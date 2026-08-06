@@ -37,9 +37,14 @@ const EXTREME_SMALL_DEPTH = 9;
  * Extreme thinks harder than Hard — still bounded for Mobile Safari.
  * Aim: Hard→Extreme gap similar to Medium→Hard (~+10pp seat-averaged).
  */
-const EXTREME_BUDGET_MS = 500;
+const EXTREME_BUDGET_MS = 900;
 /** Extra plies Extreme may add along forcing (threat) lines. */
 const EXTREME_THREAT_EXTENSIONS = 1;
+/**
+ * Extreme occasionally plays a safe alternative instead of the principal move.
+ * Keeps it strong vs Hard while leaving room for Impossible above it.
+ */
+const EXTREME_SLIP_RATE = 0.14;
 
 /** Impossible: large boards. */
 const IMPOSSIBLE_LARGE_DEPTH = 8;
@@ -77,6 +82,8 @@ export type AiSearchOptions = {
   budgetMs?: number;
   /** Cap iterative-deepening depth. */
   maxDepth?: number;
+  /** Extreme only: chance to play a safe non-PV alternative (0 disables). */
+  slipRate?: number;
 };
 
 type SearchTier = "hard" | "extreme" | "impossible";
@@ -966,7 +973,7 @@ function searchMove(
   }
 
   if (advanced && best) {
-    return preferSafeMove(
+    const safePick = preferSafeMove(
       board,
       dims,
       aiPlayer,
@@ -977,6 +984,21 @@ function searchMove(
       difficulty === "impossible",
       "full",
     );
+    // Extreme: rare safe slip so Impossible has a measurable step up.
+    const slip =
+      difficulty === "extreme" ? (options.slipRate ?? EXTREME_SLIP_RATE) : 0;
+    if (safePick && slip > 0 && rng() < slip) {
+      const safeAlts = empties.filter(
+        (cell) =>
+          !sameCell(cell, safePick) &&
+          !givesOpponentTactic(board, dims, aiPlayer, cell, placement, "full"),
+      );
+      if (safeAlts.length > 0) {
+        const pool = safeAlts.slice(0, Math.min(3, safeAlts.length));
+        return pool[Math.floor(rng() * pool.length)]!;
+      }
+    }
+    return safePick;
   }
   return best;
 }

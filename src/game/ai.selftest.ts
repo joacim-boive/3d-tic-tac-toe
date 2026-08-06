@@ -85,6 +85,7 @@ function testTakesForkOnLargerBoard() {
     const move = pickAiMove(board, dims, difficulty, "b", 7, "free", {
       budgetMs: Number.POSITIVE_INFINITY,
       maxDepth: 2,
+      slipRate: 0,
     });
     assert(move !== null, `${difficulty} should find a move`);
     assert(
@@ -108,7 +109,8 @@ function testBlocksOpponentFork() {
   const move = pickAiMove(board, dims, "extreme", "b", 7, "free", {
     budgetMs: Number.POSITIVE_INFINITY,
     maxDepth: 2,
-  });
+      slipRate: 0,
+    });
   assert(move !== null, "should find a move");
   assert(sameCell(move, { x: 2, y: 0, z: 0 }), "must block human fork");
 }
@@ -139,6 +141,7 @@ function testBlocksTwoPlyForce() {
       budgetMs: 1,
       maxDepth: 1,
       rng: () => 0,
+      slipRate: 0,
     });
     assert(move !== null, `${difficulty} should move`);
     assert(
@@ -152,6 +155,7 @@ function testBlocksTwoPlyForce() {
       budgetMs: 1,
       maxDepth: 1,
       rng: () => 0,
+      slipRate: 0,
     });
     assert(move !== null, `${difficulty} should move`);
     assert(
@@ -178,7 +182,8 @@ function testTakesTwoPlyForce() {
     budgetMs: 1,
     maxDepth: 1,
     rng: () => 0,
-  });
+      slipRate: 0,
+    });
   assert(move !== null, "should find a move");
   assert(sameCell(move, { x: 0, y: 2, z: 0 }), "must play the force-then-fork");
 }
@@ -204,7 +209,8 @@ function testImpossibleAvoidsHandingForce() {
     budgetMs: Number.POSITIVE_INFINITY,
     maxDepth: 3,
     rng: () => 0,
-  });
+      slipRate: 0,
+    });
   assert(move !== null, "impossible should move");
   assert(
     sameCell(move, { x: 0, y: 2, z: 0 }),
@@ -229,6 +235,7 @@ function testDropOpeningPrefersCenter() {
       budgetMs: Number.POSITIVE_INFINITY,
       maxDepth: 2,
       rng: () => 0,
+      slipRate: 0,
     });
     assert(move !== null, `${difficulty} drop opening`);
     assert(
