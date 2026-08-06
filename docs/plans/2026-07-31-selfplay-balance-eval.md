@@ -16,15 +16,28 @@ When changing rules (win length, Drop gravity, blocked cells, rotating layers, e
 
 ## Agents
 
-Both seats use the same policy (symmetric self-play):
+Both seats use the same policy by default (symmetric self-play):
 
 | Difficulty | Role in eval |
 | ---------- | ------------ |
 | Easy       | Noisy baseline |
-| Medium     | Default for large batches (win/block/threat + random). Fast enough for 10k–100k games. |
+| Medium     | Default for large batches (win/block/threat + quiet eval). Fast enough for 10k–100k games. |
 | Hard       | α-β / iterative deepening. Use small N + `--budget Infinity` for offline quality checks. |
+| Extreme    | Deeper α-β + two-ply force tactics. Compare with `--vs hard --swap`. |
 
-Seeded Mulberry32 PRNG makes medium/easy batches reproducible.
+### Measuring Extreme strength
+
+Symmetric self-play only shows first-player bias — not whether Extreme is stronger than Hard.
+Use a head-to-head matchup with seat swaps:
+
+```bash
+npm run eval:selfplay -- --preset 4x4x4 --placement free \
+  --difficulty extreme --vs hard --swap --games 40 --budget 700 --progress
+```
+
+Read **Primary (extreme) wins** vs **Opponent (hard) wins**. A clearly stronger Extreme should win well above 50% after draws (seat swaps remove opener bias). Re-run with the same `--seed` when comparing AI changes.
+
+Tactical regressions also live in `npm run check:ai` (forks + force-then-fork occupy/block).
 
 ## Commands
 

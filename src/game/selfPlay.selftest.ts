@@ -24,7 +24,7 @@ function testRngDeterministic() {
 
 function testSingleGameTerminates() {
   const dims = getPreset("3x3x3").dims;
-  const result = playOneGame(dims, "free", "medium", { rng: createRng(1) }, 2);
+  const result = playOneGame(dims, "free", "medium", "medium", { rng: createRng(1) }, 2);
   assert(result.plies >= 5, "3×3×3 games should last at least 5 plies");
   assert(result.plies <= 27, "cannot exceed board size");
   assert(result.opening.includes(","), "opening fingerprint should list cells");
@@ -70,8 +70,33 @@ function testLargerPresetDrop() {
   assert(stats.firstWins + stats.secondWins + stats.draws === 12, "4×4×4 drop partition");
 }
 
+function testMatchupTracksPrimaryWins() {
+  const dims = getPreset("3x3x3").dims;
+  const stats = runSelfPlay({
+    dims,
+    placement: "free",
+    games: 20,
+    difficulty: "medium",
+    vsDifficulty: "easy",
+    swapSeats: true,
+    seed: 3,
+  });
+  assert(stats.primaryWins + stats.opponentWins + stats.draws === 20, "matchup partition");
+  assert(stats.primaryWins > stats.opponentWins, "medium should beat easy overall");
+  const report = formatSelfPlayReport(stats, {
+    label: "3×3×3",
+    placement: "free",
+    difficulty: "medium",
+    vsDifficulty: "easy",
+    swapSeats: true,
+  });
+  assert(report.includes("medium vs easy"), "matchup headline");
+  assert(report.includes("Primary (medium) wins"), "primary line");
+}
+
 testRngDeterministic();
 testSingleGameTerminates();
 testBatchRatesSum();
 testLargerPresetDrop();
+testMatchupTracksPrimaryWins();
 console.log("selfPlay.selftest: ok");

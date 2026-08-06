@@ -4,6 +4,7 @@
  *   npm run eval:selfplay -- --preset 4x4x4 --placement drop --games 10000 --difficulty medium
  *   npm run eval:selfplay -- --all --games 2000 --difficulty medium
  *   npm run eval:selfplay -- --preset 3x3x3 --difficulty hard --games 200 --budget Infinity
+ *   npm run eval:selfplay -- --preset 4x4x4 --difficulty extreme --vs hard --swap --games 40 --budget 700
  */
 import { PRESETS, getPreset, resolvePresetId } from "./presets";
 import {
@@ -17,6 +18,8 @@ type CliArgs = {
   preset: PresetId | "all";
   placement: PlacementMode | "both";
   difficulty: AiDifficulty;
+  vsDifficulty: AiDifficulty | undefined;
+  swapSeats: boolean;
   games: number;
   seed: number;
   openingPlies: number;
@@ -32,6 +35,8 @@ Options:
   --preset <id|all>       3x3x3 | 4x4x4 | 5x5x4 | all   (default: all)
   --placement <mode>      free | drop | both            (default: both)
   --difficulty <level>    easy | medium | hard | extreme  (default: medium)
+  --vs <level>            Second-seat difficulty (head-to-head). Default: same as --difficulty
+  --swap                  Alternate who opens when --vs differs (fairer matchup)
   --games <n>             games per preset×placement    (default: 2000)
   --seed <n>              RNG seed                      (default: 12648430)
   --opening-plies <n>     opening fingerprint length    (default: 2)
@@ -42,8 +47,16 @@ Options:
 
 Tips:
   Use medium for large batches (10k–100k). Hard/Extreme α-β are for small samples.
+  Measure Extreme strength with: --difficulty extreme --vs hard --swap --games 40 --budget 700
   First-player win rate ≫ 50% with drawn-out games still short ⇒ rules favor the opener.
 `);
+}
+
+function parseDifficulty(v: string, flag: string): AiDifficulty {
+  if (v !== "easy" && v !== "medium" && v !== "hard" && v !== "extreme") {
+    throw new Error(`Invalid ${flag}: ${v}`);
+  }
+  return v;
 }
 
 function parseArgs(argv: string[]): CliArgs {
@@ -51,6 +64,8 @@ function parseArgs(argv: string[]): CliArgs {
     preset: "all",
     placement: "both",
     difficulty: "medium",
+    vsDifficulty: undefined,
+    swapSeats: false,
     games: 2000,
     seed: 0xc0ffee,
     openingPlies: 2,
@@ -88,14 +103,15 @@ function parseArgs(argv: string[]): CliArgs {
         args.placement = v;
         break;
       }
-      case "--difficulty": {
-        const v = next();
-        if (v !== "easy" && v !== "medium" && v !== "hard" && v !== "extreme") {
-          throw new Error(`Invalid difficulty: ${v}`);
-        }
-        args.difficulty = v;
+      case "--difficulty":
+        args.difficulty = parseDifficulty(next(), "--difficulty");
         break;
-      }
+      case "--vs":
+        args.vsDifficulty = parseDifficulty(next(), "--vs");
+        break;
+      case "--swap":
+        args.swapSeats = true;
+        break;
       case "--games":
         args.games = Math.max(1, Number.parseInt(next(), 10));
         break;
@@ -143,6 +159,8 @@ function main() {
         placement,
         games: args.games,
         difficulty: args.difficulty,
+        vsDifficulty: args.vsDifficulty,
+        swapSeats: args.swapSeats,
         seed: args.seed,
         openingPlies: args.openingPlies,
         budgetMs: args.budgetMs,
@@ -165,6 +183,8 @@ function main() {
           label: preset.label,
           placement,
           difficulty: args.difficulty,
+          vsDifficulty: args.vsDifficulty,
+          swapSeats: args.swapSeats,
           seed: args.seed,
         }),
       );

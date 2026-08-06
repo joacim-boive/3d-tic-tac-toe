@@ -248,7 +248,7 @@ export function SetupScreen() {
             })}
           </div>
           {isExtremeAllowed(presetId) ? (
-            <p className="setup__hint">Extreme thinks deeper — beating it is a real feat.</p>
+            <p className="setup__hint">Extreme looks further ahead and blocks force-then-fork traps.</p>
           ) : null}
         </section>
       ) : null}

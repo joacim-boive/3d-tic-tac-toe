@@ -36,8 +36,15 @@ export type SelfPlayConfig = {
   dims: BoardDims;
   placement: PlacementMode;
   games: number;
-  /** Both seats use the same policy (symmetric self-play). */
+  /** First player (Coral / `a`) policy. Also used for second when `vsDifficulty` is omitted. */
   difficulty: AiDifficulty;
+  /** Second player (Cyan / `b`) policy. Defaults to `difficulty` (symmetric self-play). */
+  vsDifficulty?: AiDifficulty;
+  /**
+   * When true, odd games swap seat policies so each difficulty opens half the time.
+   * Useful for head-to-head strength measurement.
+   */
+  swapSeats?: boolean;
   /** How many opening plies to fingerprint (default 2). */
   openingPlies?: number;
   /** Seed for AI tie-breaks / random policies. */
@@ -58,6 +65,12 @@ export type SelfPlayStats = {
   /** opening key → count */
   openings: Map<string, number>;
   elapsedMs: number;
+  /**
+   * When measuring two different difficulties with seat swaps, wins attributed
+   * to the primary (`difficulty`) policy regardless of who opened.
+   */
+  primaryWins: number;
+  opponentWins: number;
 };
 
 export type SelfPlayGameResult = {
@@ -75,13 +88,14 @@ function formatCell(c: CellCoord): string {
 }
 
 /**
- * Play one game to completion. Player `a` always opens.
+ * Play one game to completion. Player `a` always opens unless `swapSeats` maps policies.
  * Mutates nothing outside the returned result.
  */
 export function playOneGame(
   dims: BoardDims,
   placement: PlacementMode,
-  difficulty: AiDifficulty,
+  difficultyA: AiDifficulty,
+  difficultyB: AiDifficulty,
   search: AiSearchOptions,
   openingPlies: number,
 ): SelfPlayGameResult {
@@ -92,6 +106,7 @@ export function playOneGame(
   const maxPlies = cellCount(dims);
 
   for (let plies = 0; plies < maxPlies; plies++) {
+    const difficulty = toMove === "a" ? difficultyA : difficultyB;
     const move = pickAiMove(board, dims, difficulty, toMove, occupied, placement, search);
     if (!move) {
       return {
@@ -143,19 +158,27 @@ export function runSelfPlay(config: SelfPlayConfig): SelfPlayStats {
     budgetMs: config.budgetMs,
     maxDepth: config.maxDepth,
   };
+  const vs = config.vsDifficulty ?? config.difficulty;
+  const swap = config.swapSeats === true && vs !== config.difficulty;
 
   const openings = new Map<string, number>();
   let firstWins = 0;
   let secondWins = 0;
   let draws = 0;
   let totalPlies = 0;
+  let primaryWins = 0;
+  let opponentWins = 0;
 
   const t0 = performance.now();
   for (let i = 0; i < config.games; i++) {
+    const swapped = swap && i % 2 === 1;
+    const difficultyA = swapped ? vs : config.difficulty;
+    const difficultyB = swapped ? config.difficulty : vs;
     const result = playOneGame(
       config.dims,
       config.placement,
-      config.difficulty,
+      difficultyA,
+      difficultyB,
       search,
       openingPlies,
     );
@@ -163,6 +186,15 @@ export function runSelfPlay(config: SelfPlayConfig): SelfPlayStats {
     if (result.winner === "a") firstWins += 1;
     else if (result.winner === "b") secondWins += 1;
     else draws += 1;
+
+    if (result.winner === "a") {
+      if (difficultyA === config.difficulty) primaryWins += 1;
+      else opponentWins += 1;
+    } else if (result.winner === "b") {
+      if (difficultyB === config.difficulty) primaryWins += 1;
+      else opponentWins += 1;
+    }
+
     openings.set(result.opening, (openings.get(result.opening) ?? 0) + 1);
     config.onProgress?.(i + 1, config.games);
   }
@@ -176,6 +208,8 @@ export function runSelfPlay(config: SelfPlayConfig): SelfPlayStats {
     totalPlies,
     openings,
     elapsedMs,
+    primaryWins,
+    opponentWins,
   };
 }
 
@@ -183,6 +217,8 @@ export type SelfPlayReportMeta = {
   label: string;
   placement: PlacementMode;
   difficulty: AiDifficulty;
+  vsDifficulty?: AiDifficulty;
+  swapSeats?: boolean;
   seed?: number;
 };
 
@@ -207,16 +243,28 @@ export function formatSelfPlayReport(stats: SelfPlayStats, meta: SelfPlayReportM
   const avgLen = (stats.totalPlies / n).toFixed(2);
   const gamesPerSec = stats.elapsedMs > 0 ? ((1000 * n) / stats.elapsedMs).toFixed(1) : "∞";
   const tops = topOpenings(stats.openings, 8);
+  const vs = meta.vsDifficulty ?? meta.difficulty;
+  const matchup =
+    vs === meta.difficulty
+      ? meta.difficulty
+      : `${meta.difficulty} vs ${vs}${meta.swapSeats ? " (swapped seats)" : ""}`;
 
   const lines = [
-    `Self-play · ${meta.label} · ${meta.placement} · ${meta.difficulty}`,
+    `Self-play · ${meta.label} · ${meta.placement} · ${matchup}`,
     `Games: ${stats.games}  ·  ${gamesPerSec} games/s  ·  ${stats.elapsedMs.toFixed(0)} ms`,
     `First (Coral) wins:  ${stats.firstWins}  (${pct(stats.firstWins)})`,
     `Second (Cyan) wins:  ${stats.secondWins}  (${pct(stats.secondWins)})`,
     `Draws:               ${stats.draws}  (${pct(stats.draws)})`,
-    `Average game length: ${avgLen} plies`,
-    "Most common openings:",
   ];
+
+  if (vs !== meta.difficulty) {
+    lines.push(
+      `Primary (${meta.difficulty}) wins: ${stats.primaryWins}  (${pct(stats.primaryWins)})`,
+      `Opponent (${vs}) wins:     ${stats.opponentWins}  (${pct(stats.opponentWins)})`,
+    );
+  }
+
+  lines.push(`Average game length: ${avgLen} plies`, "Most common openings:");
 
   for (const row of tops) {
     lines.push(`  ${(100 * row.rate).toFixed(1).padStart(5)}%  ×${row.count}  ${row.opening}`);

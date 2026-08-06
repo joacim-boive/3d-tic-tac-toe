@@ -1,9 +1,9 @@
 /**
  * ponytail: assert-based self-check for AI tactics — run with `npm run check:ai`.
  */
-import { bestQuietMove, findWinningMove, isExtremeAllowed, pickAiMove } from "./ai";
+import { bestQuietMove, findTwoPlyForceMove, findWinningMove, isExtremeAllowed, pickAiMove } from "./ai";
 import { pickAiPowerUpSpend } from "./aiPowerUps";
-import { cellKey, createEmptyBoard } from "./board";
+import { cellKey, createEmptyBoard, listEmptyCells } from "./board";
 import type { BoardDims, CellCoord } from "./types";
 
 function assert(cond: unknown, msg: string): asserts cond {
@@ -111,6 +111,73 @@ function testBlocksOpponentFork() {
   });
   assert(move !== null, "should find a move");
   assert(sameCell(move, { x: 2, y: 0, z: 0 }), "must block human fork");
+}
+
+/**
+ * Force-then-fork: after (0,2,0) creates a single threat, the forced block still
+ * leaves a fork. Medium misses the defensive occupy; Hard/Extreme must take it
+ * even with a tiny search budget (forced tactics, not α-β).
+ */
+function testBlocksTwoPlyForce() {
+  const dims: BoardDims = { x: 4, y: 4, z: 4 };
+  const board = createEmptyBoard();
+  board.set(cellKey(0, 0, 0), "a");
+  board.set(cellKey(1, 0, 0), "a");
+  board.set(cellKey(0, 1, 0), "a");
+  board.set(cellKey(1, 1, 0), "a");
+  board.set(cellKey(2, 2, 0), "a");
+  board.set(cellKey(3, 3, 0), "b");
+  board.set(cellKey(3, 3, 3), "b");
+  board.set(cellKey(3, 2, 3), "b");
+  board.set(cellKey(2, 3, 3), "b");
+
+  const force = findTwoPlyForceMove(board, dims, "a", listEmptyCells(board, dims), "free");
+  assert(force !== null, "fixture must contain a two-ply force");
+  assert(sameCell(force, { x: 0, y: 2, z: 0 }), "expected force cell");
+
+  for (const difficulty of ["hard", "extreme"] as const) {
+    const move = pickAiMove(board, dims, difficulty, "b", board.size, "free", {
+      budgetMs: 1,
+      maxDepth: 1,
+      rng: () => 0,
+    });
+    assert(move !== null, `${difficulty} should move`);
+    assert(
+      sameCell(move, { x: 0, y: 2, z: 0 }),
+      `${difficulty} must occupy the force cell, got (${move.x},${move.y},${move.z})`,
+    );
+  }
+
+  const medium = pickAiMove(board, dims, "medium", "b", board.size, "free", {
+    rng: () => 0,
+  });
+  assert(medium !== null, "medium should move");
+  assert(
+    !sameCell(medium, { x: 0, y: 2, z: 0 }),
+    "medium is not required to see two-ply forces (ladder check)",
+  );
+}
+
+function testTakesTwoPlyForce() {
+  const dims: BoardDims = { x: 4, y: 4, z: 4 };
+  const board = createEmptyBoard();
+  board.set(cellKey(0, 0, 0), "b");
+  board.set(cellKey(1, 0, 0), "b");
+  board.set(cellKey(0, 1, 0), "b");
+  board.set(cellKey(1, 1, 0), "b");
+  board.set(cellKey(2, 2, 0), "b");
+  board.set(cellKey(3, 3, 0), "a");
+  board.set(cellKey(3, 3, 3), "a");
+  board.set(cellKey(3, 2, 3), "a");
+  board.set(cellKey(2, 3, 3), "a");
+
+  const move = pickAiMove(board, dims, "extreme", "b", board.size, "free", {
+    budgetMs: 1,
+    maxDepth: 1,
+    rng: () => 0,
+  });
+  assert(move !== null, "should find a move");
+  assert(sameCell(move, { x: 0, y: 2, z: 0 }), "must play the force-then-fork");
 }
 
 function testExtremeAllowedPresets() {
@@ -359,6 +426,8 @@ testBlocksOpponentWin();
 testFindWinningMoveHelper();
 testTakesForkOnLargerBoard();
 testBlocksOpponentFork();
+testBlocksTwoPlyForce();
+testTakesTwoPlyForce();
 testExtremeAllowedPresets();
 testDropOpeningPrefersCenter();
 testFreeOpeningPrefersCenter();
