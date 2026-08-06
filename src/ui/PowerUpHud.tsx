@@ -6,6 +6,7 @@ import { useGameStore } from "@/game/store";
 import { canTipPreset } from "@/game/tipBoard";
 import { PLAYER_COLORS, type PlayerId } from "@/game/types";
 import { clearFixedFromCursor, type Axis } from "@/game/clearRow";
+import { shouldShowPowerUpHud } from "./powerUpHudVisibility";
 
 function InventoryRow({ player, actionable }: { player: PlayerId; actionable: boolean }) {
   const inventory = useGameStore((s) => s.inventory[player]);
@@ -93,7 +94,7 @@ export function PowerUpHud() {
   const bonusPlacesRemaining = useGameStore((s) => s.bonusPlacesRemaining);
   const placedThisTurn = useGameStore((s) => s.placedThisTurn);
 
-  if (!powerUpsEnabled || playMode === "hotseat") return null;
+  if (!shouldShowPowerUpHud({ powerUpsEnabled, playMode })) return null;
 
   const myTurn =
     status === "playing" &&
