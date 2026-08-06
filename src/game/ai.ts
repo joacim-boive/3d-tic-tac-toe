@@ -37,7 +37,7 @@ const EXTREME_SMALL_DEPTH = 9;
  * Extreme thinks harder than Hard — still bounded for Mobile Safari.
  * Aim: Hard→Extreme gap similar to Medium→Hard (~+10pp seat-averaged).
  */
-const EXTREME_BUDGET_MS = 900;
+const EXTREME_BUDGET_MS = 500;
 /** Extra plies Extreme may add along forcing (threat) lines. */
 const EXTREME_THREAT_EXTENSIONS = 1;
 
@@ -911,7 +911,7 @@ function searchMove(
     empties,
     placement,
     advanced,
-    difficulty === "impossible",
+    advanced,
     difficulty === "impossible",
   );
   if (forced) return forced;
@@ -975,7 +975,7 @@ function searchMove(
       best,
       rng,
       difficulty === "impossible",
-      difficulty === "impossible" ? "full" : "basic",
+      "full",
     );
   }
   return best;

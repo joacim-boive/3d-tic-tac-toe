@@ -114,8 +114,8 @@ function testBlocksOpponentFork() {
 }
 
 /**
- * Force-then-fork defense is Impossible-only at the forced-tactics layer.
- * Medium/Hard/Extreme with a tiny budget may miss it; Impossible must not.
+ * Force-then-fork: Extreme and Impossible must occupy the force cell even with a
+ * tiny search budget (forced tactics). Medium/Hard may miss it.
  */
 function testBlocksTwoPlyForce() {
   const dims: BoardDims = { x: 4, y: 4, z: 4 };
@@ -134,18 +134,20 @@ function testBlocksTwoPlyForce() {
   assert(force !== null, "fixture must contain a two-ply force");
   assert(sameCell(force, { x: 0, y: 2, z: 0 }), "expected force cell");
 
-  const impossible = pickAiMove(board, dims, "impossible", "b", board.size, "free", {
-    budgetMs: 1,
-    maxDepth: 1,
-    rng: () => 0,
-  });
-  assert(impossible !== null, "impossible should move");
-  assert(
-    sameCell(impossible, { x: 0, y: 2, z: 0 }),
-    `impossible must occupy the force cell, got (${impossible.x},${impossible.y},${impossible.z})`,
-  );
+  for (const difficulty of ["extreme", "impossible"] as const) {
+    const move = pickAiMove(board, dims, difficulty, "b", board.size, "free", {
+      budgetMs: 1,
+      maxDepth: 1,
+      rng: () => 0,
+    });
+    assert(move !== null, `${difficulty} should move`);
+    assert(
+      sameCell(move, { x: 0, y: 2, z: 0 }),
+      `${difficulty} must occupy the force cell, got (${move.x},${move.y},${move.z})`,
+    );
+  }
 
-  for (const difficulty of ["medium", "hard", "extreme"] as const) {
+  for (const difficulty of ["medium", "hard"] as const) {
     const move = pickAiMove(board, dims, difficulty, "b", board.size, "free", {
       budgetMs: 1,
       maxDepth: 1,
@@ -154,7 +156,7 @@ function testBlocksTwoPlyForce() {
     assert(move !== null, `${difficulty} should move`);
     assert(
       !sameCell(move, { x: 0, y: 2, z: 0 }),
-      `${difficulty} is not required to auto-block two-ply forces (ladder check)`,
+      `${difficulty} is not required to see two-ply forces (ladder check)`,
     );
   }
 }
