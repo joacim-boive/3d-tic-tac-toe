@@ -302,7 +302,7 @@ function tacticalMove(
 
 /**
  * Win → block win → own fork → block opponent fork.
- * Extreme+: force-then-fork. Impossible: dual-force setups too.
+ * Extreme+: own force-then-fork. Impossible also blocks opponent force + dual setups.
  */
 function forcedTacticalMove(
   board: Board,
@@ -311,6 +311,7 @@ function forcedTacticalMove(
   empties: CellCoord[],
   placement: PlacementMode,
   includeTwoPly = false,
+  includeTwoPlyDefend = false,
   includeDualForce = false,
 ): CellCoord | null {
   const basic = tacticalMove(board, dims, aiPlayer, empties);
@@ -328,8 +329,10 @@ function forcedTacticalMove(
   const force = findTwoPlyForceMove(board, dims, aiPlayer, empties, placement);
   if (force) return force;
 
-  const blockForce = findTwoPlyForceMove(board, dims, human, empties, placement);
-  if (blockForce) return blockForce;
+  if (includeTwoPlyDefend) {
+    const blockForce = findTwoPlyForceMove(board, dims, human, empties, placement);
+    if (blockForce) return blockForce;
+  }
 
   if (!includeDualForce) return null;
 
@@ -908,6 +911,7 @@ function searchMove(
     empties,
     placement,
     advanced,
+    difficulty === "impossible",
     difficulty === "impossible",
   );
   if (forced) return forced;
