@@ -30,7 +30,7 @@ const HARD_BUDGET_MS = 80;
 /** Extreme: 5×5×4 and similar large boards. */
 const EXTREME_LARGE_DEPTH = 6;
 /** Extreme: 4×4×4 mid-size. */
-const EXTREME_MID_DEPTH = 7;
+const EXTREME_MID_DEPTH = 8;
 /** Extreme: 3×3×3 if ever invoked (UI hides it there). */
 const EXTREME_SMALL_DEPTH = 9;
 /**
@@ -53,6 +53,8 @@ const IMPOSSIBLE_SMALL_DEPTH = 12;
  */
 const IMPOSSIBLE_BUDGET_MS = 3500;
 const IMPOSSIBLE_THREAT_EXTENSIONS = 2;
+/** Impossible only: resolve immediate wins/blocks at leaves. */
+const IMPOSSIBLE_QUIESCE_PLIES = 6;
 
 const WIN_SCORE = 1_000_000;
 /** Leaf bonus for an open (need − 1) window — creates an immediate threat next ply. */
@@ -552,6 +554,9 @@ type SearchContext = {
   rootEvalOrder: boolean;
   /** Extreme+: prefer immediate win/block cells in interior ordering. */
   tacticalOrder: boolean;
+  /** Impossible: light win/block quiescence at leaves. */
+  useQuiesce: boolean;
+  quiescePlies: number;
 };
 
 function playerZobristSlot(player: PlayerId): number {
@@ -586,14 +591,71 @@ function hashBoard(board: Board, dims: BoardDims, zobrist: Uint32Array): number 
   return h;
 }
 
-/** True if playing `cell` hands the opponent a win, fork, or force-then-fork. */
+
+/**
+ * Impossible horizon: chase immediate wins and forced blocks only.
+ * (Heavier quiescence previously hurt Impossible vs Extreme.)
+ */
+function quiesce(
+  board: Board,
+  dims: BoardDims,
+  toMove: PlayerId,
+  occupiedCount: number,
+  pliesLeft: number,
+  ctx: SearchContext,
+): SearchResult {
+  if (performance.now() >= ctx.deadline) {
+    return { score: 0, move: null, aborted: true };
+  }
+
+  const standPat = evaluate(board, dims, ctx.aiPlayer, ctx.placement);
+  if (pliesLeft <= 0) {
+    return { score: standPat, move: null, aborted: false };
+  }
+
+  const empties = legalEmpties(board, dims, ctx.placement);
+  if (empties.length === 0 || isDraw(occupiedCount, dims)) {
+    return { score: 0, move: null, aborted: false };
+  }
+
+  const win = findWinningMove(board, dims, toMove, empties);
+  if (win) {
+    const score = toMove === ctx.aiPlayer ? WIN_SCORE + pliesLeft : -WIN_SCORE - pliesLeft;
+    return { score, move: win, aborted: false };
+  }
+
+  const mustBlock = findWinningMove(board, dims, opponentOf(toMove), empties);
+  if (!mustBlock) {
+    return { score: standPat, move: null, aborted: false };
+  }
+
+  const key = cellKey(mustBlock.x, mustBlock.y, mustBlock.z);
+  board.set(key, toMove);
+  xorPiece(ctx, dims, mustBlock, toMove);
+  const won = checkWin(board, dims, mustBlock, toMove);
+  let child: SearchResult;
+  if (won) {
+    const score = toMove === ctx.aiPlayer ? WIN_SCORE + pliesLeft : -WIN_SCORE - pliesLeft;
+    child = { score, move: null, aborted: false };
+  } else {
+    child = quiesce(board, dims, opponentOf(toMove), occupiedCount + 1, pliesLeft - 1, ctx);
+  }
+  board.delete(key);
+  xorPiece(ctx, dims, mustBlock, toMove);
+  return { score: child.score, move: mustBlock, aborted: child.aborted };
+}
+
+/**
+ * True if playing `cell` hands the opponent a tactic.
+ * `basic` = win/fork only (Extreme). `full` = also force-then-fork (Impossible).
+ */
 function givesOpponentTactic(
   board: Board,
   dims: BoardDims,
   aiPlayer: PlayerId,
   cell: CellCoord,
   placement: PlacementMode,
-  includeDualForce = false,
+  mode: "basic" | "full" = "full",
 ): boolean {
   const opp = opponentOf(aiPlayer);
   const key = cellKey(cell.x, cell.y, cell.z);
@@ -605,10 +667,9 @@ function givesOpponentTactic(
   const replies = legalEmpties(board, dims, placement);
   let handed =
     findWinningMove(board, dims, opp, replies) !== null ||
-    findForkMove(board, dims, opp, replies, placement) !== null ||
-    findTwoPlyForceMove(board, dims, opp, replies, placement) !== null;
-  if (!handed && includeDualForce) {
-    handed = findDualForceSetupMove(board, dims, opp, replies, placement) !== null;
+    findForkMove(board, dims, opp, replies, placement) !== null;
+  if (mode === "full" && !handed) {
+    handed = findTwoPlyForceMove(board, dims, opp, replies, placement) !== null;
   }
   board.delete(key);
   return handed;
@@ -628,14 +689,14 @@ function preferSafeMove(
   preferred: CellCoord | null,
   rng: Rng,
   preferThreat = false,
-  avoidDualForce = false,
+  safetyMode: "basic" | "full" = "full",
 ): CellCoord | null {
   const ordered = preferred
     ? [preferred, ...empties.filter((c) => !sameCell(c, preferred))]
     : empties;
   const safe: CellCoord[] = [];
   for (const cell of ordered) {
-    if (!givesOpponentTactic(board, dims, aiPlayer, cell, placement, avoidDualForce)) {
+    if (!givesOpponentTactic(board, dims, aiPlayer, cell, placement, safetyMode)) {
       safe.push(cell);
     }
   }
@@ -711,6 +772,9 @@ function minimax(
   }
 
   if (depthLeft === 0) {
+    if (ctx.useQuiesce) {
+      return quiesce(board, dims, toMove, occupiedCount, ctx.quiescePlies, ctx);
+    }
     return {
       score: evaluate(board, dims, ctx.aiPlayer, ctx.placement),
       move: null,
@@ -880,6 +944,8 @@ function searchMove(
     extensionsLeft,
     rootEvalOrder: advanced,
     tacticalOrder: advanced,
+    useQuiesce: difficulty === "impossible",
+    quiescePlies: IMPOSSIBLE_QUIESCE_PLIES,
   };
 
   let best = bestQuietMove(board, dims, aiPlayer, empties, placement, rng);
@@ -905,7 +971,7 @@ function searchMove(
       best,
       rng,
       difficulty === "impossible",
-      difficulty === "impossible",
+      difficulty === "impossible" ? "full" : "basic",
     );
   }
   return best;
