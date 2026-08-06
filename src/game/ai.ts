@@ -42,18 +42,21 @@ const EXTREME_BUDGET_MS = 900;
 const EXTREME_THREAT_EXTENSIONS = 1;
 
 /** Impossible: large boards. */
-const IMPOSSIBLE_LARGE_DEPTH = 8;
+const IMPOSSIBLE_LARGE_DEPTH = 9;
 /** Impossible: 4×4×4. */
-const IMPOSSIBLE_MID_DEPTH = 11;
+const IMPOSSIBLE_MID_DEPTH = 12;
 /** Impossible: 3×3×3 if ever invoked. */
-const IMPOSSIBLE_SMALL_DEPTH = 12;
+const IMPOSSIBLE_SMALL_DEPTH = 13;
 /**
  * Impossible burns a long think — near the Mobile Safari comfort edge.
- * Meant to feel nearly unbeatable vs humans; still a soft deadline.
+ * Meant to feel nearly unbeatable; still a soft deadline.
  */
-const IMPOSSIBLE_BUDGET_MS = 2200;
-const IMPOSSIBLE_THREAT_EXTENSIONS = 3;
-const IMPOSSIBLE_QUIESCE_PLIES = 8;
+const IMPOSSIBLE_BUDGET_MS = 3200;
+const IMPOSSIBLE_THREAT_EXTENSIONS = 4;
+const IMPOSSIBLE_QUIESCE_PLIES = 10;
+/** After ID, re-score this many safe root candidates at fixed depth. */
+const IMPOSSIBLE_VERIFY_CANDIDATES = 10;
+const IMPOSSIBLE_VERIFY_DEPTH = 4;
 
 const WIN_SCORE = 1_000_000;
 /** Leaf bonus for an open (need − 1) window — creates an immediate threat next ply. */
@@ -591,8 +594,8 @@ function hashBoard(board: Board, dims: BoardDims, zobrist: Uint32Array): number 
 }
 
 /**
- * Impossible horizon: chase immediate wins and forced blocks so the leaf
- * eval isn't blind to a threat the last ply created.
+ * Impossible horizon: chase wins, blocks, forks, and force-then-forks so the
+ * leaf eval isn't blind to tactics the last ply created.
  */
 function quiesce(
   board: Board,
@@ -616,21 +619,23 @@ function quiesce(
     return { score: 0, move: null, aborted: false };
   }
 
-  const win = findWinningMove(board, dims, toMove, empties);
-  if (win) {
-    const score = toMove === ctx.aiPlayer ? WIN_SCORE + pliesLeft : -WIN_SCORE - pliesLeft;
-    return { score, move: win, aborted: false };
-  }
+  const opp = opponentOf(toMove);
+  const tactical =
+    findWinningMove(board, dims, toMove, empties) ??
+    findWinningMove(board, dims, opp, empties) ??
+    findForkMove(board, dims, toMove, empties, ctx.placement) ??
+    findForkMove(board, dims, opp, empties, ctx.placement) ??
+    findTwoPlyForceMove(board, dims, toMove, empties, ctx.placement) ??
+    findTwoPlyForceMove(board, dims, opp, empties, ctx.placement);
 
-  const mustBlock = findWinningMove(board, dims, opponentOf(toMove), empties);
-  if (!mustBlock) {
+  if (!tactical) {
     return { score: standPat, move: null, aborted: false };
   }
 
-  const key = cellKey(mustBlock.x, mustBlock.y, mustBlock.z);
+  const key = cellKey(tactical.x, tactical.y, tactical.z);
   board.set(key, toMove);
-  xorPiece(ctx, dims, mustBlock, toMove);
-  const won = checkWin(board, dims, mustBlock, toMove);
+  xorPiece(ctx, dims, tactical, toMove);
+  const won = checkWin(board, dims, tactical, toMove);
   let child: SearchResult;
   if (won) {
     const score = toMove === ctx.aiPlayer ? WIN_SCORE + pliesLeft : -WIN_SCORE - pliesLeft;
@@ -639,15 +644,15 @@ function quiesce(
     child = quiesce(
       board,
       dims,
-      opponentOf(toMove),
+      opp,
       occupiedCount + 1,
       pliesLeft - 1,
       ctx,
     );
   }
   board.delete(key);
-  xorPiece(ctx, dims, mustBlock, toMove);
-  return { score: child.score, move: mustBlock, aborted: child.aborted };
+  xorPiece(ctx, dims, tactical, toMove);
+  return { score: child.score, move: tactical, aborted: child.aborted };
 }
 
 /** True if playing `cell` hands the opponent a win, fork, or force-then-fork. */
@@ -712,6 +717,84 @@ function preferSafeMove(
     }
   }
   return safe[0]!;
+}
+
+/**
+ * Impossible: after iterative deepening, re-search the top safe root candidates
+ * at a fixed depth so a single shallow PV miss doesn't stick.
+ */
+function impossibleVerifyRoot(
+  board: Board,
+  dims: BoardDims,
+  aiPlayer: PlayerId,
+  empties: CellCoord[],
+  occupiedCount: number,
+  placement: PlacementMode,
+  preferred: CellCoord | null,
+  ctx: SearchContext,
+  verifyDepth: number,
+): CellCoord | null {
+  const safe = empties.filter(
+    (cell) => !givesOpponentTactic(board, dims, aiPlayer, cell, placement),
+  );
+  const pool = safe.length > 0 ? safe : empties;
+  if (pool.length === 0) return preferred;
+
+  const ordered = orderRootByEval(board, dims, aiPlayer, pool, placement, preferred);
+  const candidates = ordered.slice(0, IMPOSSIBLE_VERIFY_CANDIDATES);
+  if (preferred && !candidates.some((c) => sameCell(c, preferred))) {
+    candidates.unshift(preferred);
+    if (candidates.length > IMPOSSIBLE_VERIFY_CANDIDATES) candidates.pop();
+  }
+
+  let bestMove = preferred ?? candidates[0] ?? null;
+  let bestScore = -Infinity;
+  const savedRootDepth = ctx.rootDepth;
+  const opp = opponentOf(aiPlayer);
+
+  for (const cell of candidates) {
+    if (performance.now() >= ctx.deadline) break;
+    const key = cellKey(cell.x, cell.y, cell.z);
+    board.set(key, aiPlayer);
+    xorPiece(ctx, dims, cell, aiPlayer);
+
+    let score: number;
+    if (checkWin(board, dims, cell, aiPlayer)) {
+      score = WIN_SCORE + verifyDepth;
+    } else if (isDraw(occupiedCount + 1, dims)) {
+      score = 0;
+    } else {
+      ctx.rootDepth = verifyDepth;
+      ctx.extensionsLeft = IMPOSSIBLE_THREAT_EXTENSIONS;
+      const child = minimax(
+        board,
+        dims,
+        opp,
+        verifyDepth,
+        occupiedCount + 1,
+        -Infinity,
+        Infinity,
+        ctx,
+      );
+      if (child.aborted) {
+        board.delete(key);
+        xorPiece(ctx, dims, cell, aiPlayer);
+        break;
+      }
+      score = child.score;
+    }
+
+    board.delete(key);
+    xorPiece(ctx, dims, cell, aiPlayer);
+
+    if (score > bestScore) {
+      bestScore = score;
+      bestMove = cell;
+    }
+  }
+
+  ctx.rootDepth = savedRootDepth;
+  return bestMove;
 }
 
 function minimax(
@@ -903,8 +986,8 @@ function searchMove(
   if (forced) return forced;
 
   // Early game: shallow α-β + open-window counts overvalue corners (esp. Drop).
-  // Impossible starts searching one ply earlier than Extreme/Hard.
-  const quietOpeningPlies = difficulty === "impossible" ? 1 : 2;
+  // Impossible only quiets the empty-board opening; Extreme/Hard quiet two plies.
+  const quietOpeningPlies = difficulty === "impossible" ? 0 : 2;
   if (occupiedCount <= quietOpeningPlies) {
     return bestQuietMove(board, dims, aiPlayer, empties, placement, rng);
   }
@@ -914,6 +997,10 @@ function searchMove(
   const maxDepth = Math.min(options.maxDepth ?? defaultCap, total - occupiedCount);
   const budget = options.budgetMs ?? defaultBudget(difficulty);
   const deadline = performance.now() + budget;
+  // Reserve wall-clock for Impossible's root multi-PV verify pass.
+  const verifyReserve =
+    difficulty === "impossible" ? Math.min(1400, Math.floor(budget * 0.4)) : 0;
+  const idDeadline = deadline - verifyReserve;
   const useTt = advanced;
   const zobrist = buildZobrist(dims);
   const extensionsLeft = threatExtensions(difficulty);
@@ -922,7 +1009,7 @@ function searchMove(
   const ctx: SearchContext = {
     aiPlayer,
     placement,
-    deadline,
+    deadline: idDeadline,
     pvMove: null,
     rootDepth: 1,
     killers: Array.from({ length: maxDepth + maxExt + 1 }, () => null),
@@ -940,7 +1027,7 @@ function searchMove(
 
   let best = bestQuietMove(board, dims, aiPlayer, empties, placement, rng);
   for (let depth = 1; depth <= maxDepth; depth++) {
-    if (performance.now() >= deadline) break;
+    if (performance.now() >= idDeadline) break;
     ctx.rootDepth = depth;
     ctx.extensionsLeft = extensionsLeft;
     const result = minimax(board, dims, aiPlayer, depth, occupiedCount, -Infinity, Infinity, ctx);
@@ -949,6 +1036,22 @@ function searchMove(
       best = result.move;
       ctx.pvMove = result.move;
     }
+  }
+
+  if (difficulty === "impossible") {
+    ctx.deadline = deadline;
+    const verified = impossibleVerifyRoot(
+      board,
+      dims,
+      aiPlayer,
+      empties,
+      occupiedCount,
+      placement,
+      best,
+      ctx,
+      Math.min(IMPOSSIBLE_VERIFY_DEPTH, Math.max(1, total - occupiedCount - 1)),
+    );
+    if (verified) best = verified;
   }
 
   if (advanced && best) {
