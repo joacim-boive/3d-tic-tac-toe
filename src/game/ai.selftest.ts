@@ -182,6 +182,37 @@ function testTakesTwoPlyForce() {
   assert(sameCell(move, { x: 0, y: 2, z: 0 }), "must play the force-then-fork");
 }
 
+/**
+ * After a bait cell, human would have a force-then-fork. Extreme must not play the bait
+ * even if shallow search likes it — the root safety filter should refuse.
+ */
+function testExtremeAvoidsHandingForce() {
+  const dims: BoardDims = { x: 4, y: 4, z: 4 };
+  const board = createEmptyBoard();
+  // Same shape as the two-ply fixture, but AI to move and must not "pass" by playing junk
+  // that leaves the force cell open — any move other than occupying (0,2,0) may be unsafe.
+  board.set(cellKey(0, 0, 0), "a");
+  board.set(cellKey(1, 0, 0), "a");
+  board.set(cellKey(0, 1, 0), "a");
+  board.set(cellKey(1, 1, 0), "a");
+  board.set(cellKey(2, 2, 0), "a");
+  board.set(cellKey(3, 3, 0), "b");
+  board.set(cellKey(3, 3, 3), "b");
+  board.set(cellKey(3, 2, 3), "b");
+  board.set(cellKey(2, 3, 3), "b");
+
+  const move = pickAiMove(board, dims, "extreme", "b", board.size, "free", {
+    budgetMs: Number.POSITIVE_INFINITY,
+    maxDepth: 3,
+    rng: () => 0,
+  });
+  assert(move !== null, "extreme should move");
+  assert(
+    sameCell(move, { x: 0, y: 2, z: 0 }),
+    `extreme must spoil the force, got (${move.x},${move.y},${move.z})`,
+  );
+}
+
 function testExtremeAllowedPresets() {
   assert(!isExtremeAllowed("3x3x3"), "no Extreme on 3×3×3");
   assert(isExtremeAllowed("4x4x4"), "Extreme on 4×4×4");
@@ -430,6 +461,7 @@ testTakesForkOnLargerBoard();
 testBlocksOpponentFork();
 testBlocksTwoPlyForce();
 testTakesTwoPlyForce();
+testExtremeAvoidsHandingForce();
 testExtremeAllowedPresets();
 testDropOpeningPrefersCenter();
 testFreeOpeningPrefersCenter();

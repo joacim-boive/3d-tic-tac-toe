@@ -248,7 +248,7 @@ export function SetupScreen() {
             })}
           </div>
           {isExtremeAllowed(presetId) ? (
-            <p className="setup__hint">Extreme looks further ahead and blocks force-then-fork traps.</p>
+            <p className="setup__hint">Extreme blocks force traps and refuses to walk into them.</p>
           ) : null}
         </section>
       ) : null}

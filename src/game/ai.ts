@@ -34,10 +34,10 @@ const EXTREME_MID_DEPTH = 8;
 /** Extreme: 3×3×3 if ever invoked (UI hides it there). */
 const EXTREME_SMALL_DEPTH = 9;
 /**
- * Extreme thinks hard — still bounded for Mobile Safari.
- * Budget is the main strength lever once tactics are forced outside α-β.
+ * Extreme thinks harder than Hard — still bounded for Mobile Safari.
+ * Aim: Hard→Extreme gap similar to Medium→Hard (~+10pp seat-averaged).
  */
-const EXTREME_BUDGET_MS = 700;
+const EXTREME_BUDGET_MS = 900;
 /** Extra plies Extreme may add along forcing (threat) lines. */
 const EXTREME_THREAT_EXTENSIONS = 1;
 
@@ -161,6 +161,48 @@ function findForkMove(
  * Force-then-finish: play a single threat whose only block still leaves a win or fork.
  * Shallow α-β under a mobile budget often misses this 3-ply pattern on 4×4×4 diagonals.
  */
+function isTwoPlyForceAt(
+  board: Board,
+  dims: BoardDims,
+  player: PlayerId,
+  cell: CellCoord,
+  empties: CellCoord[],
+  placement: PlacementMode,
+): boolean {
+  const opp = opponentOf(player);
+  const key = cellKey(cell.x, cell.y, cell.z);
+  if (board.has(key)) return false;
+
+  board.set(key, player);
+  if (checkWin(board, dims, cell, player)) {
+    board.delete(key);
+    return false;
+  }
+
+  const replies = legalEmpties(board, dims, placement);
+  if (findWinningMove(board, dims, opp, replies)) {
+    board.delete(key);
+    return false;
+  }
+
+  const threats = listWinningReplies(board, dims, player, replies, 2);
+  if (threats.length !== 1) {
+    board.delete(key);
+    return false;
+  }
+
+  const block = threats[0]!;
+  const blockKey = cellKey(block.x, block.y, block.z);
+  board.set(blockKey, opp);
+  const followUps = legalEmpties(board, dims, placement);
+  const finishes =
+    findWinningMove(board, dims, player, followUps) !== null ||
+    findForkMove(board, dims, player, followUps, placement) !== null;
+  board.delete(blockKey);
+  board.delete(key);
+  return finishes;
+}
+
 export function findTwoPlyForceMove(
   board: Board,
   dims: BoardDims,
@@ -168,38 +210,8 @@ export function findTwoPlyForceMove(
   empties: CellCoord[],
   placement: PlacementMode,
 ): CellCoord | null {
-  const opp = opponentOf(player);
   for (const cell of empties) {
-    const key = cellKey(cell.x, cell.y, cell.z);
-    board.set(key, player);
-    if (checkWin(board, dims, cell, player)) {
-      board.delete(key);
-      continue;
-    }
-
-    const replies = legalEmpties(board, dims, placement);
-    // Giving the opponent an immediate win is not a force.
-    if (findWinningMove(board, dims, opp, replies)) {
-      board.delete(key);
-      continue;
-    }
-
-    const threats = listWinningReplies(board, dims, player, replies, 2);
-    if (threats.length !== 1) {
-      board.delete(key);
-      continue;
-    }
-
-    const block = threats[0]!;
-    const blockKey = cellKey(block.x, block.y, block.z);
-    board.set(blockKey, opp);
-    const followUps = legalEmpties(board, dims, placement);
-    const finishes =
-      findWinningMove(board, dims, player, followUps) !== null ||
-      findForkMove(board, dims, player, followUps, placement) !== null;
-    board.delete(blockKey);
-    board.delete(key);
-    if (finishes) return cell;
+    if (isTwoPlyForceAt(board, dims, player, cell, empties, placement)) return cell;
   }
   return null;
 }
@@ -217,7 +229,7 @@ function tacticalMove(
 
 /**
  * Win → block win → own fork → block opponent fork.
- * Optionally (Hard/Extreme): own force-then-fork → block opponent force-then-fork.
+ * Extreme: own force-then-fork → block opponent force-then-fork.
  * Search uses this before α-β so forced tactics aren't missed under a budget.
  */
 function forcedTacticalMove(
@@ -354,6 +366,7 @@ export function evaluate(
   dims: BoardDims,
   aiPlayer: PlayerId,
   placement: PlacementMode = "free",
+  defenseScale = 1.05,
 ): number {
   const need = winLength(dims);
   const human = opponentOf(aiPlayer);
@@ -381,8 +394,8 @@ export function evaluate(
           if (ours > 0) {
             score += ours === need - 1 ? THREAT_SCORE : 10 ** ours;
           } else if (theirs > 0) {
-            // Slightly overweight opponent threats so defense isn't undervalued.
-            score -= theirs === need - 1 ? THREAT_SCORE * 1.05 : 10 ** theirs;
+            // Overweight opponent threats so defense isn't undervalued.
+            score -= theirs === need - 1 ? THREAT_SCORE * defenseScale : 10 ** theirs;
           }
         }
       }
@@ -458,6 +471,8 @@ type SearchContext = {
   extensionsLeft: number;
   /** One-ply root eval ordering (Extreme). Hard skips it to preserve depth. */
   rootEvalOrder: boolean;
+  /** Extreme: prefer immediate win/block cells in interior ordering. */
+  tacticalOrder: boolean;
 };
 
 function playerZobristSlot(player: PlayerId): number {
@@ -492,6 +507,52 @@ function hashBoard(board: Board, dims: BoardDims, zobrist: Uint32Array): number 
   return h;
 }
 
+/** True if playing `cell` hands the opponent a win, fork, or force-then-fork. */
+function givesOpponentTactic(
+  board: Board,
+  dims: BoardDims,
+  aiPlayer: PlayerId,
+  cell: CellCoord,
+  placement: PlacementMode,
+): boolean {
+  const opp = opponentOf(aiPlayer);
+  const key = cellKey(cell.x, cell.y, cell.z);
+  board.set(key, aiPlayer);
+  if (checkWin(board, dims, cell, aiPlayer)) {
+    board.delete(key);
+    return false;
+  }
+  const replies = legalEmpties(board, dims, placement);
+  const handed =
+    findWinningMove(board, dims, opp, replies) !== null ||
+    findForkMove(board, dims, opp, replies, placement) !== null ||
+    findTwoPlyForceMove(board, dims, opp, replies, placement) !== null;
+  board.delete(key);
+  return handed;
+}
+
+/**
+ * Extreme root filter: prefer the search move, but refuse to walk into an
+ * immediate opponent win/fork/force if a safer legal place exists.
+ */
+function preferSafeMove(
+  board: Board,
+  dims: BoardDims,
+  aiPlayer: PlayerId,
+  empties: CellCoord[],
+  placement: PlacementMode,
+  preferred: CellCoord | null,
+  rng: Rng,
+): CellCoord | null {
+  const ordered = preferred
+    ? [preferred, ...empties.filter((c) => !sameCell(c, preferred))]
+    : empties;
+  for (const cell of ordered) {
+    if (!givesOpponentTactic(board, dims, aiPlayer, cell, placement)) return cell;
+  }
+  return preferred ?? bestQuietMove(board, dims, aiPlayer, empties, placement, rng);
+}
+
 function minimax(
   board: Board,
   dims: BoardDims,
@@ -511,6 +572,12 @@ function minimax(
   const killer = ctx.killers[depthLeft] ?? null;
   // TT is move-ordering only (no score cutoffs) — avoids incorrect α-β reuse.
   const ttHit = ctx.useTt ? ctx.tt.get(ctx.hash) : undefined;
+  let tacticalPrefer: CellCoord | null = null;
+  let tacticalBlock: CellCoord | null = null;
+  if (ctx.tacticalOrder) {
+    tacticalPrefer = findWinningMove(board, dims, toMove, rawEmpties);
+    tacticalBlock = findWinningMove(board, dims, opponentOf(toMove), rawEmpties);
+  }
   const empties =
     depthLeft === ctx.rootDepth && ctx.rootEvalOrder && prefer == null
       ? orderRootByEval(
@@ -519,9 +586,15 @@ function minimax(
           ctx.aiPlayer,
           rawEmpties,
           ctx.placement,
-          ttHit?.move ?? null,
+          ttHit?.move ?? tacticalPrefer ?? tacticalBlock ?? null,
         )
-      : orderEmpties(rawEmpties, dims, prefer ?? ttHit?.move ?? null, killer, ctx.history);
+      : orderEmpties(
+          rawEmpties,
+          dims,
+          prefer ?? tacticalPrefer ?? tacticalBlock ?? ttHit?.move ?? null,
+          killer,
+          ctx.history,
+        );
 
   if (empties.length === 0 || isDraw(occupiedCount, dims)) {
     return { score: 0, move: null, aborted: false };
@@ -679,6 +752,7 @@ function searchMove(
     useTt,
     extensionsLeft,
     rootEvalOrder: difficulty === "extreme",
+    tacticalOrder: difficulty === "extreme",
   };
 
   let best = bestQuietMove(board, dims, aiPlayer, empties, placement, rng);
@@ -692,6 +766,10 @@ function searchMove(
       best = result.move;
       ctx.pvMove = result.move;
     }
+  }
+
+  if (difficulty === "extreme" && best) {
+    return preferSafeMove(board, dims, aiPlayer, empties, placement, best, rng);
   }
   return best;
 }
