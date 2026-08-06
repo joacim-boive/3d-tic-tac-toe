@@ -41,20 +41,19 @@ const EXTREME_BUDGET_MS = 900;
 /** Extra plies Extreme may add along forcing (threat) lines. */
 const EXTREME_THREAT_EXTENSIONS = 1;
 
-/** Impossible: large boards. */
-const IMPOSSIBLE_LARGE_DEPTH = 8;
-/** Impossible: 4×4×4. */
-const IMPOSSIBLE_MID_DEPTH = 12;
+/** Impossible: large boards — same depth caps as Extreme; extra strength is time + dual-force. */
+const IMPOSSIBLE_LARGE_DEPTH = 6;
+/** Impossible: 4×4×4 — match Extreme; deeper caps lost to Extreme in matchups. */
+const IMPOSSIBLE_MID_DEPTH = 8;
 /** Impossible: 3×3×3 if ever invoked. */
-const IMPOSSIBLE_SMALL_DEPTH = 13;
+const IMPOSSIBLE_SMALL_DEPTH = 9;
 /**
- * Impossible burns a long think — near the Mobile Safari comfort edge.
- * Same search as Extreme, plus dual-force tactics and deeper/longer ID.
- * Extra heuristics (quiescence, prefer-threat, opening search) previously
- * made Impossible *weaker* than Extreme in bot matchups — do not reintroduce.
+ * Impossible burns a long think so iterative deepening finishes Extreme’s depth
+ * caps more often. Dual-force tactics are the only Impossible-only move rule.
+ * Going past Extreme’s depth/extensions previously *lost* to Extreme in bots.
  */
 const IMPOSSIBLE_BUDGET_MS = 5000;
-const IMPOSSIBLE_THREAT_EXTENSIONS = 2;
+const IMPOSSIBLE_THREAT_EXTENSIONS = 1;
 
 const WIN_SCORE = 1_000_000;
 /** Leaf bonus for an open (need − 1) window — creates an immediate threat next ply. */
