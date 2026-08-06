@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useTransition } from "react";
 import { formatAppVersionLabel } from "@/appVersion";
-import { isExtremeAllowed } from "@/game/ai";
+import { isExtremeAllowed, isImpossibleAllowed } from "@/game/ai";
 import { shouldShowOnboardingOnLaunch } from "@/game/onboardingPrefs";
 import { PRESETS } from "@/game/presets";
 import {
@@ -231,6 +231,9 @@ export function SetupScreen() {
                 ...(isExtremeAllowed(presetId)
                   ? [{ id: "extreme" as const, label: "Extreme" }]
                   : []),
+                ...(isImpossibleAllowed(presetId)
+                  ? [{ id: "impossible" as const, label: "Impossible" }]
+                  : []),
               ] as const
             ).map((level) => {
               const selected = aiDifficulty === level.id;
@@ -247,8 +250,12 @@ export function SetupScreen() {
               );
             })}
           </div>
-          {isExtremeAllowed(presetId) ? (
+          {aiDifficulty === "impossible" ? (
+            <p className="setup__hint">Impossible thinks longest — winning is a genuine achievement.</p>
+          ) : aiDifficulty === "extreme" ? (
             <p className="setup__hint">Extreme blocks force traps and refuses to walk into them.</p>
+          ) : isExtremeAllowed(presetId) ? (
+            <p className="setup__hint">Impossible is the top tier — nearly unbeatable.</p>
           ) : null}
         </section>
       ) : null}

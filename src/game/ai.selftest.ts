@@ -1,7 +1,7 @@
 /**
  * ponytail: assert-based self-check for AI tactics — run with `npm run check:ai`.
  */
-import { bestQuietMove, findTwoPlyForceMove, findWinningMove, isExtremeAllowed, pickAiMove } from "./ai";
+import { bestQuietMove, findTwoPlyForceMove, findWinningMove, isExtremeAllowed, isImpossibleAllowed, pickAiMove } from "./ai";
 import { pickAiPowerUpSpend } from "./aiPowerUps";
 import { cellKey, createEmptyBoard, listEmptyCells } from "./board";
 import type { BoardDims, CellCoord } from "./types";
@@ -81,7 +81,7 @@ function testTakesForkOnLargerBoard() {
   board.set(cellKey(3, 3, 2), "a");
   board.set(cellKey(3, 2, 3), "a");
 
-  for (const difficulty of ["hard", "extreme"] as const) {
+  for (const difficulty of ["hard", "extreme", "impossible"] as const) {
     const move = pickAiMove(board, dims, difficulty, "b", 7, "free", {
       budgetMs: Number.POSITIVE_INFINITY,
       maxDepth: 2,
@@ -144,6 +144,17 @@ function testBlocksTwoPlyForce() {
   assert(
     sameCell(extreme, { x: 0, y: 2, z: 0 }),
     `extreme must occupy the force cell, got (${extreme.x},${extreme.y},${extreme.z})`,
+  );
+
+  const impossible = pickAiMove(board, dims, "impossible", "b", board.size, "free", {
+    budgetMs: 1,
+    maxDepth: 1,
+    rng: () => 0,
+  });
+  assert(impossible !== null, "impossible should move");
+  assert(
+    sameCell(impossible, { x: 0, y: 2, z: 0 }),
+    `impossible must occupy the force cell, got (${impossible.x},${impossible.y},${impossible.z})`,
   );
 
   for (const difficulty of ["medium", "hard"] as const) {
@@ -217,13 +228,15 @@ function testExtremeAllowedPresets() {
   assert(!isExtremeAllowed("3x3x3"), "no Extreme on 3×3×3");
   assert(isExtremeAllowed("4x4x4"), "Extreme on 4×4×4");
   assert(isExtremeAllowed("5x5x4"), "Extreme on 5×5×4");
+  assert(!isImpossibleAllowed("3x3x3"), "no Impossible on 3×3×3");
+  assert(isImpossibleAllowed("4x4x4"), "Impossible on 4×4×4");
 }
 
 function testDropOpeningPrefersCenter() {
   const dims: BoardDims = { x: 4, y: 4, z: 4 };
   const board = createEmptyBoard();
 
-  for (const difficulty of ["medium", "hard", "extreme"] as const) {
+  for (const difficulty of ["medium", "hard", "extreme", "impossible"] as const) {
     const move = pickAiMove(board, dims, difficulty, "b", 0, "drop", {
       budgetMs: Number.POSITIVE_INFINITY,
       maxDepth: 2,

@@ -41,6 +41,20 @@ const EXTREME_BUDGET_MS = 900;
 /** Extra plies Extreme may add along forcing (threat) lines. */
 const EXTREME_THREAT_EXTENSIONS = 1;
 
+/** Impossible: large boards. */
+const IMPOSSIBLE_LARGE_DEPTH = 8;
+/** Impossible: 4×4×4. */
+const IMPOSSIBLE_MID_DEPTH = 11;
+/** Impossible: 3×3×3 if ever invoked. */
+const IMPOSSIBLE_SMALL_DEPTH = 12;
+/**
+ * Impossible burns a long think — near the Mobile Safari comfort edge.
+ * Meant to feel nearly unbeatable vs humans; still a soft deadline.
+ */
+const IMPOSSIBLE_BUDGET_MS = 2200;
+const IMPOSSIBLE_THREAT_EXTENSIONS = 3;
+const IMPOSSIBLE_QUIESCE_PLIES = 8;
+
 const WIN_SCORE = 1_000_000;
 /** Leaf bonus for an open (need − 1) window — creates an immediate threat next ply. */
 const THREAT_SCORE = 80_000;
@@ -64,9 +78,20 @@ export type AiSearchOptions = {
   maxDepth?: number;
 };
 
-/** Extreme is offered on boards larger than classic 3×3×3. */
+type SearchTier = "hard" | "extreme" | "impossible";
+
+/** Extreme / Impossible are offered on boards larger than classic 3×3×3. */
 export function isExtremeAllowed(presetId: PresetId): boolean {
   return presetId !== "3x3x3";
+}
+
+/** Same board gate as Extreme — Impossible is the tier above it. */
+export function isImpossibleAllowed(presetId: PresetId): boolean {
+  return isExtremeAllowed(presetId);
+}
+
+function isAdvancedSearch(difficulty: SearchTier): boolean {
+  return difficulty === "extreme" || difficulty === "impossible";
 }
 
 function opponentOf(player: PlayerId): PlayerId {
@@ -216,6 +241,53 @@ export function findTwoPlyForceMove(
   return null;
 }
 
+/**
+ * Quiet place that leaves ≥2 distinct force-then-fork replies.
+ * Opponent can spoil only one — decisive setup for Impossible.
+ */
+function findDualForceSetupMove(
+  board: Board,
+  dims: BoardDims,
+  player: PlayerId,
+  empties: CellCoord[],
+  placement: PlacementMode,
+): CellCoord | null {
+  const opp = opponentOf(player);
+  if (empties.length > 32) return null;
+
+  for (const cell of empties) {
+    const key = cellKey(cell.x, cell.y, cell.z);
+    board.set(key, player);
+    if (checkWin(board, dims, cell, player)) {
+      board.delete(key);
+      continue;
+    }
+
+    const replies = legalEmpties(board, dims, placement);
+    if (findWinningMove(board, dims, opp, replies)) {
+      board.delete(key);
+      continue;
+    }
+    if (countWinningReplies(board, dims, player, replies) > 0) {
+      board.delete(key);
+      continue;
+    }
+
+    let forces = 0;
+    for (const follow of replies) {
+      if (isTwoPlyForceAt(board, dims, player, follow, replies, placement)) {
+        forces += 1;
+        if (forces >= 2) {
+          board.delete(key);
+          return cell;
+        }
+      }
+    }
+    board.delete(key);
+  }
+  return null;
+}
+
 function tacticalMove(
   board: Board,
   dims: BoardDims,
@@ -229,8 +301,7 @@ function tacticalMove(
 
 /**
  * Win → block win → own fork → block opponent fork.
- * Extreme: own force-then-fork → block opponent force-then-fork.
- * Search uses this before α-β so forced tactics aren't missed under a budget.
+ * Extreme+: force-then-fork. Impossible: dual-force setups too.
  */
 function forcedTacticalMove(
   board: Board,
@@ -239,6 +310,7 @@ function forcedTacticalMove(
   empties: CellCoord[],
   placement: PlacementMode,
   includeTwoPly = false,
+  includeDualForce = false,
 ): CellCoord | null {
   const basic = tacticalMove(board, dims, aiPlayer, empties);
   if (basic) return basic;
@@ -255,7 +327,15 @@ function forcedTacticalMove(
   const force = findTwoPlyForceMove(board, dims, aiPlayer, empties, placement);
   if (force) return force;
 
-  return findTwoPlyForceMove(board, dims, human, empties, placement);
+  const blockForce = findTwoPlyForceMove(board, dims, human, empties, placement);
+  if (blockForce) return blockForce;
+
+  if (!includeDualForce) return null;
+
+  const setup = findDualForceSetupMove(board, dims, aiPlayer, empties, placement);
+  if (setup) return setup;
+
+  return findDualForceSetupMove(board, dims, human, empties, placement);
 }
 
 /** Move that leaves AI with at least one immediate winning follow-up. */
@@ -469,10 +549,13 @@ type SearchContext = {
   useTt: boolean;
   /** Remaining threat-extension budget along this path. */
   extensionsLeft: number;
-  /** One-ply root eval ordering (Extreme). Hard skips it to preserve depth. */
+  /** One-ply root eval ordering (Extreme+). Hard skips it to preserve depth. */
   rootEvalOrder: boolean;
-  /** Extreme: prefer immediate win/block cells in interior ordering. */
+  /** Extreme+: prefer immediate win/block cells in interior ordering. */
   tacticalOrder: boolean;
+  /** Impossible: resolve win/block at the horizon instead of raw eval. */
+  useQuiesce: boolean;
+  quiescePlies: number;
 };
 
 function playerZobristSlot(player: PlayerId): number {
@@ -505,6 +588,66 @@ function hashBoard(board: Board, dims: BoardDims, zobrist: Uint32Array): number 
     h ^= zobrist[idx]!;
   }
   return h;
+}
+
+/**
+ * Impossible horizon: chase immediate wins and forced blocks so the leaf
+ * eval isn't blind to a threat the last ply created.
+ */
+function quiesce(
+  board: Board,
+  dims: BoardDims,
+  toMove: PlayerId,
+  occupiedCount: number,
+  pliesLeft: number,
+  ctx: SearchContext,
+): SearchResult {
+  if (performance.now() >= ctx.deadline) {
+    return { score: 0, move: null, aborted: true };
+  }
+
+  const standPat = evaluate(board, dims, ctx.aiPlayer, ctx.placement);
+  if (pliesLeft <= 0) {
+    return { score: standPat, move: null, aborted: false };
+  }
+
+  const empties = legalEmpties(board, dims, ctx.placement);
+  if (empties.length === 0 || isDraw(occupiedCount, dims)) {
+    return { score: 0, move: null, aborted: false };
+  }
+
+  const win = findWinningMove(board, dims, toMove, empties);
+  if (win) {
+    const score = toMove === ctx.aiPlayer ? WIN_SCORE + pliesLeft : -WIN_SCORE - pliesLeft;
+    return { score, move: win, aborted: false };
+  }
+
+  const mustBlock = findWinningMove(board, dims, opponentOf(toMove), empties);
+  if (!mustBlock) {
+    return { score: standPat, move: null, aborted: false };
+  }
+
+  const key = cellKey(mustBlock.x, mustBlock.y, mustBlock.z);
+  board.set(key, toMove);
+  xorPiece(ctx, dims, mustBlock, toMove);
+  const won = checkWin(board, dims, mustBlock, toMove);
+  let child: SearchResult;
+  if (won) {
+    const score = toMove === ctx.aiPlayer ? WIN_SCORE + pliesLeft : -WIN_SCORE - pliesLeft;
+    child = { score, move: null, aborted: false };
+  } else {
+    child = quiesce(
+      board,
+      dims,
+      opponentOf(toMove),
+      occupiedCount + 1,
+      pliesLeft - 1,
+      ctx,
+    );
+  }
+  board.delete(key);
+  xorPiece(ctx, dims, mustBlock, toMove);
+  return { score: child.score, move: mustBlock, aborted: child.aborted };
 }
 
 /** True if playing `cell` hands the opponent a win, fork, or force-then-fork. */
@@ -601,6 +744,9 @@ function minimax(
   }
 
   if (depthLeft === 0) {
+    if (ctx.useQuiesce) {
+      return quiesce(board, dims, toMove, occupiedCount, ctx.quiescePlies, ctx);
+    }
     return {
       score: evaluate(board, dims, ctx.aiPlayer, ctx.placement),
       move: null,
@@ -688,8 +834,13 @@ function minimax(
   return { score: bestScore, move: bestMove, aborted: false };
 }
 
-function defaultMaxDepth(dims: BoardDims, difficulty: "hard" | "extreme"): number {
+function defaultMaxDepth(dims: BoardDims, difficulty: SearchTier): number {
   const total = cellCount(dims);
+  if (difficulty === "impossible") {
+    if (total <= 27) return IMPOSSIBLE_SMALL_DEPTH;
+    if (total <= 64) return IMPOSSIBLE_MID_DEPTH;
+    return IMPOSSIBLE_LARGE_DEPTH;
+  }
   if (difficulty === "extreme") {
     if (total <= 27) return EXTREME_SMALL_DEPTH;
     if (total <= 64) return EXTREME_MID_DEPTH;
@@ -698,8 +849,16 @@ function defaultMaxDepth(dims: BoardDims, difficulty: "hard" | "extreme"): numbe
   return total <= 27 ? HARD_DEEP_DEPTH : HARD_SHALLOW_DEPTH;
 }
 
-function defaultBudget(difficulty: "hard" | "extreme"): number {
-  return difficulty === "extreme" ? EXTREME_BUDGET_MS : HARD_BUDGET_MS;
+function defaultBudget(difficulty: SearchTier): number {
+  if (difficulty === "impossible") return IMPOSSIBLE_BUDGET_MS;
+  if (difficulty === "extreme") return EXTREME_BUDGET_MS;
+  return HARD_BUDGET_MS;
+}
+
+function threatExtensions(difficulty: SearchTier): number {
+  if (difficulty === "impossible") return IMPOSSIBLE_THREAT_EXTENSIONS;
+  if (difficulty === "extreme") return EXTREME_THREAT_EXTENSIONS;
+  return 0;
 }
 
 function searchMove(
@@ -711,21 +870,24 @@ function searchMove(
   placement: PlacementMode,
   options: AiSearchOptions,
   rng: Rng,
-  difficulty: "hard" | "extreme",
+  difficulty: SearchTier,
 ): CellCoord | null {
+  const advanced = isAdvancedSearch(difficulty);
   const forced = forcedTacticalMove(
     board,
     dims,
     aiPlayer,
     empties,
     placement,
-    difficulty === "extreme",
+    advanced,
+    difficulty === "impossible",
   );
   if (forced) return forced;
 
-  // Early game: shallow α-β + window-window counts overvalue corners (esp. Drop).
-  // Trust center/column quiet eval for the opening instead.
-  if (occupiedCount <= 2) {
+  // Early game: shallow α-β + open-window counts overvalue corners (esp. Drop).
+  // Impossible starts searching one ply earlier than Extreme/Hard.
+  const quietOpeningPlies = difficulty === "impossible" ? 1 : 2;
+  if (occupiedCount <= quietOpeningPlies) {
     return bestQuietMove(board, dims, aiPlayer, empties, placement, rng);
   }
 
@@ -734,9 +896,10 @@ function searchMove(
   const maxDepth = Math.min(options.maxDepth ?? defaultCap, total - occupiedCount);
   const budget = options.budgetMs ?? defaultBudget(difficulty);
   const deadline = performance.now() + budget;
-  const useTt = difficulty === "extreme";
+  const useTt = advanced;
   const zobrist = buildZobrist(dims);
-  const extensionsLeft = difficulty === "extreme" ? EXTREME_THREAT_EXTENSIONS : 0;
+  const extensionsLeft = threatExtensions(difficulty);
+  const maxExt = Math.max(EXTREME_THREAT_EXTENSIONS, IMPOSSIBLE_THREAT_EXTENSIONS);
 
   const ctx: SearchContext = {
     aiPlayer,
@@ -744,15 +907,17 @@ function searchMove(
     deadline,
     pvMove: null,
     rootDepth: 1,
-    killers: Array.from({ length: maxDepth + EXTREME_THREAT_EXTENSIONS + 1 }, () => null),
+    killers: Array.from({ length: maxDepth + maxExt + 1 }, () => null),
     history: new Int32Array(total),
     zobrist,
     hash: hashBoard(board, dims, zobrist),
     tt: new Map(),
     useTt,
     extensionsLeft,
-    rootEvalOrder: difficulty === "extreme",
-    tacticalOrder: difficulty === "extreme",
+    rootEvalOrder: advanced,
+    tacticalOrder: advanced,
+    useQuiesce: difficulty === "impossible",
+    quiescePlies: IMPOSSIBLE_QUIESCE_PLIES,
   };
 
   let best = bestQuietMove(board, dims, aiPlayer, empties, placement, rng);
@@ -768,7 +933,7 @@ function searchMove(
     }
   }
 
-  if (difficulty === "extreme" && best) {
+  if (advanced && best) {
     return preferSafeMove(board, dims, aiPlayer, empties, placement, best, rng);
   }
   return best;
@@ -848,6 +1013,18 @@ export function pickAiMove(
         options,
         rng,
         "extreme",
+      );
+    case "impossible":
+      return searchMove(
+        board,
+        dims,
+        aiPlayer,
+        empties,
+        occupiedCount,
+        placement,
+        options,
+        rng,
+        "impossible",
       );
   }
 }

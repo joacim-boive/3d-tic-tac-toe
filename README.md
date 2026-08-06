@@ -9,7 +9,7 @@ Built with Next.js, React Three Fiber, and Zustand. Designed for feel-testing pl
 - **Orbit** — rotate and zoom the board
 - **Place** — tap/click an empty cell to mark
 - **Hotseat** — pass-and-play locally
-- **vs AI** — Easy / Medium / Hard / Extreme opponent in the browser
+- **vs AI** — Easy / Medium / Hard / Extreme / Impossible opponent in the browser
 - **Online** — create a room, share the code or `/play/CODE` link; both enter names; match auto-starts
 - **Placement** — **Free** (any empty cell) or **Drop** (gravity: pick a column, markers fall and stack from the bottom with a light bounce)
 - **Shareable setup** — mode, placement, preset, power-ups, and AI difficulty stay in the URL (`?mode=ai&placement=drop&preset=4x4x4&difficulty=hard&powerUps=on`) so you can copy the link and send the same setup to someone else
@@ -68,6 +68,7 @@ npm run check:drop # gravity drop-landing self-check
 npm run check:selfplay  # self-play harness smoke test
 npm run eval:selfplay -- --all --games 2000 --difficulty medium
 npm run eval:selfplay -- --preset 4x4x4 --difficulty extreme --vs hard --swap --games 40
+npm run eval:selfplay -- --preset 4x4x4 --difficulty impossible --vs extreme --swap --games 24
 ```
 
 Self-play eval prints first/second win rate, draw rate, average game length, and common openings — useful when tuning presets or trying new mechanics. With `--vs` + `--swap`, it also reports primary vs opponent wins for head-to-head difficulty comparisons (matchups default to each level’s browser think-time).

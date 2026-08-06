@@ -36,7 +36,7 @@ function printHelp() {
 Options:
   --preset <id|all>       3x3x3 | 4x4x4 | 5x5x4 | all   (default: all)
   --placement <mode>      free | drop | both            (default: both)
-  --difficulty <level>    easy | medium | hard | extreme  (default: medium)
+  --difficulty <level>    easy | medium | hard | extreme | impossible  (default: medium)
   --vs <level>            Second-seat difficulty (head-to-head). Default: same as --difficulty
   --swap                  Alternate who opens when --vs differs (fairer matchup)
   --games <n>             games per preset×placement    (default: 2000)
@@ -44,7 +44,7 @@ Options:
   --opening-plies <n>     opening fingerprint length    (default: 2)
   --budget <ms|Infinity|default>
                           Search budget. "default" = each difficulty's browser budget
-                          (Hard ~80ms, Extreme ~900ms). Omit with --vs → default;
+                          (Hard ~80ms, Extreme ~900ms, Impossible ~2200ms). Omit with --vs → default;
                           omit without --vs → Infinity (offline deep symmetric).
   --vs-budget <ms|Infinity|default>
                           Budget for the --vs seat only (matchups)
@@ -53,15 +53,23 @@ Options:
   --help                  Show this help
 
 Tips:
-  Use medium for large batches (10k–100k). Hard/Extreme α-β are for small samples.
+  Use medium for large batches (10k–100k). Hard/Extreme/Impossible α-β are for small samples.
   Measure Extreme strength (browser-realistic):
     --difficulty extreme --vs hard --swap --games 40 --progress
+  Measure Impossible vs Extreme:
+    --difficulty impossible --vs extreme --swap --games 24 --progress
   First-player win rate ≫ 50% with drawn-out games still short ⇒ rules favor the opener.
 `);
 }
 
 function parseDifficulty(v: string, flag: string): AiDifficulty {
-  if (v !== "easy" && v !== "medium" && v !== "hard" && v !== "extreme") {
+  if (
+    v !== "easy" &&
+    v !== "medium" &&
+    v !== "hard" &&
+    v !== "extreme" &&
+    v !== "impossible"
+  ) {
     throw new Error(`Invalid ${flag}: ${v}`);
   }
   return v;

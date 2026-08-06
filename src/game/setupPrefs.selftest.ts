@@ -37,6 +37,14 @@ function testExtremeDifficulty() {
     aiDifficulty: "extreme",
   });
   assert(prefs.aiDifficulty === "extreme", "extreme accepted");
+
+  const impossible = parseSetupPrefs({
+    presetId: "4x4x4",
+    playMode: "ai",
+    placement: "free",
+    aiDifficulty: "impossible",
+  });
+  assert(impossible.aiDifficulty === "impossible", "impossible accepted");
 }
 
 function testPowerUpsFlag() {

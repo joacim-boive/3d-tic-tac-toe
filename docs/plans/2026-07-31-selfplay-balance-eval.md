@@ -23,7 +23,8 @@ Both seats use the same policy by default (symmetric self-play):
 | Easy       | Noisy baseline |
 | Medium     | Default for large batches (win/block/threat + quiet eval). Fast enough for 10k–100k games. |
 | Hard       | α-β / iterative deepening. Use small N + `--budget Infinity` for offline quality checks. |
-| Extreme    | Deeper α-β + two-ply force tactics. Compare with `--vs hard --swap`. |
+| Extreme    | Deeper α-β + two-ply force tactics + root safety. Compare with `--vs hard --swap`. |
+| Impossible | Longest think, quiescence, dual-force setups. Compare with `--vs extreme --swap`. |
 
 ### Measuring Extreme strength
 

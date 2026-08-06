@@ -266,6 +266,8 @@ function clearThreshold(difficulty: AiDifficulty): number {
       return 250;
     case "extreme":
       return 180;
+    case "impossible":
+      return 120;
   }
 }
 
@@ -279,6 +281,8 @@ function tipThreshold(difficulty: AiDifficulty): number {
       return 3_000;
     case "extreme":
       return 1_500;
+    case "impossible":
+      return 800;
   }
 }
 

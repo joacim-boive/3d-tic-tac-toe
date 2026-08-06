@@ -565,7 +565,10 @@ function snapDropCursor(
 
 function scheduleAiMove(get: () => GameState, set: (partial: Partial<GameState>) => void) {
   clearAiTimer();
-  const thinkDelay = get().aiDifficulty === "extreme" ? 80 : AI_DELAY_MS;
+  const thinkDelay =
+    get().aiDifficulty === "extreme" || get().aiDifficulty === "impossible"
+      ? 80
+      : AI_DELAY_MS;
   aiTimer = setTimeout(() => {
     aiTimer = null;
     const state = get();
@@ -1165,8 +1168,11 @@ export const useGameStore = create<GameState>((set, get) => ({
   setPresetId: (id) => {
     const presetId = resolvePresetId(id);
     const patch: Partial<GameState> = { presetId };
-    // Extreme is only offered on boards larger than 3×3×3.
-    if (presetId === "3x3x3" && get().aiDifficulty === "extreme") {
+    // Extreme / Impossible are only offered on boards larger than 3×3×3.
+    if (
+      presetId === "3x3x3" &&
+      (get().aiDifficulty === "extreme" || get().aiDifficulty === "impossible")
+    ) {
       patch.aiDifficulty = "hard";
     }
     set(patch);
@@ -2504,7 +2510,10 @@ export function hydrateSetupFromStorage() {
   if (state.playMode === "hotseat" && state.powerUpsEnabled) {
     normalized.powerUpsEnabled = false;
   }
-  if (state.aiDifficulty === "extreme" && state.presetId === "3x3x3") {
+  if (
+    (state.aiDifficulty === "extreme" || state.aiDifficulty === "impossible") &&
+    state.presetId === "3x3x3"
+  ) {
     normalized.aiDifficulty = "hard";
   }
   if (Object.keys(normalized).length > 0) {
