@@ -39,7 +39,7 @@ export function OnboardingOverlay({ open, onClose }: OnboardingOverlayProps) {
         complete();
         return;
       }
-      if (event.key === "ArrowRight" || event.key === "Enter") {
+      if (event.key === "ArrowRight") {
         event.preventDefault();
         setIndex((i) => {
           if (i >= steps.length - 1) {
