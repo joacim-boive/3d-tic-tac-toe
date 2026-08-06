@@ -123,13 +123,19 @@ export function GameChrome({ children }: GameChromeProps) {
   return (
     <div className="game-shell">
       <header className="chrome chrome--top">
-        <div className="chrome__actions">
-          {status === "playing" && !paused && (
+        <div className="chrome__meta">
+          {status === "playing" && !paused ? (
             <span className="chrome__cell" aria-label="Cursor cell">
               {cursor.x},{cursor.y},{cursor.z}
             </span>
+          ) : (
+            <span className="chrome__cell chrome__cell--spacer" aria-hidden>
+              {"\u00a0"}
+            </span>
           )}
-          {aiming && !paused && <span className="chrome__aim">Aiming</span>}
+          {aiming && !paused ? <span className="chrome__aim">Aiming</span> : null}
+        </div>
+        <div className="chrome__actions">
           {playMode !== "online" && (status === "won" || status === "draw") && (
             <button type="button" className="chrome__btn chrome__btn--accent" onClick={rematch}>
               Rematch

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, type CSSProperties } from "react";
+import { useEffect, useRef, useState, type AnimationEvent, type CSSProperties } from "react";
 
 type StatusToastProps = {
   message: string;
@@ -10,33 +10,77 @@ type StatusToastProps = {
   sticky?: boolean;
 };
 
-const TOAST_MS = 2400;
+type ToastPhase = "in" | "shown" | "out";
+
+const HOLD_MS = 2200;
 
 /**
  * Transient chrome status — replaces the old always-on "X to drop" row
  * so the top bar can stay a single line of coords + actions.
  */
 export function StatusToast({ message, turnColor, sticky = false }: StatusToastProps) {
-  const [visible, setVisible] = useState(message);
+  const [display, setDisplay] = useState(message);
+  const [phase, setPhase] = useState<ToastPhase | "hidden">(message ? "in" : "hidden");
+  const holdTimer = useRef<number | null>(null);
+  const turnStyle = turnColor ? ({ ["--turn"]: turnColor } as CSSProperties) : undefined;
 
   useEffect(() => {
-    setVisible(message);
-    if (sticky || !message) return;
-    const t = window.setTimeout(() => setVisible(""), TOAST_MS);
-    return () => window.clearTimeout(t);
+    if (holdTimer.current != null) {
+      window.clearTimeout(holdTimer.current);
+      holdTimer.current = null;
+    }
+
+    if (!message) {
+      setPhase((prev) => (prev === "hidden" ? "hidden" : "out"));
+      return;
+    }
+
+    setDisplay(message);
+    setPhase("in");
+
+    if (sticky) return;
+
+    holdTimer.current = window.setTimeout(() => {
+      setPhase("out");
+      holdTimer.current = null;
+    }, HOLD_MS);
+
+    return () => {
+      if (holdTimer.current != null) {
+        window.clearTimeout(holdTimer.current);
+        holdTimer.current = null;
+      }
+    };
   }, [message, sticky]);
 
-  if (!visible) return null;
+  const onAnimationEnd = (event: AnimationEvent<HTMLParagraphElement>) => {
+    if (event.target !== event.currentTarget) return;
+    if (phase === "in") {
+      setPhase("shown");
+      return;
+    }
+    if (phase === "out") {
+      setPhase("hidden");
+      if (!message) setDisplay("");
+    }
+  };
+
+  if (phase === "hidden" || !display) return null;
+
+  const motionClass =
+    phase === "out" ? " status-toast--out" : phase === "in" ? " status-toast--in" : "";
 
   return (
     <p
-      className="status-toast"
+      key={display}
+      className={`status-toast${motionClass}`}
       role="status"
       aria-live="polite"
-      style={turnColor ? ({ ["--turn"]: turnColor } as CSSProperties) : undefined}
+      style={turnStyle}
+      onAnimationEnd={onAnimationEnd}
     >
       {turnColor ? <span className="status-toast__dot" aria-hidden /> : null}
-      <span>{visible}</span>
+      <span>{display}</span>
     </p>
   );
 }
