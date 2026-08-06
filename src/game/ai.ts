@@ -675,8 +675,9 @@ function givesOpponentTactic(
 }
 
 /**
- * Extreme root filter: prefer the search move, but refuse to walk into an
+ * Extreme/Impossible root filter: prefer the search move, but refuse to walk into an
  * immediate opponent win/fork/force if a safer legal place exists.
+ * Impossible also prefers a safe move that creates a threat of its own.
  */
 function preferSafeMove(
   board: Board,
@@ -686,14 +687,31 @@ function preferSafeMove(
   placement: PlacementMode,
   preferred: CellCoord | null,
   rng: Rng,
+  preferThreat = false,
 ): CellCoord | null {
   const ordered = preferred
     ? [preferred, ...empties.filter((c) => !sameCell(c, preferred))]
     : empties;
+  const safe: CellCoord[] = [];
   for (const cell of ordered) {
-    if (!givesOpponentTactic(board, dims, aiPlayer, cell, placement)) return cell;
+    if (!givesOpponentTactic(board, dims, aiPlayer, cell, placement)) {
+      safe.push(cell);
+    }
   }
-  return preferred ?? bestQuietMove(board, dims, aiPlayer, empties, placement, rng);
+  if (safe.length === 0) {
+    return preferred ?? bestQuietMove(board, dims, aiPlayer, empties, placement, rng);
+  }
+  if (preferThreat) {
+    for (const cell of safe) {
+      const key = cellKey(cell.x, cell.y, cell.z);
+      board.set(key, aiPlayer);
+      const replies = legalEmpties(board, dims, placement);
+      const threatens = findWinningMove(board, dims, aiPlayer, replies) !== null;
+      board.delete(key);
+      if (threatens) return cell;
+    }
+  }
+  return safe[0]!;
 }
 
 function minimax(
@@ -934,7 +952,16 @@ function searchMove(
   }
 
   if (advanced && best) {
-    return preferSafeMove(board, dims, aiPlayer, empties, placement, best, rng);
+    return preferSafeMove(
+      board,
+      dims,
+      aiPlayer,
+      empties,
+      placement,
+      best,
+      rng,
+      difficulty === "impossible",
+    );
   }
   return best;
 }
