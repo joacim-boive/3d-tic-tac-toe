@@ -650,7 +650,8 @@ function quiesce(
 
 /**
  * True if playing `cell` hands the opponent a tactic.
- * `basic` = win/fork only (Extreme). `full` = also force-then-fork (Impossible).
+ * `basic` = win/fork only. `full` = also force-then-fork.
+ * Extreme and Impossible both use `full` — Extreme is never weakened for the ladder.
  */
 function givesOpponentTactic(
   board: Board,
@@ -860,84 +861,6 @@ function minimax(
   return { score: bestScore, move: bestMove, aborted: false };
 }
 
-/**
- * Impossible: after ID, lightly re-score a few safe root alternatives at a fixed
- * shallow depth (no quiescence). Catches PV misses from horizon/extensions without
- * the heavy multi-PV + quiescence pathology that previously lost to Extreme.
- */
-function confirmImpossibleRoot(
-  board: Board,
-  dims: BoardDims,
-  aiPlayer: PlayerId,
-  empties: CellCoord[],
-  occupiedCount: number,
-  placement: PlacementMode,
-  preferred: CellCoord,
-  deadline: number,
-  baseCtx: SearchContext,
-): CellCoord {
-  const remaining = deadline - performance.now();
-  if (remaining < 400) return preferred;
-
-  const safe = empties.filter(
-    (cell) => !givesOpponentTactic(board, dims, aiPlayer, cell, placement, "full"),
-  );
-  if (safe.length <= 1) return preferred;
-
-  const ordered = orderRootByEval(board, dims, aiPlayer, safe, placement, preferred).slice(
-    0,
-    Math.min(4, safe.length),
-  );
-  if (!ordered.some((c) => sameCell(c, preferred))) {
-    ordered[ordered.length - 1] = preferred;
-  }
-
-  const verifyDepth = 3;
-  let bestMove = preferred;
-  let bestScore = Number.NEGATIVE_INFINITY;
-
-  for (const cell of ordered) {
-    if (performance.now() >= deadline) break;
-    const key = cellKey(cell.x, cell.y, cell.z);
-    board.set(key, aiPlayer);
-    if (checkWin(board, dims, cell, aiPlayer)) {
-      board.delete(key);
-      return cell;
-    }
-    const childCtx: SearchContext = {
-      ...baseCtx,
-      deadline,
-      pvMove: null,
-      rootDepth: verifyDepth,
-      extensionsLeft: IMPOSSIBLE_THREAT_EXTENSIONS,
-      useQuiesce: false,
-      quiescePlies: 0,
-      killers: Array.from(baseCtx.killers, () => null),
-      // Keep TT/history from ID for move ordering; scores are not stored in TT.
-    };
-    xorPiece(childCtx, dims, cell, aiPlayer);
-    const child = minimax(
-      board,
-      dims,
-      opponentOf(aiPlayer),
-      verifyDepth,
-      occupiedCount + 1,
-      Number.NEGATIVE_INFINITY,
-      Number.POSITIVE_INFINITY,
-      childCtx,
-    );
-    xorPiece(childCtx, dims, cell, aiPlayer);
-    board.delete(key);
-    if (child.aborted) break;
-    const score = -child.score;
-    if (score > bestScore) {
-      bestScore = score;
-      bestMove = cell;
-    }
-  }
-  return bestMove;
-}
-
 function defaultMaxDepth(dims: BoardDims, difficulty: SearchTier): number {
   const total = cellCount(dims);
   if (difficulty === "impossible") {
@@ -1039,7 +962,7 @@ function searchMove(
   }
 
   if (advanced && best) {
-    let pick = preferSafeMove(
+    return preferSafeMove(
       board,
       dims,
       aiPlayer,
@@ -1050,20 +973,6 @@ function searchMove(
       difficulty === "impossible",
       "full",
     );
-    if (difficulty === "impossible" && pick) {
-      pick = confirmImpossibleRoot(
-        board,
-        dims,
-        aiPlayer,
-        empties,
-        occupiedCount,
-        placement,
-        pick,
-        deadline,
-        ctx,
-      );
-    }
-    return pick;
   }
   return best;
 }
