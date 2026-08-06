@@ -125,7 +125,9 @@ function OrbitDemo({ touchUi }: DemoProps) {
             </div>
           )
         ) : (
-          <span className="onboard-try-hint">Nice — in-game uses two fingers / trackpad</span>
+          <span className="onboard-try-hint">
+            {touchUi ? "Nice — in-game uses two fingers" : "Nice — in-game uses trackpad scroll"}
+          </span>
         )}
       </div>
     </div>
