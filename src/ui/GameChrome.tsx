@@ -47,7 +47,6 @@ export function GameChrome({ children }: GameChromeProps) {
   const watchTipPlayback = useGameStore((s) => s.watchTipPlayback);
   const currentPlayer = useGameStore((s) => s.currentPlayer);
   const status = useGameStore((s) => s.status);
-  const winner = useGameStore((s) => s.winner);
   const aiming = useGameStore((s) => s.aiming);
   const cursor = useGameStore((s) => s.cursor);
   const seat = useGameStore((s) => s.seat);
@@ -66,7 +65,8 @@ export function GameChrome({ children }: GameChromeProps) {
   const myTurn =
     playMode !== "online" || (seat != null && currentPlayer === seat && onlineStatus === "playing");
 
-  let statusText: string;
+  // Toast whose-turn / important notices — skip "Dropping…" (visible in the scene).
+  let statusText = "";
   let statusSticky = false;
   let statusShowsTurn = false;
   if (paused) {
@@ -77,12 +77,7 @@ export function GameChrome({ children }: GameChromeProps) {
   } else if (swarmBusy) {
     statusText = "Catch a package — tap a cylinder";
     statusSticky = true;
-  } else if (dropBusy) {
-    statusText = "Dropping…";
-  } else if (status === "won" && winner) {
-    // Rematch dialog carries the result — no toast noise.
-    statusText = "";
-  } else if (status === "draw") {
+  } else if (status === "won" || status === "draw" || dropBusy) {
     statusText = "";
   } else if (tipFalling) {
     statusText = "Balls falling…";
@@ -104,7 +99,7 @@ export function GameChrome({ children }: GameChromeProps) {
     statusShowsTurn = true;
   } else if (playMode === "ai" && currentPlayer === "b") {
     statusText = `${displayName("b")} is thinking…`;
-  } else {
+  } else if (status === "playing") {
     statusText =
       placement === "drop"
         ? `${displayName(currentPlayer)} to drop`
@@ -128,11 +123,7 @@ export function GameChrome({ children }: GameChromeProps) {
             <span className="chrome__cell" aria-label="Cursor cell">
               {cursor.x},{cursor.y},{cursor.z}
             </span>
-          ) : (
-            <span className="chrome__cell chrome__cell--spacer" aria-hidden>
-              {"\u00a0"}
-            </span>
-          )}
+          ) : null}
           {aiming && !paused ? <span className="chrome__aim">Aiming</span> : null}
         </div>
         <div className="chrome__actions">

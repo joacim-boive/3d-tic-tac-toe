@@ -600,10 +600,12 @@ button {
 }
 
 .chrome--top {
-  display: flex;
+  display: grid;
+  grid-template-columns: 1fr auto;
   align-items: center;
-  justify-content: space-between;
-  gap: 0.75rem;
+  column-gap: 0.75rem;
+  width: 100%;
+  box-sizing: border-box;
   padding: max(0.65rem, env(safe-area-inset-top)) 0.85rem 0.65rem;
   border-bottom: 1px solid var(--line);
 }
@@ -619,9 +621,11 @@ button {
 .chrome__meta {
   display: flex;
   align-items: center;
+  justify-content: flex-start;
   gap: 0.45rem;
   min-width: 0;
-  justify-content: flex-start;
+  justify-self: start;
+  text-align: left;
 }
 
 .chrome__cell {
@@ -629,12 +633,7 @@ button {
   color: var(--ink-muted);
   font-size: 0.85rem;
   font-weight: 500;
-  align-self: center;
-  padding-inline: 0.1rem;
-}
-
-.chrome__cell--spacer {
-  visibility: hidden;
+  line-height: 1;
 }
 
 .chrome__aim {
@@ -643,7 +642,6 @@ button {
   text-transform: uppercase;
   color: var(--cyan);
   font-weight: 700;
-  align-self: center;
 }
 
 .chrome__actions {
@@ -653,7 +651,7 @@ button {
   gap: 0.45rem;
   flex-wrap: nowrap;
   min-width: 0;
-  margin-left: auto;
+  justify-self: end;
 }
 
 .chrome__btn {
@@ -711,12 +709,7 @@ button {
 
 @media (max-width: 720px) {
   .chrome--top {
-    gap: 0.45rem;
-  }
-
-  .chrome__actions {
-    justify-content: flex-end;
-    flex-wrap: nowrap;
+    column-gap: 0.45rem;
   }
 }
 
