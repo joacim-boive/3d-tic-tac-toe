@@ -75,6 +75,10 @@ function pointerDistance(a: PointerSample, b: PointerSample): number {
   return Math.hypot(dx, dy);
 }
 
+function pointerMidpoint(a: PointerSample, b: PointerSample): PointerSample {
+  return { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+}
+
 function clampScale(value: number): number {
   return Math.max(0.55, Math.min(1.85, value));
 }
@@ -82,12 +86,21 @@ function clampScale(value: number): number {
 function OrbitDemo({ touchUi }: DemoProps) {
   const [rot, setRot] = useState<{ x: number; y: number } | null>(null);
   const [scale, setScale] = useState(1);
-  const [tried, setTried] = useState<"rotate" | "zoom" | null>(null);
+  const [tried, setTried] = useState<"rotate" | "zoom" | "needTwo" | null>(null);
   const pointers = useRef(new Map<number, PointerSample>());
+  /** Desktop one-pointer orbit (stand-in for right-drag / trackpad). */
   const drag = useRef<{ id: number; x: number; y: number; rotX: number; rotY: number } | null>(
     null,
   );
-  const pinch = useRef<{ startDist: number; startScale: number } | null>(null);
+  /** Touch: track a lone finger so we can nudge “use two fingers”. */
+  const loneTouch = useRef<{ id: number; x: number; y: number } | null>(null);
+  /** Touch two-finger orbit + pinch. */
+  const dual = useRef<{
+    startDist: number;
+    startScale: number;
+    startMid: PointerSample;
+    startRot: { x: number; y: number };
+  } | null>(null);
   const scaleRef = useRef(scale);
   const rotRef = useRef(rot);
   const stageRef = useRef<HTMLDivElement | null>(null);
@@ -103,22 +116,52 @@ function OrbitDemo({ touchUi }: DemoProps) {
     return next;
   };
 
-  const syncPinchFromPointers = () => {
+  const beginDualGesture = () => {
     const pts = [...pointers.current.values()];
     if (pts.length < 2) {
-      pinch.current = null;
+      dual.current = null;
       return;
     }
+    dual.current = {
+      startDist: Math.max(1, pointerDistance(pts[0]!, pts[1]!)),
+      startScale: scaleRef.current,
+      startMid: pointerMidpoint(pts[0]!, pts[1]!),
+      startRot: { ...(rotRef.current ?? { x: -22, y: 32 }) },
+    };
+    drag.current = null;
+    ensureRot();
+  };
+
+  const syncDualFromPointers = () => {
+    const pts = [...pointers.current.values()];
+    if (pts.length < 2) {
+      dual.current = null;
+      return;
+    }
+    if (!dual.current) {
+      beginDualGesture();
+      return;
+    }
+
     const dist = pointerDistance(pts[0]!, pts[1]!);
-    if (!pinch.current) {
-      pinch.current = { startDist: Math.max(1, dist), startScale: scaleRef.current };
-      drag.current = null;
-      return;
-    }
-    const next = clampScale(pinch.current.startScale * (dist / pinch.current.startDist));
-    if (Math.abs(next - scaleRef.current) > 0.02) setTried("zoom");
-    scaleRef.current = next;
-    setScale(next);
+    const mid = pointerMidpoint(pts[0]!, pts[1]!);
+    const gesture = dual.current;
+
+    const nextScale = clampScale(gesture.startScale * (dist / gesture.startDist));
+    const dx = mid.x - gesture.startMid.x;
+    const dy = mid.y - gesture.startMid.y;
+    const nextRot = {
+      x: Math.max(-60, Math.min(40, gesture.startRot.x - dy * 0.45)),
+      y: gesture.startRot.y + dx * 0.45,
+    };
+
+    if (Math.abs(nextScale - scaleRef.current) > 0.02) setTried("zoom");
+    else if (Math.abs(dx) + Math.abs(dy) > 6) setTried((prev) => (prev === "zoom" ? prev : "rotate"));
+
+    scaleRef.current = nextScale;
+    rotRef.current = nextRot;
+    setScale(nextScale);
+    setRot(nextRot);
   };
 
   const onPointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
@@ -126,16 +169,19 @@ function OrbitDemo({ touchUi }: DemoProps) {
     pointers.current.set(event.pointerId, { x: event.clientX, y: event.clientY });
 
     if (pointers.current.size >= 2) {
-      const pts = [...pointers.current.values()];
-      pinch.current = {
-        startDist: Math.max(1, pointerDistance(pts[0]!, pts[1]!)),
-        startScale: scaleRef.current,
-      };
-      drag.current = null;
-      ensureRot();
+      loneTouch.current = null;
+      beginDualGesture();
       return;
     }
 
+    // Touch: one finger never orbits (aim in real play). Desktop may drag-orbit.
+    if (touchUi) {
+      drag.current = null;
+      loneTouch.current = { id: event.pointerId, x: event.clientX, y: event.clientY };
+      return;
+    }
+
+    loneTouch.current = null;
     const base = ensureRot();
     drag.current = {
       id: event.pointerId,
@@ -151,7 +197,17 @@ function OrbitDemo({ touchUi }: DemoProps) {
     pointers.current.set(event.pointerId, { x: event.clientX, y: event.clientY });
 
     if (pointers.current.size >= 2) {
-      syncPinchFromPointers();
+      loneTouch.current = null;
+      syncDualFromPointers();
+      return;
+    }
+
+    if (touchUi) {
+      const lone = loneTouch.current;
+      if (lone && lone.id === event.pointerId) {
+        const moved = Math.hypot(event.clientX - lone.x, event.clientY - lone.y);
+        if (moved > 10) setTried((prev) => prev ?? "needTwo");
+      }
       return;
     }
 
@@ -171,14 +227,22 @@ function OrbitDemo({ touchUi }: DemoProps) {
   const onPointerUp = (event: ReactPointerEvent<HTMLDivElement>) => {
     pointers.current.delete(event.pointerId);
     if (drag.current?.id === event.pointerId) drag.current = null;
+    if (loneTouch.current?.id === event.pointerId) loneTouch.current = null;
 
     if (pointers.current.size >= 2) {
-      syncPinchFromPointers();
+      beginDualGesture();
       return;
     }
 
-    pinch.current = null;
-    if (pointers.current.size === 1) {
+    dual.current = null;
+
+    if (touchUi && pointers.current.size === 1) {
+      const [id, sample] = [...pointers.current.entries()][0]!;
+      loneTouch.current = { id, x: sample.x, y: sample.y };
+      return;
+    }
+
+    if (!touchUi && pointers.current.size === 1) {
       const [id, sample] = [...pointers.current.entries()][0]!;
       const base = rotRef.current ?? { x: -22, y: 32 };
       drag.current = {
@@ -214,7 +278,9 @@ function OrbitDemo({ touchUi }: DemoProps) {
   const interactive = rot != null || scale !== 1;
 
   let hint: string | null = null;
-  if (tried === "zoom") {
+  if (tried === "needTwo") {
+    hint = "Use two fingers to spin";
+  } else if (tried === "zoom") {
     hint = touchUi ? "Pinch zooms — same in game" : "Scroll zooms — same in game";
   } else if (tried === "rotate") {
     hint = touchUi ? "Try pinch to zoom too" : "Try scroll to zoom too";
@@ -235,11 +301,11 @@ function OrbitDemo({ touchUi }: DemoProps) {
         ) : (
           <VoxelCube spinning />
         )}
-        {!interactive ? (
+        {!interactive && tried !== "needTwo" ? (
           touchUi ? (
             <div className="onboard-gesture onboard-gesture--pinch">
               <TwoFingers />
-              <span className="onboard-gesture__label">Drag · pinch zoom</span>
+              <span className="onboard-gesture__label">Two fingers · pinch</span>
             </div>
           ) : (
             <div className="onboard-gesture onboard-gesture--scroll">
