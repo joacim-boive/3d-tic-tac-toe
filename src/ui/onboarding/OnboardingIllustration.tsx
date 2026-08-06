@@ -67,6 +67,23 @@ function TwoFingers() {
   );
 }
 
+/** Aim finger stays put; depth finger slides vertically (matches real touch depth). */
+function DepthFingers() {
+  return (
+    <span className="onboard-depth-fingers" aria-hidden>
+      <span className="onboard-depth-fingers__hold">
+        <span className="onboard-fingers__dot" />
+        <span className="onboard-depth-fingers__tag">Hold</span>
+      </span>
+      <span className="onboard-depth-fingers__move">
+        <span className="onboard-depth-fingers__trail" />
+        <span className="onboard-fingers__dot onboard-fingers__dot--move" />
+        <span className="onboard-depth-fingers__tag">Up / down</span>
+      </span>
+    </span>
+  );
+}
+
 type PointerSample = { x: number; y: number };
 
 function pointerDistance(a: PointerSample, b: PointerSample): number {
@@ -364,8 +381,8 @@ function DepthDemo({ touchUi }: DemoProps) {
         </div>
         {touchUi ? (
           <div className="onboard-gesture onboard-gesture--depth">
-            <TwoFingers />
-            <span className="onboard-gesture__label">2nd finger · drag</span>
+            <DepthFingers />
+            <span className="onboard-gesture__label">Hold aim · drag 2nd finger</span>
           </div>
         ) : (
           <div className="onboard-gesture onboard-gesture--keys">
