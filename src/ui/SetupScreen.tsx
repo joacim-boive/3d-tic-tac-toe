@@ -2,6 +2,8 @@
 
 import { useEffect, useState, useTransition } from "react";
 import { formatAppVersionLabel } from "@/appVersion";
+import { isExtremeAllowed } from "@/game/ai";
+import { shouldShowOnboardingOnLaunch } from "@/game/onboardingPrefs";
 import { PRESETS } from "@/game/presets";
 import {
   readSavedGameFromStorage,
@@ -9,9 +11,9 @@ import {
   type SavedGame,
 } from "@/game/savedGame";
 import { hydrateLocalNameFromStorage, hydrateSetupFromStorage, useGameStore } from "@/game/store";
-import { isExtremeAllowed } from "@/game/ai";
 import type { AiDifficulty, PlacementMode, PlayMode, PresetId } from "@/game/types";
 import { createOnlineRoom, joinOnlineRoom } from "@/online/session";
+import { OnboardingOverlay } from "@/ui/onboarding/OnboardingOverlay";
 
 export function SetupScreen() {
   const presetId = useGameStore((s) => s.presetId);
@@ -35,10 +37,15 @@ export function SetupScreen() {
   const [pending, startTransition] = useTransition();
   const [busy, setBusy] = useState(false);
   const [restoreOffer, setRestoreOffer] = useState<SavedGame | null>(null);
+  const [onboardingOpen, setOnboardingOpen] = useState(false);
+  const [onboardingReady, setOnboardingReady] = useState(false);
 
   useEffect(() => {
     hydrateLocalNameFromStorage();
     hydrateSetupFromStorage();
+    const show = shouldShowOnboardingOnLaunch();
+    setOnboardingOpen(show);
+    setOnboardingReady(true);
   }, []);
 
   useEffect(() => {
@@ -333,6 +340,19 @@ export function SetupScreen() {
           Start game
         </button>
       )}
+
+      <section className="setup__section setup__section--help" aria-label="Help">
+        <button
+          type="button"
+          className="setup__link"
+          onClick={() => setOnboardingOpen(true)}
+          disabled={!onboardingReady}
+        >
+          How to play
+        </button>
+      </section>
+
+      <OnboardingOverlay open={onboardingOpen} onClose={() => setOnboardingOpen(false)} />
     </div>
   );
 }

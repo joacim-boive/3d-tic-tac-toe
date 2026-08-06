@@ -2,11 +2,12 @@
 
 import { OrbitControls } from "@react-three/drei";
 import { Canvas, useThree } from "@react-three/fiber";
-import { Suspense, useEffect, useState } from "react";
+import { Suspense, useEffect } from "react";
 import { MathUtils, MOUSE, TOUCH } from "three";
 import type { OrbitControls as OrbitControlsImpl } from "three-stdlib";
 import { getPreset } from "@/game/presets";
 import { useGameStore } from "@/game/store";
+import { useCoarsePointer } from "@/hooks/useCoarsePointer";
 import { TipBoardFrame } from "./TipBoardFrame";
 import { SwarmPackages } from "./SwarmPackages";
 
@@ -19,18 +20,6 @@ const DESKTOP_MOUSE_BUTTONS = {
 
 function camDistance(dims: { x: number; y: number; z: number }): number {
   return Math.max(dims.x, dims.y, dims.z) * 1.6 + 2;
-}
-
-function useCoarsePointer(): boolean {
-  const [coarse, setCoarse] = useState(false);
-  useEffect(() => {
-    const mq = window.matchMedia("(pointer: coarse)");
-    const sync = () => setCoarse(mq.matches);
-    sync();
-    mq.addEventListener("change", sync);
-    return () => mq.removeEventListener("change", sync);
-  }, []);
-  return coarse;
 }
 
 /** Kill long-press callouts / text selection on the WebGL surface. */

@@ -21,6 +21,7 @@
     "check:drop": "npx tsx src/game/drop.selftest.ts",
     "check:selfplay": "npx tsx src/game/selfPlay.selftest.ts",
     "check:prefs": "npx tsx src/game/setupPrefs.selftest.ts",
+    "check:onboarding": "npx tsx src/game/onboardingPrefs.selftest.ts && npx tsx src/ui/onboarding/steps.selftest.ts",
     "check:saved": "npx tsx src/game/savedGame.selftest.ts",
     "check:slice": "npx tsx src/scene/facingSliceAxis.selftest.ts",
     "check:sticky": "npx tsx src/scene/stickyDepth.selftest.ts",

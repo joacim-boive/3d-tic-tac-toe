@@ -1,9 +1,10 @@
 "use client";
 
-import { useEffect, useState, type ReactNode } from "react";
+import type { ReactNode } from "react";
 import { useGameStore } from "@/game/store";
 import { tipDownFromEuler } from "@/game/tipBoard";
 import { PLAYER_COLORS } from "@/game/types";
+import { useCoarsePointer } from "@/hooks/useCoarsePointer";
 import { leaveOnlineSession } from "@/online/session";
 import { RematchDialog } from "./RematchDialog";
 import { PackageSwarm } from "./PackageSwarm";
@@ -15,21 +16,6 @@ import { useGameControls } from "./useGameControls";
 type GameChromeProps = {
   children: ReactNode;
 };
-
-/** Coarse pointer ≈ phone/tablet; fine + hover ≈ mouse/trackpad. */
-function useCoarsePointer(): boolean {
-  const [coarse, setCoarse] = useState(false);
-
-  useEffect(() => {
-    const mq = window.matchMedia("(pointer: coarse)");
-    const sync = () => setCoarse(mq.matches);
-    sync();
-    mq.addEventListener("change", sync);
-    return () => mq.removeEventListener("change", sync);
-  }, []);
-
-  return coarse;
-}
 
 export function GameChrome({ children }: GameChromeProps) {
   useGameControls();
