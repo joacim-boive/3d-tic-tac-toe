@@ -10,18 +10,22 @@ type DemoProps = {
 function VoxelCube({
   rotX,
   rotY,
+  scale = 1,
   spinning = false,
   showCursor = false,
 }: {
   rotX?: number;
   rotY?: number;
+  scale?: number;
   spinning?: boolean;
   showCursor?: boolean;
 }) {
   const style =
     rotX != null && rotY != null
-      ? { transform: `rotateX(${rotX}deg) rotateY(${rotY}deg)` }
-      : undefined;
+      ? { transform: `rotateX(${rotX}deg) rotateY(${rotY}deg) scale(${scale})` }
+      : scale !== 1
+        ? { transform: `rotateX(-22deg) rotateY(32deg) scale(${scale})` }
+        : undefined;
 
   return (
     <div
@@ -63,15 +67,76 @@ function TwoFingers() {
   );
 }
 
+type PointerSample = { x: number; y: number };
+
+function pointerDistance(a: PointerSample, b: PointerSample): number {
+  const dx = a.x - b.x;
+  const dy = a.y - b.y;
+  return Math.hypot(dx, dy);
+}
+
+function clampScale(value: number): number {
+  return Math.max(0.55, Math.min(1.85, value));
+}
+
 function OrbitDemo({ touchUi }: DemoProps) {
   const [rot, setRot] = useState<{ x: number; y: number } | null>(null);
+  const [scale, setScale] = useState(1);
+  const [tried, setTried] = useState<"rotate" | "zoom" | null>(null);
+  const pointers = useRef(new Map<number, PointerSample>());
   const drag = useRef<{ id: number; x: number; y: number; rotX: number; rotY: number } | null>(
     null,
   );
+  const pinch = useRef<{ startDist: number; startScale: number } | null>(null);
+  const scaleRef = useRef(scale);
+  const rotRef = useRef(rot);
+  const stageRef = useRef<HTMLDivElement | null>(null);
+  scaleRef.current = scale;
+  rotRef.current = rot;
+
+  const ensureRot = (): { x: number; y: number } => {
+    const current = rotRef.current;
+    if (current) return current;
+    const next = { x: -22, y: 32 };
+    rotRef.current = next;
+    setRot(next);
+    return next;
+  };
+
+  const syncPinchFromPointers = () => {
+    const pts = [...pointers.current.values()];
+    if (pts.length < 2) {
+      pinch.current = null;
+      return;
+    }
+    const dist = pointerDistance(pts[0]!, pts[1]!);
+    if (!pinch.current) {
+      pinch.current = { startDist: Math.max(1, dist), startScale: scaleRef.current };
+      drag.current = null;
+      return;
+    }
+    const next = clampScale(pinch.current.startScale * (dist / pinch.current.startDist));
+    if (Math.abs(next - scaleRef.current) > 0.02) setTried("zoom");
+    scaleRef.current = next;
+    setScale(next);
+  };
 
   const onPointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
     event.currentTarget.setPointerCapture(event.pointerId);
-    const base = rot ?? { x: -22, y: 32 };
+    pointers.current.set(event.pointerId, { x: event.clientX, y: event.clientY });
+
+    if (pointers.current.size >= 2) {
+      const pts = [...pointers.current.values()];
+      pinch.current = {
+        startDist: Math.max(1, pointerDistance(pts[0]!, pts[1]!)),
+        startScale: scaleRef.current,
+      };
+      drag.current = null;
+      ensureRot();
+      return;
+    }
+
+    const base = ensureRot();
     drag.current = {
       id: event.pointerId,
       x: event.clientX,
@@ -82,25 +147,83 @@ function OrbitDemo({ touchUi }: DemoProps) {
   };
 
   const onPointerMove = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (!pointers.current.has(event.pointerId)) return;
+    pointers.current.set(event.pointerId, { x: event.clientX, y: event.clientY });
+
+    if (pointers.current.size >= 2) {
+      syncPinchFromPointers();
+      return;
+    }
+
     const active = drag.current;
     if (!active || active.id !== event.pointerId) return;
     const dx = event.clientX - active.x;
     const dy = event.clientY - active.y;
-    setRot({
+    if (Math.abs(dx) + Math.abs(dy) > 4) setTried((prev) => prev ?? "rotate");
+    const next = {
       x: Math.max(-60, Math.min(40, active.rotX - dy * 0.45)),
       y: active.rotY + dx * 0.45,
-    });
+    };
+    rotRef.current = next;
+    setRot(next);
   };
 
   const onPointerUp = (event: ReactPointerEvent<HTMLDivElement>) => {
+    pointers.current.delete(event.pointerId);
     if (drag.current?.id === event.pointerId) drag.current = null;
+
+    if (pointers.current.size >= 2) {
+      syncPinchFromPointers();
+      return;
+    }
+
+    pinch.current = null;
+    if (pointers.current.size === 1) {
+      const [id, sample] = [...pointers.current.entries()][0]!;
+      const base = rotRef.current ?? { x: -22, y: 32 };
+      drag.current = {
+        id,
+        x: sample.x,
+        y: sample.y,
+        rotX: base.x,
+        rotY: base.y,
+      };
+    }
   };
 
-  const interactive = rot != null;
+  useEffect(() => {
+    const el = stageRef.current;
+    if (!el) return;
+
+    const onWheel = (event: WheelEvent) => {
+      event.preventDefault();
+      ensureRot();
+      const factor = event.deltaY < 0 ? 1.08 : 0.92;
+      setScale((prev) => {
+        const next = clampScale(prev * factor);
+        scaleRef.current = next;
+        if (Math.abs(next - prev) > 0.01) setTried("zoom");
+        return next;
+      });
+    };
+
+    el.addEventListener("wheel", onWheel, { passive: false });
+    return () => el.removeEventListener("wheel", onWheel);
+  }, []);
+
+  const interactive = rot != null || scale !== 1;
+
+  let hint: string | null = null;
+  if (tried === "zoom") {
+    hint = touchUi ? "Pinch zooms — same in game" : "Scroll zooms — same in game";
+  } else if (tried === "rotate") {
+    hint = touchUi ? "Try pinch to zoom too" : "Try scroll to zoom too";
+  }
 
   return (
     <div className="onboard-demo onboard-demo--orbit">
       <div
+        ref={stageRef}
         className="onboard-demo__stage onboard-demo__stage--interactive"
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}
@@ -108,7 +231,7 @@ function OrbitDemo({ touchUi }: DemoProps) {
         onPointerCancel={onPointerUp}
       >
         {interactive ? (
-          <VoxelCube rotX={rot.x} rotY={rot.y} />
+          <VoxelCube rotX={rot?.x ?? -22} rotY={rot?.y ?? 32} scale={scale} />
         ) : (
           <VoxelCube spinning />
         )}
@@ -116,19 +239,17 @@ function OrbitDemo({ touchUi }: DemoProps) {
           touchUi ? (
             <div className="onboard-gesture onboard-gesture--pinch">
               <TwoFingers />
-              <span className="onboard-gesture__label">Drag to try</span>
+              <span className="onboard-gesture__label">Drag · pinch zoom</span>
             </div>
           ) : (
             <div className="onboard-gesture onboard-gesture--scroll">
               <span className="onboard-trackpad" />
-              <span className="onboard-gesture__label">Drag to try</span>
+              <span className="onboard-gesture__label">Drag · scroll zoom</span>
             </div>
           )
-        ) : (
-          <span className="onboard-try-hint">
-            {touchUi ? "Nice — in-game uses two fingers" : "Nice — in-game uses trackpad scroll"}
-          </span>
-        )}
+        ) : hint ? (
+          <span className="onboard-try-hint">{hint}</span>
+        ) : null}
       </div>
     </div>
   );
