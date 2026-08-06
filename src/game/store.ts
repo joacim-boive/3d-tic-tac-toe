@@ -44,7 +44,13 @@ import {
   writeSavedGameToStorage,
   type SavedGame,
 } from "./savedGame";
-import { readSetupPrefsFromStorage, writeSetupPrefsToStorage, type SetupPrefs } from "./setupPrefs";
+import {
+  readSetupPrefsFromStorage,
+  readSetupPrefsFromUrl,
+  writeSetupPrefsToStorage,
+  writeSetupPrefsToUrl,
+  type SetupPrefs,
+} from "./setupPrefs";
 import {
   IDENTITY_TIP_EULER,
   canTipPreset,
@@ -132,6 +138,10 @@ function persistSetupPrefs(state: {
     powerUpsEnabled: state.powerUpsEnabled,
   };
   writeSetupPrefsToStorage(prefs);
+  // Keep the address bar shareable while on the home setup route.
+  if (typeof window !== "undefined" && window.location.pathname === "/") {
+    writeSetupPrefsToUrl(prefs);
+  }
 }
 
 function snapshotLocalGame(state: {
@@ -2479,14 +2489,26 @@ export function hydrateLocalNameFromStorage() {
   }
 }
 
-/** Restore last Mode / Placement / Preset / Difficulty from localStorage. */
+/** Restore Mode / Placement / Preset / Difficulty — URL wins over localStorage. */
 export function hydrateSetupFromStorage() {
   if (typeof window === "undefined") return;
-  const prefs = readSetupPrefsFromStorage();
-  if (Object.keys(prefs).length === 0) return;
-  const presetId = prefs.presetId ?? useGameStore.getState().presetId;
-  if (prefs.aiDifficulty === "extreme" && presetId === "3x3x3") {
-    prefs.aiDifficulty = "hard";
+  const fromStorage = readSetupPrefsFromStorage();
+  const fromUrl = readSetupPrefsFromUrl();
+  const prefs: Partial<SetupPrefs> = { ...fromStorage, ...fromUrl };
+  if (Object.keys(prefs).length > 0) {
+    useGameStore.setState(prefs);
   }
-  useGameStore.setState(prefs);
+
+  const state = useGameStore.getState();
+  const normalized: Partial<SetupPrefs> = {};
+  if (state.playMode === "hotseat" && state.powerUpsEnabled) {
+    normalized.powerUpsEnabled = false;
+  }
+  if (state.aiDifficulty === "extreme" && state.presetId === "3x3x3") {
+    normalized.aiDifficulty = "hard";
+  }
+  if (Object.keys(normalized).length > 0) {
+    useGameStore.setState(normalized);
+  }
+  persistSetupPrefs(useGameStore.getState());
 }

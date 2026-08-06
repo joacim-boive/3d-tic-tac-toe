@@ -514,6 +514,82 @@ button {
   }
 }
 
+/* Turn / chrome status toast — sits under power-up toast when both show */
+.status-toast {
+  position: absolute;
+  top: 0.85rem;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 24;
+  margin: 0;
+  padding: 0.4rem 0.9rem;
+  max-width: min(92%, 28rem);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.45rem;
+  border-radius: 8px;
+  background: rgba(10, 16, 22, 0.92);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: var(--ink);
+  font-size: 0.88rem;
+  font-weight: 650;
+  text-align: center;
+  pointer-events: none;
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.4);
+  white-space: nowrap;
+  will-change: transform, opacity;
+}
+
+.status-toast--in {
+  animation: status-toast-drop-in 0.38s cubic-bezier(0.22, 1.15, 0.36, 1) both;
+}
+
+.status-toast--out {
+  animation: status-toast-drop-out 0.28s cubic-bezier(0.4, 0, 0.7, 0.2) both;
+}
+
+.status-toast__dot {
+  flex-shrink: 0;
+  width: 0.55rem;
+  height: 0.55rem;
+  border-radius: 50%;
+  background: var(--turn, var(--coral));
+  box-shadow: 0 0 10px color-mix(in srgb, var(--turn, var(--coral)) 55%, transparent);
+}
+
+/* Nudge down when a power-up toast is also on screen */
+.powerup-toast:not(:empty) ~ .status-toast,
+.game-viewport:has(.powerup-toast) .status-toast {
+  top: 3.35rem;
+}
+
+@keyframes status-toast-drop-in {
+  from {
+    opacity: 0;
+    transform: translateX(-50%) translateY(-18px) scale(0.94);
+  }
+  70% {
+    opacity: 1;
+    transform: translateX(-50%) translateY(2px) scale(1.02);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0) scale(1);
+  }
+}
+
+@keyframes status-toast-drop-out {
+  from {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0) scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: translateX(-50%) translateY(14px) scale(0.96);
+  }
+}
+
 .chrome {
   flex-shrink: 0;
   z-index: 2;
@@ -527,7 +603,9 @@ button {
   display: grid;
   grid-template-columns: 1fr auto;
   align-items: center;
-  gap: 0.75rem;
+  column-gap: 0.75rem;
+  width: 100%;
+  box-sizing: border-box;
   padding: max(0.65rem, env(safe-area-inset-top)) 0.85rem 0.65rem;
   border-bottom: 1px solid var(--line);
 }
@@ -540,22 +618,14 @@ button {
   box-sizing: border-box;
 }
 
-.chrome__status {
-  display: inline-flex;
+.chrome__meta {
+  display: flex;
   align-items: center;
   justify-content: flex-start;
   gap: 0.45rem;
-  font-weight: 650;
-  white-space: nowrap;
   min-width: 0;
-}
-
-.chrome__dot {
-  width: 0.6rem;
-  height: 0.6rem;
-  border-radius: 50%;
-  background: var(--turn, var(--coral));
-  box-shadow: 0 0 10px color-mix(in srgb, var(--turn, var(--coral)) 55%, transparent);
+  justify-self: start;
+  text-align: left;
 }
 
 .chrome__cell {
@@ -563,6 +633,7 @@ button {
   color: var(--ink-muted);
   font-size: 0.85rem;
   font-weight: 500;
+  line-height: 1;
 }
 
 .chrome__aim {
@@ -576,8 +647,11 @@ button {
 .chrome__actions {
   display: flex;
   justify-content: flex-end;
+  align-items: center;
   gap: 0.45rem;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
+  min-width: 0;
+  justify-self: end;
 }
 
 .chrome__btn {
@@ -635,22 +709,7 @@ button {
 
 @media (max-width: 720px) {
   .chrome--top {
-    grid-template-columns: 1fr;
-    grid-template-areas:
-      "actions"
-      "status";
-    gap: 0.45rem;
-  }
-
-  .chrome__actions {
-    grid-area: actions;
-    justify-content: flex-end;
-    flex-wrap: nowrap;
-  }
-
-  .chrome__status {
-    grid-area: status;
-    justify-content: flex-start;
+    column-gap: 0.45rem;
   }
 }
 

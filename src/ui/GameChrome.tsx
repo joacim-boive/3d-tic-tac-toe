@@ -9,6 +9,7 @@ import { RematchDialog } from "./RematchDialog";
 import { PackageSwarm } from "./PackageSwarm";
 import { PowerUpHud } from "./PowerUpHud";
 import { PowerUpToast } from "./PowerUpToast";
+import { StatusToast } from "./StatusToast";
 import { useGameControls } from "./useGameControls";
 
 type GameChromeProps = {
@@ -46,7 +47,6 @@ export function GameChrome({ children }: GameChromeProps) {
   const watchTipPlayback = useGameStore((s) => s.watchTipPlayback);
   const currentPlayer = useGameStore((s) => s.currentPlayer);
   const status = useGameStore((s) => s.status);
-  const winner = useGameStore((s) => s.winner);
   const aiming = useGameStore((s) => s.aiming);
   const cursor = useGameStore((s) => s.cursor);
   const seat = useGameStore((s) => s.seat);
@@ -65,40 +65,46 @@ export function GameChrome({ children }: GameChromeProps) {
   const myTurn =
     playMode !== "online" || (seat != null && currentPlayer === seat && onlineStatus === "playing");
 
-  let statusText: string;
+  // Toast whose-turn / important notices — skip "Dropping…" (visible in the scene).
+  let statusText = "";
+  let statusSticky = false;
+  let statusShowsTurn = false;
   if (paused) {
     const other = seat === "a" ? "b" : "a";
     const otherName = playerNames[other].trim() || displayName(other);
     statusText = `Waiting for ${otherName} to reconnect…`;
+    statusSticky = true;
   } else if (swarmBusy) {
     statusText = "Catch a package — tap a cylinder";
-  } else if (dropBusy) {
-    statusText = "Dropping…";
-  } else if (status === "won" && winner) {
-    statusText = `${displayName(winner)} wins`;
-  } else if (status === "draw") {
-    statusText = "Draw";
+    statusSticky = true;
+  } else if (status === "won" || status === "draw" || dropBusy) {
+    statusText = "";
   } else if (tipFalling) {
     statusText = "Balls falling…";
   } else if (watchTipPlayback) {
     statusText = playMode === "ai" ? `${displayName("b")} tipping…` : "Opponent tipping…";
   } else if (watchPowerUp?.kind === "clear-row") {
     statusText = `${displayName(watchPowerUp.by)} aiming Clear…`;
+    statusSticky = true;
   } else if (watchPowerUp?.kind === "tip") {
     statusText = `${displayName(watchPowerUp.by)} tipping…`;
   } else if (powerUpMode === "clear-row") {
     statusText = "Clear — aim · tap to switch axis";
+    statusSticky = true;
   } else if (bonusPlacesRemaining > 0) {
     statusText = `${displayName(currentPlayer)} — extra place (can't finish)`;
+    statusShowsTurn = true;
   } else if (placedThisTurn) {
     statusText = `${displayName(currentPlayer)} — Extra or Done`;
+    statusShowsTurn = true;
   } else if (playMode === "ai" && currentPlayer === "b") {
     statusText = `${displayName("b")} is thinking…`;
-  } else {
+  } else if (status === "playing") {
     statusText =
       placement === "drop"
         ? `${displayName(currentPlayer)} to drop`
         : `${displayName(currentPlayer)} to place`;
+    statusShowsTurn = true;
   }
 
   const onMenu = () => {
@@ -112,17 +118,14 @@ export function GameChrome({ children }: GameChromeProps) {
   return (
     <div className="game-shell">
       <header className="chrome chrome--top">
-        <div className="chrome__status" style={{ ["--turn" as string]: turnColor }}>
-          <span className="chrome__dot" aria-hidden />
-          <span>{statusText}</span>
-          {status === "playing" && !paused && (
-            <span className="chrome__cell">
+        <div className="chrome__meta">
+          {status === "playing" && !paused ? (
+            <span className="chrome__cell" aria-label="Cursor cell">
               {cursor.x},{cursor.y},{cursor.z}
             </span>
-          )}
-          {aiming && !paused && <span className="chrome__aim">Aiming</span>}
+          ) : null}
+          {aiming && !paused ? <span className="chrome__aim">Aiming</span> : null}
         </div>
-
         <div className="chrome__actions">
           {playMode !== "online" && (status === "won" || status === "draw") && (
             <button type="button" className="chrome__btn chrome__btn--accent" onClick={rematch}>
@@ -192,6 +195,13 @@ export function GameChrome({ children }: GameChromeProps) {
         {children}
         <PackageSwarm />
         <PowerUpToast />
+        {statusText ? (
+          <StatusToast
+            message={statusText}
+            turnColor={statusShowsTurn ? turnColor : undefined}
+            sticky={statusSticky}
+          />
+        ) : null}
       </div>
 
       <PowerUpHud />

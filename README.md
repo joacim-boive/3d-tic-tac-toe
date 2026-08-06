@@ -12,6 +12,7 @@ Built with Next.js, React Three Fiber, and Zustand. Designed for feel-testing pl
 - **vs AI** — Easy / Medium / Hard opponent in the browser
 - **Online** — create a room, share the code or `/play/CODE` link; both enter names; match auto-starts
 - **Placement** — **Free** (any empty cell) or **Drop** (gravity: pick a column, markers fall and stack from the bottom with a light bounce)
+- **Shareable setup** — mode, placement, preset, power-ups, and AI difficulty stay in the URL (`?mode=ai&placement=drop&preset=4x4x4&difficulty=hard&powerUps=on`) so you can copy the link and send the same setup to someone else
 
 ### Online setup
 
