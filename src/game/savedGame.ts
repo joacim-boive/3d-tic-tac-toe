@@ -35,7 +35,7 @@ export type SavedGameSetup = {
 
 const PLAYERS: readonly PlayerId[] = ["a", "b"];
 const PLACEMENTS: readonly PlacementMode[] = ["free", "drop"];
-const DIFFICULTIES: readonly AiDifficulty[] = ["easy", "medium", "hard", "extreme"];
+const DIFFICULTIES: readonly AiDifficulty[] = ["easy", "medium", "hard", "extreme", "impossible"];
 
 function isPlayerId(v: unknown): v is PlayerId {
   return v === "a" || v === "b";

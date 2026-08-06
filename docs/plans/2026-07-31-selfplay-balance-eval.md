@@ -16,15 +16,33 @@ When changing rules (win length, Drop gravity, blocked cells, rotating layers, e
 
 ## Agents
 
-Both seats use the same policy (symmetric self-play):
+Both seats use the same policy by default (symmetric self-play):
 
 | Difficulty | Role in eval |
 | ---------- | ------------ |
 | Easy       | Noisy baseline |
-| Medium     | Default for large batches (win/block/threat + random). Fast enough for 10k–100k games. |
+| Medium     | Default for large batches (win/block/threat + quiet eval). Fast enough for 10k–100k games. |
 | Hard       | α-β / iterative deepening. Use small N + `--budget Infinity` for offline quality checks. |
+| Extreme    | Deeper α-β + two-ply force tactics + root safety. Compare with `--vs hard --swap`. |
+| Impossible | Same think as Extreme + dual-force setups. Compare with `--vs extreme --swap`. |
 
-Seeded Mulberry32 PRNG makes medium/easy batches reproducible.
+### Measuring Extreme strength
+
+Symmetric self-play only shows first-player bias — not whether Extreme is stronger than Hard.
+Use a head-to-head matchup with seat swaps:
+
+```bash
+npm run eval:selfplay -- --preset 4x4x4 --placement free \
+  --difficulty extreme --vs hard --swap --games 40 --progress
+```
+
+Omitting `--budget` on a `--vs` matchup uses each level’s browser think-time (Hard ~80ms, Extreme ~900ms, Impossible ~900ms + dual-force). The report includes:
+
+- **Primary / Opponent wins** — raw head-to-head
+- **Primary as first / as second** — split by seat (4×4×4 free has a large opener bias)
+- **Seat-averaged strength** — mean of the two seat win rates; **50% ≈ even** after cancelling who opened
+
+Re-run with the same `--seed` when comparing AI changes. Tactical regressions also live in `npm run check:ai` (forks + force-then-fork occupy/block).
 
 ## Commands
 

@@ -1,9 +1,9 @@
 /**
  * ponytail: assert-based self-check for AI tactics — run with `npm run check:ai`.
  */
-import { bestQuietMove, findWinningMove, isExtremeAllowed, pickAiMove } from "./ai";
+import { bestQuietMove, findTwoPlyForceMove, findWinningMove, isExtremeAllowed, isImpossibleAllowed, pickAiMove } from "./ai";
 import { pickAiPowerUpSpend } from "./aiPowerUps";
-import { cellKey, createEmptyBoard } from "./board";
+import { cellKey, createEmptyBoard, listEmptyCells } from "./board";
 import type { BoardDims, CellCoord } from "./types";
 
 function assert(cond: unknown, msg: string): asserts cond {
@@ -81,7 +81,7 @@ function testTakesForkOnLargerBoard() {
   board.set(cellKey(3, 3, 2), "a");
   board.set(cellKey(3, 2, 3), "a");
 
-  for (const difficulty of ["hard", "extreme"] as const) {
+  for (const difficulty of ["hard", "extreme", "impossible"] as const) {
     const move = pickAiMove(board, dims, difficulty, "b", 7, "free", {
       budgetMs: Number.POSITIVE_INFINITY,
       maxDepth: 2,
@@ -108,27 +108,128 @@ function testBlocksOpponentFork() {
   const move = pickAiMove(board, dims, "extreme", "b", 7, "free", {
     budgetMs: Number.POSITIVE_INFINITY,
     maxDepth: 2,
-  });
+    });
   assert(move !== null, "should find a move");
   assert(sameCell(move, { x: 2, y: 0, z: 0 }), "must block human fork");
+}
+
+/**
+ * Force-then-fork: Extreme and Impossible must occupy the force cell even with a
+ * tiny search budget (forced tactics). Medium/Hard may miss it.
+ */
+function testBlocksTwoPlyForce() {
+  const dims: BoardDims = { x: 4, y: 4, z: 4 };
+  const board = createEmptyBoard();
+  board.set(cellKey(0, 0, 0), "a");
+  board.set(cellKey(1, 0, 0), "a");
+  board.set(cellKey(0, 1, 0), "a");
+  board.set(cellKey(1, 1, 0), "a");
+  board.set(cellKey(2, 2, 0), "a");
+  board.set(cellKey(3, 3, 0), "b");
+  board.set(cellKey(3, 3, 3), "b");
+  board.set(cellKey(3, 2, 3), "b");
+  board.set(cellKey(2, 3, 3), "b");
+
+  const force = findTwoPlyForceMove(board, dims, "a", listEmptyCells(board, dims), "free");
+  assert(force !== null, "fixture must contain a two-ply force");
+  assert(sameCell(force, { x: 0, y: 2, z: 0 }), "expected force cell");
+
+  for (const difficulty of ["extreme", "impossible"] as const) {
+    const move = pickAiMove(board, dims, difficulty, "b", board.size, "free", {
+      budgetMs: 1,
+      maxDepth: 1,
+      rng: () => 0,
+  });
+    assert(move !== null, `${difficulty} should move`);
+    assert(
+      sameCell(move, { x: 0, y: 2, z: 0 }),
+      `${difficulty} must occupy the force cell, got (${move.x},${move.y},${move.z})`,
+    );
+  }
+
+  for (const difficulty of ["medium", "hard"] as const) {
+    const move = pickAiMove(board, dims, difficulty, "b", board.size, "free", {
+      budgetMs: 1,
+      maxDepth: 1,
+      rng: () => 0,
+  });
+    assert(move !== null, `${difficulty} should move`);
+    assert(
+      !sameCell(move, { x: 0, y: 2, z: 0 }),
+      `${difficulty} is not required to see two-ply forces (ladder check)`,
+    );
+  }
+}
+
+function testTakesTwoPlyForce() {
+  const dims: BoardDims = { x: 4, y: 4, z: 4 };
+  const board = createEmptyBoard();
+  board.set(cellKey(0, 0, 0), "b");
+  board.set(cellKey(1, 0, 0), "b");
+  board.set(cellKey(0, 1, 0), "b");
+  board.set(cellKey(1, 1, 0), "b");
+  board.set(cellKey(2, 2, 0), "b");
+  board.set(cellKey(3, 3, 0), "a");
+  board.set(cellKey(3, 3, 3), "a");
+  board.set(cellKey(3, 2, 3), "a");
+  board.set(cellKey(2, 3, 3), "a");
+
+  const move = pickAiMove(board, dims, "extreme", "b", board.size, "free", {
+    budgetMs: 1,
+    maxDepth: 1,
+    rng: () => 0,
+  });
+  assert(move !== null, "should find a move");
+  assert(sameCell(move, { x: 0, y: 2, z: 0 }), "must play the force-then-fork");
+}
+
+/**
+ * After a bait cell, human would have a force-then-fork. Impossible must not play the bait
+ * — full root safety refuses force gifts (Extreme only blocks win/fork gifts).
+ */
+function testImpossibleAvoidsHandingForce() {
+  const dims: BoardDims = { x: 4, y: 4, z: 4 };
+  const board = createEmptyBoard();
+  board.set(cellKey(0, 0, 0), "a");
+  board.set(cellKey(1, 0, 0), "a");
+  board.set(cellKey(0, 1, 0), "a");
+  board.set(cellKey(1, 1, 0), "a");
+  board.set(cellKey(2, 2, 0), "a");
+  board.set(cellKey(3, 3, 0), "b");
+  board.set(cellKey(3, 3, 3), "b");
+  board.set(cellKey(3, 2, 3), "b");
+  board.set(cellKey(2, 3, 3), "b");
+
+  const move = pickAiMove(board, dims, "impossible", "b", board.size, "free", {
+    budgetMs: Number.POSITIVE_INFINITY,
+    maxDepth: 3,
+    rng: () => 0,
+  });
+  assert(move !== null, "impossible should move");
+  assert(
+    sameCell(move, { x: 0, y: 2, z: 0 }),
+    `impossible must spoil the force, got (${move.x},${move.y},${move.z})`,
+  );
 }
 
 function testExtremeAllowedPresets() {
   assert(!isExtremeAllowed("3x3x3"), "no Extreme on 3×3×3");
   assert(isExtremeAllowed("4x4x4"), "Extreme on 4×4×4");
   assert(isExtremeAllowed("5x5x4"), "Extreme on 5×5×4");
+  assert(!isImpossibleAllowed("3x3x3"), "no Impossible on 3×3×3");
+  assert(isImpossibleAllowed("4x4x4"), "Impossible on 4×4×4");
 }
 
 function testDropOpeningPrefersCenter() {
   const dims: BoardDims = { x: 4, y: 4, z: 4 };
   const board = createEmptyBoard();
 
-  for (const difficulty of ["medium", "hard", "extreme"] as const) {
+  for (const difficulty of ["medium", "hard", "extreme", "impossible"] as const) {
     const move = pickAiMove(board, dims, difficulty, "b", 0, "drop", {
       budgetMs: Number.POSITIVE_INFINITY,
       maxDepth: 2,
       rng: () => 0,
-    });
+  });
     assert(move !== null, `${difficulty} drop opening`);
     assert(
       isNearCenter(move, dims, "drop"),
@@ -359,6 +460,9 @@ testBlocksOpponentWin();
 testFindWinningMoveHelper();
 testTakesForkOnLargerBoard();
 testBlocksOpponentFork();
+testBlocksTwoPlyForce();
+testTakesTwoPlyForce();
+testImpossibleAvoidsHandingForce();
 testExtremeAllowedPresets();
 testDropOpeningPrefersCenter();
 testFreeOpeningPrefersCenter();
