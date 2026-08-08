@@ -28,19 +28,23 @@ function buildPieces(winner: PlayerId): Piece[] {
   const other = PLAYER_COLORS[winner === "a" ? "b" : "a"];
   const palette = [winnerColor, winnerColor, other, ...ACCENTS];
   const out: Piece[] = [];
-  for (let i = 0; i < 48; i += 1) {
-    const kind = i % 7 === 0 ? "spark" : "confetti";
-    out.push({
-      id: i,
-      left: 4 + ((i * 17) % 92),
-      delay: (i % 12) * 0.05 + (i % 5) * 0.02,
-      duration: kind === "spark" ? 1.35 + (i % 4) * 0.12 : 1.8 + (i % 6) * 0.15,
-      drift: ((i * 13) % 70) - 35,
-      size: kind === "spark" ? 5 + (i % 3) : 7 + (i % 5) * 1.4,
-      rotate: (i * 47) % 360,
-      color: palette[i % palette.length]!,
-      kind,
-    });
+  // Two waves so the celebration stays readable for several seconds.
+  for (let wave = 0; wave < 2; wave += 1) {
+    for (let i = 0; i < 36; i += 1) {
+      const kind = i % 6 === 0 ? "spark" : "confetti";
+      const id = wave * 36 + i;
+      out.push({
+        id,
+        left: 3 + ((id * 17) % 94),
+        delay: wave * 0.85 + (i % 14) * 0.06 + (i % 5) * 0.02,
+        duration: kind === "spark" ? 2.2 + (i % 4) * 0.15 : 3.4 + (i % 6) * 0.2,
+        drift: ((id * 13) % 80) - 40,
+        size: kind === "spark" ? 6 + (i % 3) : 8 + (i % 5) * 1.5,
+        rotate: (id * 47) % 360,
+        color: palette[id % palette.length]!,
+        kind,
+      });
+    }
   }
   return out;
 }
