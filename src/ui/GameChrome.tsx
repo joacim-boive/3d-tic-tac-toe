@@ -7,11 +7,13 @@ import { PLAYER_COLORS } from "@/game/types";
 import { useCoarsePointer } from "@/hooks/useCoarsePointer";
 import { leaveOnlineSession } from "@/online/session";
 import { RematchDialog } from "./RematchDialog";
+import { ConfettiBurst } from "./ConfettiBurst";
 import { PackageSwarm } from "./PackageSwarm";
 import { PowerUpHud } from "./PowerUpHud";
 import { PowerUpToast } from "./PowerUpToast";
 import { StatusToast } from "./StatusToast";
 import { useGameControls } from "./useGameControls";
+import { WinCelebration } from "./WinCelebration";
 
 type GameChromeProps = {
   children: ReactNode;
@@ -33,12 +35,13 @@ export function GameChrome({ children }: GameChromeProps) {
   const watchTipPlayback = useGameStore((s) => s.watchTipPlayback);
   const currentPlayer = useGameStore((s) => s.currentPlayer);
   const status = useGameStore((s) => s.status);
+  const winner = useGameStore((s) => s.winner);
+  const occupiedCount = useGameStore((s) => s.occupiedCount);
   const aiming = useGameStore((s) => s.aiming);
   const cursor = useGameStore((s) => s.cursor);
   const seat = useGameStore((s) => s.seat);
   const onlineStatus = useGameStore((s) => s.onlineStatus);
   const playerNames = useGameStore((s) => s.playerNames);
-  const rematch = useGameStore((s) => s.rematch);
   const returnToSetup = useGameStore((s) => s.returnToSetup);
   const placeAtCursor = useGameStore((s) => s.placeAtCursor);
   const cancelPowerUpMode = useGameStore((s) => s.cancelPowerUpMode);
@@ -113,17 +116,6 @@ export function GameChrome({ children }: GameChromeProps) {
           {aiming && !paused ? <span className="chrome__aim">Aiming</span> : null}
         </div>
         <div className="chrome__actions">
-          {playMode !== "online" && (status === "won" || status === "draw") && (
-            <button type="button" className="chrome__btn chrome__btn--accent" onClick={rematch}>
-              Rematch
-              {!touchUi && (
-                <>
-                  {" "}
-                  <kbd>R</kbd>
-                </>
-              )}
-            </button>
-          )}
           {status === "playing" && !paused && myTurn && powerUpMode === "tip" && !tipFalling ? (
             <>
               <button
@@ -181,6 +173,12 @@ export function GameChrome({ children }: GameChromeProps) {
         {children}
         <PackageSwarm />
         <PowerUpToast />
+        {status === "won" && winner ? (
+          <ConfettiBurst
+            winner={winner}
+            burstId={`${playMode}-${winner}-${occupiedCount}`}
+          />
+        ) : null}
         {statusText ? (
           <StatusToast
             message={statusText}
@@ -192,6 +190,7 @@ export function GameChrome({ children }: GameChromeProps) {
 
       <PowerUpHud />
 
+      <WinCelebration />
       <RematchDialog />
     </div>
   );

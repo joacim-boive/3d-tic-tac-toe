@@ -45,6 +45,10 @@ import {
   type SavedGame,
 } from "./savedGame";
 import {
+  recordAiMatchResult,
+  type AiMatchOutcome,
+} from "./gameStats";
+import {
   readSetupPrefsFromStorage,
   readSetupPrefsFromUrl,
   writeSetupPrefsToStorage,
@@ -193,6 +197,31 @@ function persistLocalGame(state: Parameters<typeof snapshotLocalGame>[0]) {
   }
 }
 
+/** Persist vs-AI career stats once a match reaches won/draw. */
+function recordAiMatchStats(state: {
+  playMode: PlayMode;
+  status: GameStatus;
+  winner: PlayerId | null;
+  aiDifficulty: AiDifficulty;
+  matchStartedAt: number | null;
+}) {
+  if (state.playMode !== "ai") return;
+  if (state.status !== "won" && state.status !== "draw") return;
+
+  let outcome: AiMatchOutcome;
+  if (state.status === "draw" || state.winner == null) outcome = "draw";
+  else if (state.winner === HUMAN) outcome = "win";
+  else outcome = "loss";
+
+  const started = state.matchStartedAt ?? Date.now();
+  const durationMs = Math.max(0, Date.now() - started);
+  recordAiMatchResult({
+    difficulty: state.aiDifficulty,
+    outcome,
+    durationMs,
+  });
+}
+
 /** Bottom-up column order so stacked restore drops read as packing, not chaos. */
 function restoreDropOrder(board: Board): string[] {
   return Array.from(board.keys()).sort((a, b) => {
@@ -295,6 +324,8 @@ type GameState = {
   restoreFallingKeys: string[] | null;
   /** performance.now() when restore drop-in began; absolute timeline for remounts. */
   restoreStartedAt: number | null;
+  /** Date.now() when the current match began — drives vs-AI level time stats. */
+  matchStartedAt: number | null;
   localName: string;
   playerNames: PlayerNames;
   roomId: string | null;
@@ -819,6 +850,7 @@ function finishPowerUpBoard(
       rematchVotes: state.playMode === "online" ? { ...EMPTY_VOTES } : state.rematchVotes,
       ...tipReset,
     });
+    recordAiMatchStats(get());
     if (state.playMode === "online") localStateSyncPublisher?.();
     else persistLocalGame(get());
     return;
@@ -847,6 +879,7 @@ function finishPowerUpBoard(
       rematchVotes: state.playMode === "online" ? { ...EMPTY_VOTES } : state.rematchVotes,
       ...tipReset,
     });
+    recordAiMatchStats(get());
     if (state.playMode === "online") localStateSyncPublisher?.();
     else persistLocalGame(get());
     return;
@@ -999,6 +1032,7 @@ function applyPlace(
       onlineStatus: state.playMode === "online" ? "ended" : state.onlineStatus,
       rematchVotes: state.playMode === "online" ? { ...EMPTY_VOTES } : state.rematchVotes,
     });
+    recordAiMatchStats(get());
     return true;
   }
 
@@ -1022,6 +1056,7 @@ function applyPlace(
       onlineStatus: state.playMode === "online" ? "ended" : state.onlineStatus,
       rematchVotes: state.playMode === "online" ? { ...EMPTY_VOTES } : state.rematchVotes,
     });
+    recordAiMatchStats(get());
     return true;
   }
 
@@ -1153,6 +1188,7 @@ export const useGameStore = create<GameState>((set, get) => ({
   dropBusy: false,
   restoreFallingKeys: null,
   restoreStartedAt: null,
+  matchStartedAt: null,
   localName: "",
   playerNames: { ...EMPTY_NAMES },
   roomId: null,
@@ -1923,6 +1959,7 @@ export const useGameStore = create<GameState>((set, get) => ({
       tipTargetEuler: { ...IDENTITY_TIP_EULER },
       tipFalling: false,
       playerNames,
+      matchStartedAt: Date.now(),
     });
   },
 
@@ -1988,6 +2025,7 @@ export const useGameStore = create<GameState>((set, get) => ({
       tipCheckpoint: null,
       tipDirty: false,
       playerNames,
+      matchStartedAt: Date.now(),
     });
     if (!animating) {
       const next = get();
@@ -2047,6 +2085,7 @@ export const useGameStore = create<GameState>((set, get) => ({
       tipTargetEuler: { ...IDENTITY_TIP_EULER },
       tipFalling: false,
       playerNames,
+      matchStartedAt: Date.now(),
     });
     if (state.playMode === "ai" && nextStarter === AI_PLAYER) {
       scheduleAiMove(get, set);
@@ -2099,6 +2138,7 @@ export const useGameStore = create<GameState>((set, get) => ({
       rematchVotes: { ...EMPTY_VOTES },
       opponentConnected: false,
       onlineError: null,
+      matchStartedAt: null,
     });
   },
 
@@ -2168,6 +2208,7 @@ export const useGameStore = create<GameState>((set, get) => ({
       opponentConnected: true,
       rematchVotes: { ...EMPTY_VOTES },
       onlineError: null,
+      matchStartedAt: Date.now(),
     });
   },
 
@@ -2236,6 +2277,7 @@ export const useGameStore = create<GameState>((set, get) => ({
       tipFalling: false,
       onlineStatus: "playing",
       rematchVotes: { ...EMPTY_VOTES },
+      matchStartedAt: Date.now(),
     });
   },
 
