@@ -1,6 +1,7 @@
 "use client";
 
 import { useGameStore } from "@/game/store";
+import { PLAYER_COLORS } from "@/game/types";
 import { leaveOnlineSession, publishRematchVote } from "@/online/session";
 
 export function RematchDialog() {
@@ -16,7 +17,21 @@ export function RematchDialog() {
   if (status !== "won" && status !== "draw") return null;
   if (onlineStatus === "paused") return null;
 
-  const headline = status === "won" && winner ? `${displayName(winner)} wins` : "Draw";
+  const winnerColor = winner ? PLAYER_COLORS[winner] : undefined;
+  const headline =
+    status === "won" && winner ? (
+      <>
+        <span
+          className="win-celeb__tag"
+          style={winnerColor ? { ["--winner" as string]: winnerColor } : undefined}
+        >
+          {displayName(winner)}
+        </span>
+        <span className="win-celeb__wins"> wins</span>
+      </>
+    ) : (
+      "Draw"
+    );
 
   const myVote = seat ? rematchVotes[seat] : null;
   const theirSeat = seat === "a" ? "b" : "a";

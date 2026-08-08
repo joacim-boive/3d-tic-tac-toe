@@ -411,6 +411,10 @@ button {
   font-family: var(--font-display);
   font-size: 1.15rem;
   font-weight: 700;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem 0.4rem;
 }
 
 .rematch__detail {
@@ -437,6 +441,263 @@ button {
   padding: 0.7rem 1rem;
   min-height: 44px;
   font-size: 0.95rem;
+}
+
+/* —— Win celebration (local + shared name tag) —— */
+
+.win-celeb {
+  flex-shrink: 0;
+  z-index: 20;
+  display: flex;
+  justify-content: center;
+  padding: 0.75rem 0.85rem;
+  background: #0a1016;
+  border-top: 1px solid var(--line);
+}
+
+.win-celeb__card {
+  width: min(100%, 30rem);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.65rem 1rem;
+}
+
+.win-celeb__copy {
+  flex: 1 1 10rem;
+  min-width: 0;
+}
+
+.win-celeb__title {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: 1.2rem;
+  font-weight: 700;
+  line-height: 1.35;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem 0.4rem;
+}
+
+.win-celeb__tag {
+  display: inline-block;
+  padding: 0.12rem 0.55rem;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--winner, var(--coral)) 55%, transparent);
+  background: color-mix(in srgb, var(--winner, var(--coral)) 22%, var(--bg-elevated));
+  color: var(--winner, var(--coral));
+  box-shadow: 0 0 18px color-mix(in srgb, var(--winner, var(--coral)) 28%, transparent);
+  animation: win-tag-pop 0.55s cubic-bezier(0.22, 1.15, 0.36, 1) both;
+}
+
+.win-celeb__wins,
+.win-celeb__draw {
+  margin-left: 0;
+}
+
+.win-celeb__stats {
+  margin: 0.4rem 0 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.35rem 0.45rem;
+  color: var(--ink-muted);
+  font-size: 0.88rem;
+}
+
+.win-celeb__level {
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.win-celeb__nudge {
+  margin: 0.35rem 0 0;
+  color: var(--cyan);
+  font-size: 0.92rem;
+  animation: win-nudge-in 0.45s ease-out 0.2s both;
+}
+
+.win-celeb__actions {
+  display: flex;
+  flex: 1 1 auto;
+  gap: 0.55rem;
+}
+
+.win-celeb__actions .setup__start,
+.win-celeb__actions .setup__secondary {
+  margin-top: 0;
+  flex: 1;
+  padding: 0.7rem 1rem;
+  min-height: 44px;
+  font-size: 0.95rem;
+}
+
+@keyframes win-tag-pop {
+  from {
+    transform: scale(0.72);
+    opacity: 0;
+  }
+  to {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+@keyframes win-nudge-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Confetti + firework bursts over the board viewport */
+.confetti {
+  pointer-events: none;
+  position: absolute;
+  inset: 0;
+  z-index: 18;
+  overflow: hidden;
+}
+
+.confetti__piece {
+  position: absolute;
+  top: -12px;
+  border-radius: 2px;
+  opacity: 0;
+  animation-name: confetti-fall;
+  animation-duration: var(--fall-duration, 2s);
+  animation-delay: var(--fall-delay, 0s);
+  animation-timing-function: cubic-bezier(0.22, 0.61, 0.36, 1);
+  animation-fill-mode: both;
+  will-change: transform, opacity;
+}
+
+.confetti__piece--spark {
+  border-radius: 50%;
+  box-shadow: 0 0 10px currentColor;
+}
+
+.confetti__firework {
+  position: absolute;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  opacity: 0;
+  animation: firework-burst 1.85s ease-out both;
+}
+
+.confetti__firework--left {
+  left: 18%;
+  top: 22%;
+  background: var(--coral);
+  box-shadow:
+    0 0 0 0 transparent,
+    -36px -24px 0 3px #ffd166,
+    30px -28px 0 2px var(--coral),
+    -12px -46px 0 3px #fff4c8,
+    40px 8px 0 2px var(--cyan),
+    -42px 14px 0 3px var(--coral),
+    8px 36px 0 2px #ffd166,
+    -18px 40px 0 2px #ffe8a3,
+    22px -42px 0 2px #ffffff,
+    0 -10px 22px var(--coral);
+  animation-delay: 0.05s;
+}
+
+.confetti__firework--right {
+  right: 16%;
+  top: 18%;
+  background: var(--cyan);
+  box-shadow:
+    0 0 0 0 transparent,
+    34px -26px 0 3px #ffe8a3,
+    -28px -34px 0 2px var(--cyan),
+    12px -48px 0 3px #ffffff,
+    -38px 10px 0 2px var(--coral),
+    42px 16px 0 3px var(--cyan),
+    -6px 38px 0 2px #ffd166,
+    20px 42px 0 2px var(--coral),
+    -24px -48px 0 2px #fff4c8,
+    0 -10px 22px var(--cyan);
+  animation-delay: 0.22s;
+}
+
+.confetti__firework--mid {
+  left: 50%;
+  top: 12%;
+  background: #ffd166;
+  box-shadow:
+    0 0 0 0 transparent,
+    -26px -32px 0 3px var(--coral),
+    28px -26px 0 2px var(--cyan),
+    0 -52px 0 3px #fff4c8,
+    -36px 6px 0 2px #ffd166,
+    36px 10px 0 3px var(--coral),
+    6px 34px 0 2px var(--cyan),
+    -16px 38px 0 2px #ffe8a3,
+    18px -46px 0 2px #ffffff,
+    0 -12px 24px #ffd166;
+  animation-delay: 0.95s;
+}
+
+@keyframes confetti-fall {
+  0% {
+    opacity: 0;
+    transform: translate3d(0, -8vh, 0) rotate(var(--spin, 0deg));
+  }
+  8% {
+    opacity: 1;
+  }
+  72% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    transform: translate3d(var(--drift, 0px), 105vh, 0) rotate(calc(var(--spin, 0deg) + 420deg));
+  }
+}
+
+@keyframes firework-burst {
+  0% {
+    opacity: 0;
+    transform: scale(0.15);
+  }
+  12% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  55% {
+    opacity: 1;
+    transform: scale(1.15);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(1.45);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .win-celeb__tag,
+  .win-celeb__nudge,
+  .confetti__piece,
+  .confetti__firework {
+    animation: none !important;
+  }
+
+  .confetti__piece {
+    display: none;
+  }
+
+  .confetti__firework {
+    opacity: 0.85;
+    transform: scale(1);
+  }
 }
 
 /* —— Game shell (chrome outside viewport) —— */
