@@ -79,8 +79,8 @@ export function SelectionCursor({ dims, spacing = 1 }: SelectionCursorProps) {
   const clearMode = powerUpMode === "clear-row";
 
   const finishBlocked =
-    bonusPlacesRemaining > 0 &&
-    wouldPlaceWin(board, dims, cursor, currentPlayer, placement);  const raycaster = useMemo(() => new Raycaster(), []);
+    bonusPlacesRemaining > 0 && wouldPlaceWin(board, dims, cursor, currentPlayer, placement);
+  const raycaster = useMemo(() => new Raycaster(), []);
   const ndc = useMemo(() => new Vector2(), []);
   const point = useMemo(() => new Vector3(), []);
   const dragRef = useRef({
@@ -112,11 +112,20 @@ export function SelectionCursor({ dims, spacing = 1 }: SelectionCursorProps) {
   stickyRef.current = sticky;
 
   const cellSize = spacing * 0.96;
-  const edges = useMemo(() => {
-    const box = new BoxGeometry(cellSize, cellSize, cellSize);
-    const geo = new EdgesGeometry(box);
-    box.dispose();
-    return geo;
+  /** Nested edge shells — white outer + player inner — read thicker than slice 1px lines. */
+  const edgeShells = useMemo(() => {
+    const pads = [
+      { pad: 0.08, color: "#ffffff" as const },
+      { pad: 0.04, color: "player" as const },
+      { pad: 0, color: "player" as const },
+    ];
+    return pads.map(({ pad, color }) => {
+      const size = cellSize + pad;
+      const box = new BoxGeometry(size, size, size);
+      const geo = new EdgesGeometry(box);
+      box.dispose();
+      return { geo, color };
+    });
   }, [cellSize]);
 
   const publishSticky = (axis: SliceAxis, depth: number) => {
@@ -612,19 +621,7 @@ export function SelectionCursor({ dims, spacing = 1 }: SelectionCursorProps) {
       el.removeEventListener("pointerup", onUp);
       el.removeEventListener("pointercancel", onUp);
     };
-  }, [
-    gl,
-    camera,
-    dims,
-    spacing,
-    setCursor,
-    setAiming,
-    status,
-    raycaster,
-    ndc,
-    point,
-    clearSticky,
-  ]);
+  }, [gl, camera, dims, spacing, setCursor, setAiming, status, raycaster, ndc, point, clearSticky]);
 
   if (status !== "playing") return null;
 
@@ -649,29 +646,32 @@ export function SelectionCursor({ dims, spacing = 1 }: SelectionCursorProps) {
           <meshBasicMaterial
             color={color}
             transparent
-            opacity={occupied || dropBusy ? 0.04 : finishBlocked ? 0.06 : 0.1}
+            opacity={occupied || dropBusy ? 0.1 : finishBlocked ? 0.14 : 0.22}
             depthWrite={false}
           />
         </mesh>
       ) : null}
       {showCell ? (
         <>
-          <mesh>
+          <mesh renderOrder={4}>
             <boxGeometry args={[cellSize, cellSize, cellSize]} />
             <meshBasicMaterial
               color={color}
               transparent
-              opacity={occupied || dropBusy ? 0.06 : finishBlocked ? 0.1 : 0.16}
+              opacity={occupied || dropBusy ? 0.28 : finishBlocked ? 0.36 : 0.55}
               depthWrite={false}
             />
           </mesh>
-          <lineSegments geometry={edges}>
-            <lineBasicMaterial
-              color={color}
-              transparent
-              opacity={dropBusy ? 0.25 : finishBlocked ? 0.7 : 0.95}
-            />
-          </lineSegments>
+          {edgeShells.map(({ geo, color: rim }, i) => (
+            <lineSegments key={i} geometry={geo} renderOrder={5 + i}>
+              <lineBasicMaterial
+                color={rim === "player" ? color : rim}
+                transparent
+                opacity={dropBusy ? 0.45 : finishBlocked ? 0.7 : rim === "player" ? 1 : 0.95}
+                depthWrite={false}
+              />
+            </lineSegments>
+          ))}
         </>
       ) : null}
     </group>
