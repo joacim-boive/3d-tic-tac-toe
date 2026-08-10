@@ -65,6 +65,7 @@ npm run build      # production build
 npm run check      # typecheck + lint + format
 npm run check:win  # win-detection self-check
 npm run check:drop # gravity drop-landing self-check
+npm run check:extra # Extra window Place→spend+place self-check
 npm run check:selfplay  # self-play harness smoke test
 npm run eval:selfplay -- --all --games 2000 --difficulty medium
 ```
