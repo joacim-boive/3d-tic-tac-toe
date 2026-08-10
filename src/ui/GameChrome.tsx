@@ -31,6 +31,7 @@ export function GameChrome({ children }: GameChromeProps) {
   const placedThisTurn = useGameStore((s) => s.placedThisTurn);
   const powerUpMode = useGameStore((s) => s.powerUpMode);
   const tipFalling = useGameStore((s) => s.tipFalling);
+  const clearBurst = useGameStore((s) => s.clearBurst);
   const watchPowerUp = useGameStore((s) => s.watchPowerUp);
   const watchTipPlayback = useGameStore((s) => s.watchTipPlayback);
   const currentPlayer = useGameStore((s) => s.currentPlayer);
@@ -70,6 +71,8 @@ export function GameChrome({ children }: GameChromeProps) {
     statusText = "";
   } else if (tipFalling) {
     statusText = "Balls falling…";
+  } else if (clearBurst) {
+    statusText = "Clearing…";
   } else if (watchTipPlayback) {
     statusText = playMode === "ai" ? `${displayName("b")} tipping…` : "Opponent tipping…";
   } else if (watchPowerUp?.kind === "clear-row") {

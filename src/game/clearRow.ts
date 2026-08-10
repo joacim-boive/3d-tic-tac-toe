@@ -3,6 +3,57 @@ import type { BoardDims, CellCoord, PlayerId } from "./types";
 
 export type Axis = "x" | "y" | "z";
 
+/** Stagger between successive ball pops along the cleared line. */
+export const CLEAR_STAGGER_MS = 100;
+/** How long confetti lives after a ball pops. */
+export const CLEAR_BURST_LIFE_MS = 1050;
+
+export type ClearBurstBall = {
+  key: string;
+  player: PlayerId;
+  cell: CellCoord;
+  /** Delay from burst start before this ball explodes. */
+  delayMs: number;
+};
+
+/** Occupied markers on the clear line, ordered along the varying axis. */
+export function occupiedClearLineBalls(
+  board: Board,
+  dims: BoardDims,
+  axis: Axis,
+  a: number,
+  b: number,
+): Array<{ key: string; player: PlayerId; cell: CellCoord }> {
+  const out: Array<{ key: string; player: PlayerId; cell: CellCoord }> = [];
+  for (const cell of axisLineCells(dims, axis, a, b)) {
+    const key = cellKey(cell.x, cell.y, cell.z);
+    const player = board.get(key);
+    if (!player) continue;
+    out.push({ key, player, cell });
+  }
+  return out;
+}
+
+/** Plan staggered pops for every occupied cell on the clear line. */
+export function planClearBurst(
+  board: Board,
+  dims: BoardDims,
+  axis: Axis,
+  a: number,
+  b: number,
+): ClearBurstBall[] {
+  return occupiedClearLineBalls(board, dims, axis, a, b).map((ball, i) => ({
+    ...ball,
+    delayMs: i * CLEAR_STAGGER_MS,
+  }));
+}
+
+/** Total clear VFX window from first pop through last confetti fade. */
+export function clearBurstDurationMs(ballCount: number): number {
+  if (ballCount <= 0) return 0;
+  return (ballCount - 1) * CLEAR_STAGGER_MS + CLEAR_BURST_LIFE_MS;
+}
+
 /** All cells on an axis-aligned line (two coords fixed, one varies). */
 export function axisLineCells(
   dims: BoardDims,

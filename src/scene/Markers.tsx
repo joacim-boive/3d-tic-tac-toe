@@ -6,6 +6,7 @@ import { Color, DynamicDrawUsage, InstancedMesh, Object3D, SphereGeometry } from
 import { cellKey, cellToWorld, parseCellKey } from "@/game/board";
 import { useGameStore } from "@/game/store";
 import { PLAYER_COLORS, type BoardDims, type CellCoord, type PlayerId } from "@/game/types";
+import { useClearBurstKeySet } from "./ClearConfettiBurst";
 
 const MAX_INSTANCES = 20 * 20 * 20;
 const temp = new Object3D();
@@ -29,11 +30,13 @@ function PlayerMarkers({
   dims,
   spacing,
   winSet,
+  hideKeys,
 }: {
   player: PlayerId;
   dims: BoardDims;
   spacing: number;
   winSet: Set<string>;
+  hideKeys: Set<string>;
 }) {
   const board = useGameStore((s) => s.board);
   const meshRef = useRef<InstancedMesh>(null);
@@ -49,6 +52,7 @@ function PlayerMarkers({
     for (const [key, owner] of board) {
       if (owner !== player) continue;
       if (winSet.has(key)) continue;
+      if (hideKeys.has(key)) continue;
       const coord = parseCellKey(key);
       const [x, y, z] = cellToWorld(coord, dims, spacing);
       temp.position.set(x, y, z);
@@ -59,7 +63,7 @@ function PlayerMarkers({
     }
     mesh.count = i;
     mesh.instanceMatrix.needsUpdate = true;
-  }, [board, player, dims, spacing, winSet]);
+  }, [board, player, dims, spacing, winSet, hideKeys]);
 
   return (
     <instancedMesh ref={meshRef} args={[geometry, undefined, MAX_INSTANCES]} frustumCulled={false}>
@@ -147,6 +151,7 @@ function WinningMarkers({
 export function Markers({ dims, spacing = 1 }: MarkersProps) {
   const winningLine = useGameStore((s) => s.winningLine);
   const winningCell = useGameStore((s) => s.winningCell);
+  const hideKeys = useClearBurstKeySet();
 
   const winSet = useMemo(() => {
     const set = new Set<string>();
@@ -158,8 +163,8 @@ export function Markers({ dims, spacing = 1 }: MarkersProps) {
 
   return (
     <>
-      <PlayerMarkers player="a" dims={dims} spacing={spacing} winSet={winSet} />
-      <PlayerMarkers player="b" dims={dims} spacing={spacing} winSet={winSet} />
+      <PlayerMarkers player="a" dims={dims} spacing={spacing} winSet={winSet} hideKeys={hideKeys} />
+      <PlayerMarkers player="b" dims={dims} spacing={spacing} winSet={winSet} hideKeys={hideKeys} />
       <WinningMarkers
         dims={dims}
         spacing={spacing}

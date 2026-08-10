@@ -88,6 +88,7 @@ export function PowerUpHud() {
   const endTurn = useGameStore((s) => s.endTurn);
   const confirmClearRow = useGameStore((s) => s.confirmClearRow);
   const tipFalling = useGameStore((s) => s.tipFalling);
+  const clearBurst = useGameStore((s) => s.clearBurst);
   const cursor = useGameStore((s) => s.cursor);
   const swarmBusy = useGameStore((s) => s.swarmBusy);
   const dropBusy = useGameStore((s) => s.dropBusy);
@@ -101,6 +102,7 @@ export function PowerUpHud() {
     !swarmBusy &&
     !dropBusy &&
     !tipFalling &&
+    !clearBurst &&
     ((playMode === "ai" && currentPlayer === "a") ||
       (playMode === "online" &&
         seat != null &&

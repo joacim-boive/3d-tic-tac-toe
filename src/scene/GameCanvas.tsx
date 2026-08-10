@@ -98,6 +98,7 @@ function SceneContent() {
   const status = useGameStore((s) => s.status);
   const powerUpMode = useGameStore((s) => s.powerUpMode);
   const tipFalling = useGameStore((s) => s.tipFalling);
+  const clearBurst = useGameStore((s) => s.clearBurst);
   const touchUi = useCoarsePointer();
   const dims = getPreset(presetId).dims;
   const camDist = camDistance(dims);
@@ -107,8 +108,8 @@ function SceneContent() {
   const watchTipPlayback = useGameStore((s) => s.watchTipPlayback);
   const swarmBusy = useGameStore((s) => s.swarmBusy);
   // Tip: drag tips the box. Swarm: 3D packages own pointers (orbit off).
-  // Spectator tip commit playback also locks orbit.
-  const camLocked = tipMode || tipFalling || watchTipPlayback || swarmBusy;
+  // Spectator tip commit playback also locks orbit. Clear confetti locks briefly.
+  const camLocked = tipMode || tipFalling || watchTipPlayback || swarmBusy || Boolean(clearBurst);
   const orbitActive = !camLocked && (reviewing || !aiming);
   // Drop mode: orbit around and over the top, never under the box.
   const maxPolar = reviewing ? Math.PI : dropMode ? MathUtils.DEG2RAD * 78 : Math.PI;

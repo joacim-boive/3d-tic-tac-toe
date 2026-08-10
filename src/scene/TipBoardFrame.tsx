@@ -18,6 +18,7 @@ import { eulerToQuat, tipEulerFromSwipe } from "@/game/tipNav";
 import { PLAYER_COLORS, type BoardDims, type PlayerId } from "@/game/types";
 import { BoardColliders, DROP_GRAVITY, MARKER_RADIUS } from "./BoardColliders";
 import { ActiveSlice } from "./ActiveSlice";
+import { ClearConfettiBurst } from "./ClearConfettiBurst";
 import { ClearRowHighlight } from "./ClearRowHighlight";
 import { Grid } from "./Grid";
 import { Markers } from "./Markers";
@@ -115,6 +116,7 @@ export function TipBoardFrame({ dims, dropMode }: TipBoardFrameProps) {
   const tipMode = powerUpMode === "tip";
   const tipVisual = tipMode || watchTipPlayback;
   const restoring = useGameStore((s) => s.restoreFallingKeys != null);
+  const clearBurst = useGameStore((s) => s.clearBurst);
   const useDropMarkers = dropMode || restoring;
   const displayQuat = useRef(new Quaternion());
   const targetQuat = useRef(new Quaternion());
@@ -243,7 +245,9 @@ export function TipBoardFrame({ dims, dropMode }: TipBoardFrameProps) {
       <group ref={groupRef}>
         <Grid dims={dims} />
         <ActiveSlice dims={dims} />
-        {!tipVisual && !tipFalling && !restoring ? <SelectionCursor dims={dims} /> : null}
+        {!tipVisual && !tipFalling && !restoring && !clearBurst ? (
+          <SelectionCursor dims={dims} />
+        ) : null}
         <ClearRowHighlight dims={dims} />
         <TipFloorHint dims={dims} />
 
@@ -266,6 +270,8 @@ export function TipBoardFrame({ dims, dropMode }: TipBoardFrameProps) {
           onAllSettled={finishTipFall}
         />
       ) : null}
+
+      <ClearConfettiBurst dims={dims} />
     </>
   );
 }
