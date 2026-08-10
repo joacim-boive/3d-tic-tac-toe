@@ -1,10 +1,10 @@
 "use client";
 
-import { useMemo } from "react";
-import { BufferGeometry, DoubleSide, Float32BufferAttribute } from "three";
+import { useLayoutEffect, useMemo, useRef } from "react";
+import { BoxGeometry, EdgesGeometry, InstancedMesh, Object3D } from "three";
 import { cellToWorld } from "@/game/board";
 import { useGameStore } from "@/game/store";
-import type { BoardDims } from "@/game/types";
+import type { BoardDims, CellCoord } from "@/game/types";
 import type { SliceAxis } from "./facingSliceAxis";
 import { useSliceHighlightStore } from "./sliceHighlightStore";
 
@@ -13,153 +13,111 @@ type ActiveSliceProps = {
   spacing?: number;
 };
 
-function buildPlaneLattice(
-  widthCells: number,
-  heightCells: number,
-  spacing: number,
-): BufferGeometry {
-  const positions: number[] = [];
-  const hw = (widthCells * spacing) / 2;
-  const hh = (heightCells * spacing) / 2;
+const FILL_COLOR = "#6eb8d4";
+const EDGE_COLOR = "#b8e4f2";
+const temp = new Object3D();
 
-  for (let i = 0; i <= widthCells; i++) {
-    const px = i * spacing - hw;
-    positions.push(px, -hh, 0, px, hh, 0);
-  }
-  for (let j = 0; j <= heightCells; j++) {
-    const py = j * spacing - hh;
-    positions.push(-hw, py, 0, hw, py, 0);
-  }
-
-  const geo = new BufferGeometry();
-  geo.setAttribute("position", new Float32BufferAttribute(positions, 3));
-  return geo;
-}
-
-function buildBorder(widthCells: number, heightCells: number, spacing: number): BufferGeometry {
-  const hw = (widthCells * spacing) / 2;
-  const hh = (heightCells * spacing) / 2;
-  const positions = [
-    -hw,
-    -hh,
-    0,
-    hw,
-    -hh,
-    0,
-    hw,
-    -hh,
-    0,
-    hw,
-    hh,
-    0,
-    hw,
-    hh,
-    0,
-    -hw,
-    hh,
-    0,
-    -hw,
-    hh,
-    0,
-    -hw,
-    -hh,
-    0,
-  ];
-  const geo = new BufferGeometry();
-  geo.setAttribute("position", new Float32BufferAttribute(positions, 3));
-  return geo;
-}
-
-function planeLayout(
-  axis: SliceAxis,
-  dims: BoardDims,
-  spacing: number,
-  index: number,
-): {
-  position: [number, number, number];
-  rotation: [number, number, number];
-  widthCells: number;
-  heightCells: number;
-} {
-  const cell =
-    axis === "x"
-      ? { x: index, y: 0, z: 0 }
-      : axis === "y"
-        ? { x: 0, y: index, z: 0 }
-        : { x: 0, y: 0, z: index };
-  const [cx, cy, cz] = cellToWorld(cell, dims, spacing);
-
+/** Cells on the sticky depth slice (fixed axis index). */
+function sliceCells(axis: SliceAxis, index: number, dims: BoardDims): CellCoord[] {
+  const cells: CellCoord[] = [];
   if (axis === "x") {
-    return {
-      position: [cx, 0, 0],
-      rotation: [0, Math.PI / 2, 0],
-      widthCells: dims.z,
-      heightCells: dims.y,
-    };
+    for (let y = 0; y < dims.y; y++) {
+      for (let z = 0; z < dims.z; z++) {
+        cells.push({ x: index, y, z });
+      }
+    }
+    return cells;
   }
   if (axis === "y") {
-    return {
-      position: [0, cy, 0],
-      rotation: [-Math.PI / 2, 0, 0],
-      widthCells: dims.x,
-      heightCells: dims.z,
-    };
+    for (let x = 0; x < dims.x; x++) {
+      for (let z = 0; z < dims.z; z++) {
+        cells.push({ x, y: index, z });
+      }
+    }
+    return cells;
   }
-  return {
-    position: [0, 0, cz],
-    rotation: [0, 0, 0],
-    widthCells: dims.x,
-    heightCells: dims.y,
-  };
+  for (let x = 0; x < dims.x; x++) {
+    for (let y = 0; y < dims.y; y++) {
+      cells.push({ x, y, z: index });
+    }
+  }
+  return cells;
 }
 
 /**
- * Face-on sticky depth plane. SelectionCursor owns updates; this only renders.
+ * Sticky depth highlight: every cell box on the active slice.
+ * SelectionCursor owns updates; this only renders.
  * Stays visible after aim ends until the next game / axis change.
  */
 export function ActiveSlice({ dims, spacing = 1 }: ActiveSliceProps) {
   const phase = useGameStore((s) => s.phase);
   const slice = useSliceHighlightStore((s) => s.slice);
+  const meshRef = useRef<InstancedMesh>(null);
 
-  const layout = useMemo(() => {
-    if (!slice) return null;
-    return planeLayout(slice.axis, dims, spacing, slice.index);
-  }, [slice, dims, spacing]);
+  const cellSize = spacing * 0.96;
+  const cells = useMemo(() => {
+    if (!slice) return [];
+    return sliceCells(slice.axis, slice.index, dims);
+  }, [slice, dims]);
 
-  const lattice = useMemo(() => {
-    if (!layout) return null;
-    return buildPlaneLattice(layout.widthCells, layout.heightCells, spacing);
-  }, [layout, spacing]);
+  const boxGeo = useMemo(() => new BoxGeometry(cellSize, cellSize, cellSize), [cellSize]);
+  const edgesGeo = useMemo(() => new EdgesGeometry(boxGeo), [boxGeo]);
 
-  const border = useMemo(() => {
-    if (!layout) return null;
-    return buildBorder(layout.widthCells, layout.heightCells, spacing);
-  }, [layout, spacing]);
+  useLayoutEffect(() => {
+    const mesh = meshRef.current;
+    if (!mesh) return;
 
-  if (phase !== "playing" || !layout || !lattice || !border) return null;
+    let i = 0;
+    for (const cell of cells) {
+      const [x, y, z] = cellToWorld(cell, dims, spacing);
+      temp.position.set(x, y, z);
+      temp.scale.setScalar(1);
+      temp.rotation.set(0, 0, 0);
+      temp.updateMatrix();
+      mesh.setMatrixAt(i, temp.matrix);
+      i++;
+    }
+    mesh.count = i;
+    mesh.instanceMatrix.needsUpdate = true;
+  }, [cells, dims, spacing]);
 
-  const width = layout.widthCells * spacing * 0.98;
-  const height = layout.heightCells * spacing * 0.98;
+  if (phase !== "playing" || !slice || cells.length === 0) return null;
 
   return (
-    <group position={layout.position} rotation={layout.rotation}>
-      <mesh renderOrder={1}>
-        <planeGeometry args={[width, height]} />
+    <group>
+      <instancedMesh
+        ref={meshRef}
+        args={[boxGeo, undefined, cells.length]}
+        frustumCulled={false}
+        renderOrder={1}
+      >
         <meshBasicMaterial
-          color="#6eb8d4"
+          color={FILL_COLOR}
           transparent
-          opacity={0.11}
+          opacity={0.1}
           depthWrite={false}
-          side={DoubleSide}
           fog={false}
         />
-      </mesh>
-      <lineSegments geometry={lattice} renderOrder={2}>
-        <lineBasicMaterial color="#9fd4e8" transparent opacity={0.58} depthWrite={false} fog={false} />
-      </lineSegments>
-      <lineSegments geometry={border} renderOrder={2}>
-        <lineBasicMaterial color="#b8e4f2" transparent opacity={0.85} depthWrite={false} fog={false} />
-      </lineSegments>
+      </instancedMesh>
+      {cells.map((cell) => {
+        const [x, y, z] = cellToWorld(cell, dims, spacing);
+        return (
+          <lineSegments
+            key={`${cell.x},${cell.y},${cell.z}`}
+            geometry={edgesGeo}
+            position={[x, y, z]}
+            renderOrder={2}
+          >
+            <lineBasicMaterial
+              color={EDGE_COLOR}
+              transparent
+              opacity={0.55}
+              depthWrite={false}
+              fog={false}
+            />
+          </lineSegments>
+        );
+      })}
     </group>
   );
 }
