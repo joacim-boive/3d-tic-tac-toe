@@ -18,9 +18,10 @@ export function useGameControls() {
   const swarmBusy = useGameStore((s) => s.swarmBusy);
   const powerUpMode = useGameStore((s) => s.powerUpMode);
   const tipFalling = useGameStore((s) => s.tipFalling);
-  const tipLocked = powerUpMode === "tip" || tipFalling;
+  const clearBurst = useGameStore((s) => s.clearBurst);
+  const tipLocked = powerUpMode === "tip" || tipFalling || Boolean(clearBurst);
   const clearMode = powerUpMode === "clear-row";
-  // Tip: no keyboard play. Clear: only aim / cycle / confirm (not place).
+  // Tip / clear VFX: no keyboard play. Clear aim: only aim / cycle / confirm (not place).
   const playLocked = swarmBusy || tipLocked;
   const confirmClearRow = useGameStore((s) => s.confirmClearRow);
   const confirmTip = useGameStore((s) => s.confirmTip);

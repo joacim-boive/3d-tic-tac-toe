@@ -14,6 +14,7 @@ import {
   dropSpawnY,
   physicsRadius,
 } from "./BoardColliders";
+import { useClearBurstKeySet } from "./ClearConfettiBurst";
 
 const WIN_COLOR = "#2dff6a";
 const WIN_SCALE = 1.15;
@@ -313,6 +314,7 @@ export function PhysicsMarkers({ dims, spacing = 1 }: PhysicsMarkersProps) {
   const winningCell = useGameStore((s) => s.winningCell);
   const fallingKey = useGameStore((s) => s.fallingKey);
   const restoreFallingKeys = useGameStore((s) => s.restoreFallingKeys);
+  const hideKeys = useClearBurstKeySet();
 
   const winSet = useMemo(() => {
     const set = new Set<string>();
@@ -339,6 +341,7 @@ export function PhysicsMarkers({ dims, spacing = 1 }: PhysicsMarkersProps) {
     const list: MarkerEntry[] = [];
     const restoreSet = restoreFallingKeys ? new Set(restoreFallingKeys) : null;
     for (const [key, player] of board) {
+      if (hideKeys.has(key)) continue;
       const restoreDelay = restoreDelayByKey.get(key);
       const restoring = restoreSet?.has(key) ?? false;
       list.push({
@@ -352,7 +355,7 @@ export function PhysicsMarkers({ dims, spacing = 1 }: PhysicsMarkersProps) {
       });
     }
     return list;
-  }, [board, winSet, winningMoveKey, fallingKey, restoreFallingKeys, restoreDelayByKey]);
+  }, [board, winSet, winningMoveKey, fallingKey, restoreFallingKeys, restoreDelayByKey, hideKeys]);
 
   return (
     <>

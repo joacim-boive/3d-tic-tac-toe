@@ -14,7 +14,15 @@ import {
   wouldPlaceWin,
   type Board,
 } from "./board";
-import { clearAxisLine, nextClearAxis, repackDrop, type Axis } from "./clearRow";
+import {
+  clearAxisLine,
+  clearFixedFromCursor,
+  nextClearAxis,
+  planClearBurst,
+  repackDrop,
+  type Axis,
+  type ClearBurstBall,
+} from "./clearRow";
 import { getPreset, resolvePresetId } from "./presets";
 import { nextVsAiNames } from "./playerAliases";
 import {
@@ -283,6 +291,36 @@ type GameState = {
     placedThisTurn: boolean;
     onlineStatus: OnlineStatus;
   } | null;
+  /**
+   * Staggered clear-row confetti playback. Board stays pre-clear until finish.
+   * Markers skip these keys; ClearConfettiBurst owns the exploding spheres.
+   */
+  clearBurst: {
+    id: number;
+    balls: ClearBurstBall[];
+    startedAt: number;
+  } | null;
+  /** Local / AI clear: apply this board via finishPowerUpBoard when VFX ends. */
+  pendingClearFinish: {
+    board: Board;
+    by: PlayerId;
+    spent: PowerUpInventory["a"];
+    toast: string;
+  } | null;
+  /** Online spectator: hold authoritative state until clear confetti finishes. */
+  pendingClearSync: {
+    board: Board;
+    occupiedCount: number;
+    currentPlayer: PlayerId;
+    status: GameStatus;
+    winner: PlayerId | null;
+    winningLine: CellCoord[];
+    winningCell: CellCoord | null;
+    inventory: PowerUpInventory;
+    bonusPlacesRemaining: number;
+    placedThisTurn: boolean;
+    onlineStatus: OnlineStatus;
+  } | null;
   /** vs AI: which package the AI will tap in the race (null outside AI swarms). */
   swarmAiResult: { targetIndex: number } | null;
   /** Block new swarms until occupiedCount reaches this (0 = none). */
@@ -372,6 +410,8 @@ type GameState = {
   setClearAxis: (axis: Axis) => void;
   cycleClearAxis: () => void;
   confirmClearRow: (a: number, b: number) => boolean;
+  /** Clear confetti finished — apply pending board / remote sync. */
+  finishClearBurst: () => void;
   /** Begin fall animation from the current tipped orientation. */
   confirmTip: () => boolean;
   /** Start fall after a tip lands (auto or Drop). */
@@ -423,8 +463,46 @@ type GameState = {
 let aiTimer: ReturnType<typeof setTimeout> | null = null;
 let inventoryPulseTimer: ReturnType<typeof setTimeout> | null = null;
 let inventoryPulseSeq = 0;
+let clearBurstSeq = 0;
 /** Keys that already reported settle for the current restore — survives Strict remounts. */
 let restoreSettledKeys = new Set<string>();
+
+type PendingClearSync = NonNullable<GameState["pendingClearSync"]>;
+
+function snapshotToPendingClearSync(args: {
+  board: Board;
+  occupiedCount: number;
+  currentPlayer: PlayerId;
+  status: GameStatus;
+  winner: PlayerId | null;
+  winningLine: CellCoord[];
+  winningCell: CellCoord | null;
+  inventory: PowerUpInventory;
+  bonusPlacesRemaining: number;
+  placedThisTurn: boolean;
+  onlineStatus: OnlineStatus;
+}): PendingClearSync {
+  return { ...args };
+}
+
+function startClearBurst(
+  set: (partial: Partial<GameState>) => void,
+  balls: ClearBurstBall[],
+  extras: Partial<GameState> = {},
+) {
+  clearBurstSeq += 1;
+  set({
+    clearBurst: {
+      id: clearBurstSeq,
+      balls,
+      startedAt: performance.now(),
+    },
+    powerUpMode: null,
+    watchPowerUp: null,
+    aiming: false,
+    ...extras,
+  });
+}
 
 function clearRestoreSession() {
   restoreSettledKeys = new Set();
@@ -602,8 +680,14 @@ function scheduleAiMove(get: () => GameState, set: (partial: Partial<GameState>)
     const state = get();
     if (state.status !== "playing" || state.playMode !== "ai") return;
     if (state.currentPlayer !== AI_PLAYER) return;
-    // Tip playback / fall must finish before the AI places (or retries).
-    if (state.dropBusy || state.swarmBusy || state.tipFalling || state.watchTipPlayback) {
+    // Tip playback / fall / clear confetti must finish before the AI places (or retries).
+    if (
+      state.dropBusy ||
+      state.swarmBusy ||
+      state.tipFalling ||
+      state.watchTipPlayback ||
+      state.clearBurst
+    ) {
       scheduleAiMove(get, set);
       return;
     }
@@ -616,8 +700,8 @@ function scheduleAiMove(get: () => GameState, set: (partial: Partial<GameState>)
 
     const afterSpend = get();
     if (afterSpend.currentPlayer !== AI_PLAYER || afterSpend.status !== "playing") return;
-    // Tip starts rotate→fall playback; turn ends after settle — don't place now.
-    if (afterSpend.watchTipPlayback || afterSpend.tipFalling) return;
+    // Tip starts rotate→fall playback; clear starts confetti — don't place now.
+    if (afterSpend.watchTipPlayback || afterSpend.tipFalling || afterSpend.clearBurst) return;
     if (afterSpend.swarmBusy || afterSpend.dropBusy) {
       scheduleAiMove(get, set);
       return;
@@ -738,16 +822,20 @@ function maybeAiSpendPowerUp(get: () => GameState, set: (partial: Partial<GameSt
   if (decision.action === "clear-row") {
     const spent = spendPowerUp(state.inventory.b, "clear-row");
     if (!spent) return;
+    const balls = planClearBurst(state.board, dims, decision.axis, decision.a, decision.b);
     let board = clearAxisLine(state.board, dims, decision.axis, decision.a, decision.b);
     if (state.placement === "drop") board = repackDrop(board, dims);
-    finishPowerUpBoard(
-      get,
-      set,
-      board,
-      AI_PLAYER,
-      spent,
-      `${get().displayName(AI_PLAYER)} cleared a row`,
-    );
+    const toast = `${get().displayName(AI_PLAYER)} cleared a row`;
+    if (balls.length === 0) {
+      finishPowerUpBoard(get, set, board, AI_PLAYER, spent, toast);
+      return;
+    }
+    // Same staggered confetti as a human Clear — turn ends after VFX.
+    startClearBurst(set, balls, {
+      pendingClearFinish: { board, by: AI_PLAYER, spent, toast },
+      pendingClearSync: null,
+      powerUpToast: null,
+    });
     return;
   }
 
@@ -760,6 +848,9 @@ function maybeAiSpendPowerUp(get: () => GameState, set: (partial: Partial<GameSt
       watchPowerUp: null,
       watchTipPlayback: true,
       pendingTipSync: null,
+      clearBurst: null,
+      pendingClearFinish: null,
+      pendingClearSync: null,
       tipEuler: { ...IDENTITY_TIP_EULER },
       tipTargetEuler: { ...tipEuler },
       tipFalling: false,
@@ -776,6 +867,7 @@ function endTurnInternal(get: () => GameState, set: (partial: Partial<GameState>
   if (state.dropBusy || state.swarmBusy || state.tipFalling || state.watchTipPlayback) {
     return false;
   }
+  if (state.clearBurst) return false;
 
   const by = state.currentPlayer;
   const nextPlayer = opponentOf(by);
@@ -843,6 +935,9 @@ function finishPowerUpBoard(
       watchPowerUp: null,
       watchTipPlayback: false,
       pendingTipSync: null,
+      clearBurst: null,
+      pendingClearFinish: null,
+      pendingClearSync: null,
       aiming: false,
       fallingKey: null,
       dropBusy: false,
@@ -872,6 +967,9 @@ function finishPowerUpBoard(
       watchPowerUp: null,
       watchTipPlayback: false,
       pendingTipSync: null,
+      clearBurst: null,
+      pendingClearFinish: null,
+      pendingClearSync: null,
       aiming: false,
       fallingKey: null,
       dropBusy: false,
@@ -901,6 +999,9 @@ function finishPowerUpBoard(
     watchPowerUp: null,
     watchTipPlayback: false,
     pendingTipSync: null,
+    clearBurst: null,
+    pendingClearFinish: null,
+    pendingClearSync: null,
     fallingKey: null,
     dropBusy: false,
     ...tipReset,
@@ -989,6 +1090,7 @@ function applyPlace(
   if (state.status !== "playing" || state.phase !== "playing") return false;
   if (state.playMode === "online" && state.onlineStatus === "paused") return false;
   if (state.dropBusy || state.swarmBusy || state.tipFalling) return false;
+  if (state.clearBurst) return false;
   if (state.restoreFallingKeys) return false;
   if (state.powerUpMode === "clear-row" || state.powerUpMode === "tip") return false;
   // After ordinary place, must spend Extra (bonus) or endTurn — no free second ball.
@@ -1166,6 +1268,9 @@ export const useGameStore = create<GameState>((set, get) => ({
   watchPowerUp: null,
   watchTipPlayback: false,
   pendingTipSync: null,
+  clearBurst: null,
+  pendingClearFinish: null,
+  pendingClearSync: null,
   swarmAiResult: null,
   swarmCooldownUntilPly: 0,
   tipEuler: { ...IDENTITY_TIP_EULER },
@@ -1316,6 +1421,7 @@ export const useGameStore = create<GameState>((set, get) => ({
     if (state.dropBusy || state.swarmBusy || state.tipFalling || state.watchTipPlayback) {
       return false;
     }
+    if (state.clearBurst) return false;
     if (state.powerUpMode) return false;
     if (state.playMode === "online") {
       if (state.onlineStatus !== "playing") return false;
@@ -1430,6 +1536,9 @@ export const useGameStore = create<GameState>((set, get) => ({
         tipDirty: false,
         powerUpToast: null,
         watchPowerUp: null,
+        clearBurst: null,
+        pendingClearFinish: null,
+        pendingClearSync: null,
       });
       if (state.playMode === "online") localStateSyncPublisher?.();
       return;
@@ -1446,6 +1555,9 @@ export const useGameStore = create<GameState>((set, get) => ({
       tipCheckpoint: null,
       tipDirty: false,
       watchPowerUp: null,
+      clearBurst: null,
+      pendingClearFinish: null,
+      pendingClearSync: null,
     });
   },
 
@@ -1462,7 +1574,7 @@ export const useGameStore = create<GameState>((set, get) => ({
   confirmClearRow: (a, b) => {
     const state = get();
     if (state.powerUpMode !== "clear-row" || state.status !== "playing") return false;
-    if (state.dropBusy || state.swarmBusy) return false;
+    if (state.dropBusy || state.swarmBusy || state.clearBurst) return false;
     const by = state.currentPlayer;
     if (state.playMode === "ai" && by !== HUMAN) return false;
     if (state.playMode === "online") {
@@ -1471,21 +1583,89 @@ export const useGameStore = create<GameState>((set, get) => ({
     const spent = spendPowerUp(state.inventory[by], "clear-row");
     if (!spent) return false;
     const dims = getPreset(state.presetId).dims;
+    const balls = planClearBurst(state.board, dims, state.clearAxis, a, b);
     let board = clearAxisLine(state.board, dims, state.clearAxis, a, b);
     if (state.placement === "drop") board = repackDrop(board, dims);
     const label = state.displayName(by);
+    const toast = `${label} cleared a row`;
     if (state.playMode === "online") {
       publishPowerUpNotify("clear-row", by, "confirm");
-      publishClearAimEnd(by);
+      // Keep spectator watchPowerUp until confirm handler starts the burst
+      // (aim-end would wipe axis/cursor before the notify is handled).
     }
-    finishPowerUpBoard(get, set, board, by, spent, `${label} cleared a row`);
+    if (balls.length === 0) {
+      finishPowerUpBoard(get, set, board, by, spent, toast);
+      return true;
+    }
+    // Keep pre-clear board visible; confetti pops each ball, then finish applies board.
+    startClearBurst(set, balls, {
+      pendingClearFinish: { board, by, spent, toast },
+      pendingClearSync: null,
+    });
     return true;
+  },
+
+  finishClearBurst: () => {
+    const state = get();
+    if (!state.clearBurst) return;
+
+    const pendingFinish = state.pendingClearFinish;
+    if (pendingFinish) {
+      set({
+        clearBurst: null,
+        pendingClearFinish: null,
+        pendingClearSync: null,
+      });
+      finishPowerUpBoard(
+        get,
+        set,
+        pendingFinish.board,
+        pendingFinish.by,
+        pendingFinish.spent,
+        pendingFinish.toast,
+      );
+      return;
+    }
+
+    const pending = state.pendingClearSync;
+    if (pending) {
+      set({
+        board: pending.board,
+        occupiedCount: pending.occupiedCount,
+        currentPlayer: pending.currentPlayer,
+        status: pending.status,
+        winner: pending.winner,
+        winningLine: pending.winningLine,
+        winningCell: pending.winningCell,
+        inventory: pending.inventory,
+        bonusPlacesRemaining: pending.bonusPlacesRemaining,
+        placedThisTurn: pending.placedThisTurn,
+        onlineStatus: pending.onlineStatus,
+        clearBurst: null,
+        pendingClearFinish: null,
+        pendingClearSync: null,
+        powerUpMode: null,
+        watchPowerUp: null,
+        cursor:
+          state.placement === "drop"
+            ? snapDropCursor(
+                centerCell(getPreset(state.presetId).dims),
+                pending.board,
+                getPreset(state.presetId).dims,
+              )
+            : centerCell(getPreset(state.presetId).dims),
+      });
+      return;
+    }
+
+    // VFX-only (e.g. remote toast path before sync) — just clear the overlay.
+    set({ clearBurst: null, pendingClearFinish: null, pendingClearSync: null });
   },
 
   confirmTip: () => {
     const state = get();
     if (state.powerUpMode !== "tip" || state.status !== "playing") return false;
-    if (state.dropBusy || state.swarmBusy || state.tipFalling) return false;
+    if (state.dropBusy || state.swarmBusy || state.tipFalling || state.clearBurst) return false;
     const by = state.currentPlayer;
     if (state.playMode === "ai" && by !== HUMAN) return false;
     if (state.playMode === "online") {
@@ -1572,6 +1752,9 @@ export const useGameStore = create<GameState>((set, get) => ({
           tipDirty: false,
           watchTipPlayback: false,
           pendingTipSync: null,
+          clearBurst: null,
+          pendingClearFinish: null,
+          pendingClearSync: null,
           watchPowerUp: null,
           powerUpMode: null,
         });
@@ -1626,6 +1809,9 @@ export const useGameStore = create<GameState>((set, get) => ({
         tipDirty: false,
         watchTipPlayback: false,
         watchPowerUp: null,
+        clearBurst: null,
+        pendingClearFinish: null,
+        pendingClearSync: null,
         powerUpMode: null,
       });
       return;
@@ -1782,6 +1968,21 @@ export const useGameStore = create<GameState>((set, get) => ({
       return;
     }
     if (phase === "confirm") {
+      if (kind === "clear-row") {
+        const watch = state.watchPowerUp?.kind === "clear-row" ? state.watchPowerUp : null;
+        const dims = getPreset(state.presetId).dims;
+        const axis = watch?.clearAxis ?? state.clearAxis;
+        const cursor = watch?.cursor ?? state.cursor;
+        const fixed = clearFixedFromCursor(axis, cursor);
+        const balls = planClearBurst(state.board, dims, axis, fixed.a, fixed.b);
+        if (balls.length > 0 && !state.clearBurst) {
+          startClearBurst(set, balls, {
+            powerUpToast: `${name} used ${label}`,
+            pendingClearFinish: null,
+          });
+          return;
+        }
+      }
       set({
         powerUpToast: `${name} used ${label}`,
         // Tip confirm may arrive during rotate/fall playback — don't abort it.
@@ -1793,6 +1994,8 @@ export const useGameStore = create<GameState>((set, get) => ({
   applyRemoteClearAim: (msg) => {
     const state = get();
     if (state.seat === msg.by) return;
+    // Don't abort an in-flight clear confetti (or wipe aim data mid-confirm).
+    if (state.clearBurst) return;
     if (!msg.active) {
       set((s) => ({
         watchPowerUp: s.watchPowerUp?.kind === "clear-row" ? null : s.watchPowerUp,
@@ -1838,6 +2041,9 @@ export const useGameStore = create<GameState>((set, get) => ({
       watchPowerUp: null,
       watchTipPlayback: true,
       pendingTipSync: null,
+      clearBurst: null,
+      pendingClearFinish: null,
+      pendingClearSync: null,
       tipEuler: { ...IDENTITY_TIP_EULER },
       tipTargetEuler: { ...msg.tipEuler },
       tipFalling: false,
@@ -1953,6 +2159,9 @@ export const useGameStore = create<GameState>((set, get) => ({
       powerUpToast: null,
       inventoryPulse: null,
       watchPowerUp: null,
+      clearBurst: null,
+      pendingClearFinish: null,
+      pendingClearSync: null,
       swarmAiResult: null,
       swarmCooldownUntilPly: 0,
       tipEuler: { ...IDENTITY_TIP_EULER },
@@ -2017,6 +2226,9 @@ export const useGameStore = create<GameState>((set, get) => ({
       powerUpToast: null,
       inventoryPulse: null,
       watchPowerUp: null,
+      clearBurst: null,
+      pendingClearFinish: null,
+      pendingClearSync: null,
       swarmAiResult: null,
       swarmCooldownUntilPly: 0,
       tipEuler: { ...IDENTITY_TIP_EULER },
@@ -2079,6 +2291,9 @@ export const useGameStore = create<GameState>((set, get) => ({
       powerUpToast: null,
       inventoryPulse: null,
       watchPowerUp: null,
+      clearBurst: null,
+      pendingClearFinish: null,
+      pendingClearSync: null,
       swarmAiResult: null,
       swarmCooldownUntilPly: 0,
       tipEuler: { ...IDENTITY_TIP_EULER },
@@ -2126,6 +2341,9 @@ export const useGameStore = create<GameState>((set, get) => ({
       powerUpToast: null,
       inventoryPulse: null,
       watchPowerUp: null,
+      clearBurst: null,
+      pendingClearFinish: null,
+      pendingClearSync: null,
       swarmAiResult: null,
       swarmCooldownUntilPly: 0,
       tipEuler: { ...IDENTITY_TIP_EULER },
@@ -2199,6 +2417,9 @@ export const useGameStore = create<GameState>((set, get) => ({
       powerUpToast: null,
       inventoryPulse: null,
       watchPowerUp: null,
+      clearBurst: null,
+      pendingClearFinish: null,
+      pendingClearSync: null,
       swarmAiResult: null,
       swarmCooldownUntilPly: 0,
       tipEuler: { ...IDENTITY_TIP_EULER },
@@ -2270,6 +2491,9 @@ export const useGameStore = create<GameState>((set, get) => ({
       powerUpToast: null,
       inventoryPulse: null,
       watchPowerUp: null,
+      clearBurst: null,
+      pendingClearFinish: null,
+      pendingClearSync: null,
       swarmAiResult: null,
       swarmCooldownUntilPly: 0,
       tipEuler: { ...IDENTITY_TIP_EULER },
@@ -2321,6 +2545,9 @@ export const useGameStore = create<GameState>((set, get) => ({
       watchPowerUp: null,
       watchTipPlayback: false,
       pendingTipSync: null,
+      clearBurst: null,
+      pendingClearFinish: null,
+      pendingClearSync: null,
       swarmAiResult: null,
       swarmCooldownUntilPly: 0,
       tipEuler: { ...IDENTITY_TIP_EULER },
@@ -2343,7 +2570,7 @@ export const useGameStore = create<GameState>((set, get) => ({
       snap.status === "won" || snap.status === "draw" ? "ended" : "playing";
     const inventory = snap.inventory ?? emptyInventory();
 
-    // During spectator tip playback, hold the authoritative board until fall settles.
+    // During spectator tip / clear playback, hold the authoritative board until VFX settles.
     if (get().watchTipPlayback) {
       set({
         phase: "playing",
@@ -2378,6 +2605,41 @@ export const useGameStore = create<GameState>((set, get) => ({
       return;
     }
 
+    if (get().clearBurst) {
+      set({
+        phase: "playing",
+        playMode: "online",
+        playerNames: snap.names,
+        presetId: resolved,
+        placement,
+        inventory,
+        powerUpsEnabled: snap.powerUpsEnabled ?? get().powerUpsEnabled,
+        pendingClearSync: snapshotToPendingClearSync({
+          board: snap.board,
+          occupiedCount: snap.occupiedCount,
+          currentPlayer: snap.currentPlayer,
+          status: snap.status,
+          winner: snap.winner,
+          winningLine: snap.winningLine,
+          winningCell: snap.winningCell ?? null,
+          inventory,
+          bonusPlacesRemaining: snap.bonusPlacesRemaining ?? 0,
+          placedThisTurn: snap.placedThisTurn ?? false,
+          onlineStatus,
+        }),
+        pendingSwarmEarner: null,
+        swarm: null,
+        swarmBusy: false,
+        swarmPopped: {},
+        swarmAiResult: null,
+        swarmCooldownUntilPly: 0,
+        powerUpMode: null,
+        watchPowerUp: null,
+        opponentConnected: true,
+      });
+      return;
+    }
+
     set({
       phase: "playing",
       playMode: "online",
@@ -2406,6 +2668,9 @@ export const useGameStore = create<GameState>((set, get) => ({
       watchPowerUp: null,
       watchTipPlayback: false,
       pendingTipSync: null,
+      clearBurst: null,
+      pendingClearFinish: null,
+      pendingClearSync: null,
       powerUpToast: null,
       tipEuler: { ...IDENTITY_TIP_EULER },
       tipTargetEuler: { ...IDENTITY_TIP_EULER },
@@ -2475,7 +2740,7 @@ export const useGameStore = create<GameState>((set, get) => ({
     if (state.status !== "playing") return false;
     if (state.dropBusy || state.swarmBusy || state.tipFalling) return false;
     if (state.restoreFallingKeys) return false;
-    if (state.watchTipPlayback) return false;
+    if (state.watchTipPlayback || state.clearBurst) return false;
     if (state.powerUpMode === "clear-row" || state.powerUpMode === "tip") return false;
     if (state.playMode === "ai" && state.currentPlayer !== HUMAN) return false;
     if (state.playMode === "online") {

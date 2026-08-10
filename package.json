@@ -31,6 +31,7 @@
     "check:powerup-hud": "npx tsx src/ui/powerUpHudVisibility.selftest.ts",
     "check:tip-playback": "npx tsx src/game/tipPlayback.selftest.ts",
     "check:swarm": "npx tsx src/game/swarmPackages.selftest.ts",
+    "check:clear": "npx tsx src/game/clearRow.selftest.ts && npx tsx src/game/clearBurst.selftest.ts",
     "check:aliases": "npx tsx src/game/playerAliases.selftest.ts",
     "check:update": "npx tsx src/ui/appUpdate.selftest.ts",
     "eval:selfplay": "npx tsx src/game/selfPlay.cli.ts"
