@@ -112,12 +112,14 @@ export function SelectionCursor({ dims, spacing = 1 }: SelectionCursorProps) {
   stickyRef.current = sticky;
 
   const cellSize = spacing * 0.96;
+  /** Slightly oversized outline so the aim box reads thicker than slice cell edges. */
+  const outlineSize = cellSize * 1.04;
   const edges = useMemo(() => {
-    const box = new BoxGeometry(cellSize, cellSize, cellSize);
+    const box = new BoxGeometry(outlineSize, outlineSize, outlineSize);
     const geo = new EdgesGeometry(box);
     box.dispose();
     return geo;
-  }, [cellSize]);
+  }, [outlineSize]);
 
   const publishSticky = (axis: SliceAxis, depth: number) => {
     const next = { axis, index: clampDepthIndex(depth, axis, dims) };
@@ -637,27 +639,28 @@ export function SelectionCursor({ dims, spacing = 1 }: SelectionCursorProps) {
           <meshBasicMaterial
             color={color}
             transparent
-            opacity={occupied || dropBusy ? 0.05 : finishBlocked ? 0.08 : 0.14}
+            opacity={occupied || dropBusy ? 0.08 : finishBlocked ? 0.12 : 0.2}
             depthWrite={false}
           />
         </mesh>
       ) : null}
       {showCell ? (
         <>
-          <mesh>
+          <mesh renderOrder={4}>
             <boxGeometry args={[cellSize, cellSize, cellSize]} />
             <meshBasicMaterial
               color={color}
               transparent
-              opacity={occupied || dropBusy ? 0.1 : finishBlocked ? 0.14 : 0.24}
+              opacity={occupied || dropBusy ? 0.16 : finishBlocked ? 0.22 : 0.38}
               depthWrite={false}
             />
           </mesh>
-          <lineSegments geometry={edges}>
+          <lineSegments geometry={edges} renderOrder={5}>
             <lineBasicMaterial
               color={color}
               transparent
-              opacity={dropBusy ? 0.4 : finishBlocked ? 0.8 : 1}
+              opacity={dropBusy ? 0.55 : finishBlocked ? 0.85 : 1}
+              depthWrite={false}
             />
           </lineSegments>
         </>
