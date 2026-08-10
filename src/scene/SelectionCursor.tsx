@@ -112,14 +112,21 @@ export function SelectionCursor({ dims, spacing = 1 }: SelectionCursorProps) {
   stickyRef.current = sticky;
 
   const cellSize = spacing * 0.96;
-  /** Slightly oversized outline so the aim box reads thicker than slice cell edges. */
-  const outlineSize = cellSize * 1.04;
-  const edges = useMemo(() => {
-    const box = new BoxGeometry(outlineSize, outlineSize, outlineSize);
+  /** Dual outline: outer rim thicker than slice edges; inner rim in player color. */
+  const outerOutlineSize = cellSize * 1.1;
+  const innerOutlineSize = cellSize * 1.03;
+  const outerEdges = useMemo(() => {
+    const box = new BoxGeometry(outerOutlineSize, outerOutlineSize, outerOutlineSize);
     const geo = new EdgesGeometry(box);
     box.dispose();
     return geo;
-  }, [outlineSize]);
+  }, [outerOutlineSize]);
+  const innerEdges = useMemo(() => {
+    const box = new BoxGeometry(innerOutlineSize, innerOutlineSize, innerOutlineSize);
+    const geo = new EdgesGeometry(box);
+    box.dispose();
+    return geo;
+  }, [innerOutlineSize]);
 
   const publishSticky = (axis: SliceAxis, depth: number) => {
     const next = { axis, index: clampDepthIndex(depth, axis, dims) };
@@ -639,7 +646,7 @@ export function SelectionCursor({ dims, spacing = 1 }: SelectionCursorProps) {
           <meshBasicMaterial
             color={color}
             transparent
-            opacity={occupied || dropBusy ? 0.08 : finishBlocked ? 0.12 : 0.2}
+            opacity={occupied || dropBusy ? 0.1 : finishBlocked ? 0.14 : 0.22}
             depthWrite={false}
           />
         </mesh>
@@ -651,15 +658,23 @@ export function SelectionCursor({ dims, spacing = 1 }: SelectionCursorProps) {
             <meshBasicMaterial
               color={color}
               transparent
-              opacity={occupied || dropBusy ? 0.16 : finishBlocked ? 0.22 : 0.38}
+              opacity={occupied || dropBusy ? 0.22 : finishBlocked ? 0.3 : 0.5}
               depthWrite={false}
             />
           </mesh>
-          <lineSegments geometry={edges} renderOrder={5}>
+          <lineSegments geometry={outerEdges} renderOrder={5}>
+            <lineBasicMaterial
+              color="#ffffff"
+              transparent
+              opacity={dropBusy ? 0.45 : finishBlocked ? 0.7 : 0.95}
+              depthWrite={false}
+            />
+          </lineSegments>
+          <lineSegments geometry={innerEdges} renderOrder={6}>
             <lineBasicMaterial
               color={color}
               transparent
-              opacity={dropBusy ? 0.55 : finishBlocked ? 0.85 : 1}
+              opacity={dropBusy ? 0.65 : finishBlocked ? 0.85 : 1}
               depthWrite={false}
             />
           </lineSegments>
