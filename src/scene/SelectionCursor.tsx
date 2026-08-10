@@ -79,8 +79,8 @@ export function SelectionCursor({ dims, spacing = 1 }: SelectionCursorProps) {
   const clearMode = powerUpMode === "clear-row";
 
   const finishBlocked =
-    bonusPlacesRemaining > 0 &&
-    wouldPlaceWin(board, dims, cursor, currentPlayer, placement);  const raycaster = useMemo(() => new Raycaster(), []);
+    bonusPlacesRemaining > 0 && wouldPlaceWin(board, dims, cursor, currentPlayer, placement);
+  const raycaster = useMemo(() => new Raycaster(), []);
   const ndc = useMemo(() => new Vector2(), []);
   const point = useMemo(() => new Vector3(), []);
   const dragRef = useRef({
@@ -612,19 +612,7 @@ export function SelectionCursor({ dims, spacing = 1 }: SelectionCursorProps) {
       el.removeEventListener("pointerup", onUp);
       el.removeEventListener("pointercancel", onUp);
     };
-  }, [
-    gl,
-    camera,
-    dims,
-    spacing,
-    setCursor,
-    setAiming,
-    status,
-    raycaster,
-    ndc,
-    point,
-    clearSticky,
-  ]);
+  }, [gl, camera, dims, spacing, setCursor, setAiming, status, raycaster, ndc, point, clearSticky]);
 
   if (status !== "playing") return null;
 
@@ -649,7 +637,7 @@ export function SelectionCursor({ dims, spacing = 1 }: SelectionCursorProps) {
           <meshBasicMaterial
             color={color}
             transparent
-            opacity={occupied || dropBusy ? 0.04 : finishBlocked ? 0.06 : 0.1}
+            opacity={occupied || dropBusy ? 0.05 : finishBlocked ? 0.08 : 0.14}
             depthWrite={false}
           />
         </mesh>
@@ -661,7 +649,7 @@ export function SelectionCursor({ dims, spacing = 1 }: SelectionCursorProps) {
             <meshBasicMaterial
               color={color}
               transparent
-              opacity={occupied || dropBusy ? 0.06 : finishBlocked ? 0.1 : 0.16}
+              opacity={occupied || dropBusy ? 0.1 : finishBlocked ? 0.14 : 0.24}
               depthWrite={false}
             />
           </mesh>
@@ -669,7 +657,7 @@ export function SelectionCursor({ dims, spacing = 1 }: SelectionCursorProps) {
             <lineBasicMaterial
               color={color}
               transparent
-              opacity={dropBusy ? 0.25 : finishBlocked ? 0.7 : 0.95}
+              opacity={dropBusy ? 0.4 : finishBlocked ? 0.8 : 1}
             />
           </lineSegments>
         </>
