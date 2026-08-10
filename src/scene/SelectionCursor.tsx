@@ -1,8 +1,9 @@
 "use client";
 
+import { Outlines } from "@react-three/drei";
 import { useFrame, useThree } from "@react-three/fiber";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { BoxGeometry, EdgesGeometry, Raycaster, Vector2, Vector3 } from "three";
+import { Raycaster, Vector2, Vector3 } from "three";
 import { cellKey, cellToWorld, wouldPlaceWin } from "@/game/board";
 import { useGameStore } from "@/game/store";
 import { PLAYER_COLORS, type BoardDims } from "@/game/types";
@@ -112,21 +113,6 @@ export function SelectionCursor({ dims, spacing = 1 }: SelectionCursorProps) {
   stickyRef.current = sticky;
 
   const cellSize = spacing * 0.96;
-  /** Dual outline: outer rim thicker than slice edges; inner rim in player color. */
-  const outerOutlineSize = cellSize * 1.1;
-  const innerOutlineSize = cellSize * 1.03;
-  const outerEdges = useMemo(() => {
-    const box = new BoxGeometry(outerOutlineSize, outerOutlineSize, outerOutlineSize);
-    const geo = new EdgesGeometry(box);
-    box.dispose();
-    return geo;
-  }, [outerOutlineSize]);
-  const innerEdges = useMemo(() => {
-    const box = new BoxGeometry(innerOutlineSize, innerOutlineSize, innerOutlineSize);
-    const geo = new EdgesGeometry(box);
-    box.dispose();
-    return geo;
-  }, [innerOutlineSize]);
 
   const publishSticky = (axis: SliceAxis, depth: number) => {
     const next = { axis, index: clampDepthIndex(depth, axis, dims) };
@@ -652,33 +638,23 @@ export function SelectionCursor({ dims, spacing = 1 }: SelectionCursorProps) {
         </mesh>
       ) : null}
       {showCell ? (
-        <>
-          <mesh renderOrder={4}>
-            <boxGeometry args={[cellSize, cellSize, cellSize]} />
-            <meshBasicMaterial
-              color={color}
-              transparent
-              opacity={occupied || dropBusy ? 0.22 : finishBlocked ? 0.3 : 0.5}
-              depthWrite={false}
-            />
-          </mesh>
-          <lineSegments geometry={outerEdges} renderOrder={5}>
-            <lineBasicMaterial
-              color="#ffffff"
-              transparent
-              opacity={dropBusy ? 0.45 : finishBlocked ? 0.7 : 0.95}
-              depthWrite={false}
-            />
-          </lineSegments>
-          <lineSegments geometry={innerEdges} renderOrder={6}>
-            <lineBasicMaterial
-              color={color}
-              transparent
-              opacity={dropBusy ? 0.65 : finishBlocked ? 0.85 : 1}
-              depthWrite={false}
-            />
-          </lineSegments>
-        </>
+        <mesh renderOrder={4}>
+          <boxGeometry args={[cellSize, cellSize, cellSize]} />
+          <meshBasicMaterial
+            color={color}
+            transparent
+            opacity={occupied || dropBusy ? 0.22 : finishBlocked ? 0.3 : 0.5}
+            depthWrite={false}
+          />
+          <Outlines
+            thickness={0.045}
+            color={color}
+            opacity={dropBusy ? 0.55 : finishBlocked ? 0.75 : 1}
+            transparent
+            screenspace={false}
+            renderOrder={5}
+          />
+        </mesh>
       ) : null}
     </group>
   );

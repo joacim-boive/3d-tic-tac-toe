@@ -1,5 +1,6 @@
 "use client";
 
+import { Outlines } from "@react-three/drei";
 import { useLayoutEffect, useMemo, useRef } from "react";
 import { BoxGeometry, EdgesGeometry, InstancedMesh, Object3D } from "three";
 import { cellToWorld } from "@/game/board";
@@ -16,7 +17,7 @@ type ActiveSliceProps = {
 /** Cool cyan — distinct from coral/teal markers and the player-colored aim box. */
 const FILL_COLOR = "#7ec8e0";
 const EDGE_COLOR = "#d4f2ff";
-const FRAME_COLOR = "#e8f8ff";
+const FRAME_COLOR = "#f2fbff";
 const temp = new Object3D();
 
 /** Cells on the sticky depth slice (fixed axis index). */
@@ -106,14 +107,6 @@ export function ActiveSlice({ dims, spacing = 1 }: ActiveSliceProps) {
     return sliceFrame(slice.axis, slice.index, dims, spacing, cellSize);
   }, [slice, dims, spacing, cellSize]);
 
-  const frameEdges = useMemo(() => {
-    if (!frame) return null;
-    const box = new BoxGeometry(frame.size[0], frame.size[1], frame.size[2]);
-    const geo = new EdgesGeometry(box);
-    box.dispose();
-    return geo;
-  }, [frame]);
-
   useLayoutEffect(() => {
     const mesh = meshRef.current;
     if (!mesh) return;
@@ -132,7 +125,7 @@ export function ActiveSlice({ dims, spacing = 1 }: ActiveSliceProps) {
     mesh.instanceMatrix.needsUpdate = true;
   }, [cells, dims, spacing]);
 
-  if (phase !== "playing" || !slice || cells.length === 0 || !frame || !frameEdges) {
+  if (phase !== "playing" || !slice || cells.length === 0 || !frame) {
     return null;
   }
 
@@ -171,15 +164,19 @@ export function ActiveSlice({ dims, spacing = 1 }: ActiveSliceProps) {
           </lineSegments>
         );
       })}
-      <lineSegments geometry={frameEdges} position={frame.position} renderOrder={3}>
-        <lineBasicMaterial
+      {/* Invisible volume + thick outline so the slice silhouette reads at any angle. */}
+      <mesh position={frame.position} renderOrder={3}>
+        <boxGeometry args={frame.size} />
+        <meshBasicMaterial transparent opacity={0} depthWrite={false} />
+        <Outlines
+          thickness={0.04}
           color={FRAME_COLOR}
-          transparent
           opacity={0.95}
-          depthWrite={false}
-          fog={false}
+          transparent
+          screenspace={false}
+          renderOrder={3}
         />
-      </lineSegments>
+      </mesh>
     </group>
   );
 }
