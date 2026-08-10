@@ -1,9 +1,8 @@
 "use client";
 
-import { Outlines } from "@react-three/drei";
 import { useFrame, useThree } from "@react-three/fiber";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Raycaster, Vector2, Vector3 } from "three";
+import { BoxGeometry, EdgesGeometry, Raycaster, Vector2, Vector3 } from "three";
 import { cellKey, cellToWorld, wouldPlaceWin } from "@/game/board";
 import { useGameStore } from "@/game/store";
 import { PLAYER_COLORS, type BoardDims } from "@/game/types";
@@ -113,6 +112,21 @@ export function SelectionCursor({ dims, spacing = 1 }: SelectionCursorProps) {
   stickyRef.current = sticky;
 
   const cellSize = spacing * 0.96;
+  /** Nested edge shells — white outer + player inner — read thicker than slice 1px lines. */
+  const edgeShells = useMemo(() => {
+    const pads = [
+      { pad: 0.08, color: "#ffffff" as const },
+      { pad: 0.04, color: "player" as const },
+      { pad: 0, color: "player" as const },
+    ];
+    return pads.map(({ pad, color }) => {
+      const size = cellSize + pad;
+      const box = new BoxGeometry(size, size, size);
+      const geo = new EdgesGeometry(box);
+      box.dispose();
+      return { geo, color };
+    });
+  }, [cellSize]);
 
   const publishSticky = (axis: SliceAxis, depth: number) => {
     const next = { axis, index: clampDepthIndex(depth, axis, dims) };
@@ -638,23 +652,27 @@ export function SelectionCursor({ dims, spacing = 1 }: SelectionCursorProps) {
         </mesh>
       ) : null}
       {showCell ? (
-        <mesh renderOrder={4}>
-          <boxGeometry args={[cellSize, cellSize, cellSize]} />
-          <meshBasicMaterial
-            color={color}
-            transparent
-            opacity={occupied || dropBusy ? 0.22 : finishBlocked ? 0.3 : 0.5}
-            depthWrite={false}
-          />
-          <Outlines
-            thickness={0.045}
-            color={color}
-            opacity={dropBusy ? 0.55 : finishBlocked ? 0.75 : 1}
-            transparent
-            screenspace={false}
-            renderOrder={5}
-          />
-        </mesh>
+        <>
+          <mesh renderOrder={4}>
+            <boxGeometry args={[cellSize, cellSize, cellSize]} />
+            <meshBasicMaterial
+              color={color}
+              transparent
+              opacity={occupied || dropBusy ? 0.28 : finishBlocked ? 0.36 : 0.55}
+              depthWrite={false}
+            />
+          </mesh>
+          {edgeShells.map(({ geo, color: rim }, i) => (
+            <lineSegments key={i} geometry={geo} renderOrder={5 + i}>
+              <lineBasicMaterial
+                color={rim === "player" ? color : rim}
+                transparent
+                opacity={dropBusy ? 0.45 : finishBlocked ? 0.7 : rim === "player" ? 1 : 0.95}
+                depthWrite={false}
+              />
+            </lineSegments>
+          ))}
+        </>
       ) : null}
     </group>
   );

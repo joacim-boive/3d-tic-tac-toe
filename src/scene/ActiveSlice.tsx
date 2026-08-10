@@ -1,6 +1,5 @@
 "use client";
 
-import { Outlines } from "@react-three/drei";
 import { useLayoutEffect, useMemo, useRef } from "react";
 import { BoxGeometry, EdgesGeometry, InstancedMesh, Object3D } from "three";
 import { cellToWorld } from "@/game/board";
@@ -14,7 +13,7 @@ type ActiveSliceProps = {
   spacing?: number;
 };
 
-/** Cool cyan — distinct from coral/teal markers and the player-colored aim box. */
+/** Cool cyan — distinct from coral markers; aim box uses a brighter rim on top. */
 const FILL_COLOR = "#7ec8e0";
 const EDGE_COLOR = "#d4f2ff";
 const FRAME_COLOR = "#f2fbff";
@@ -107,6 +106,19 @@ export function ActiveSlice({ dims, spacing = 1 }: ActiveSliceProps) {
     return sliceFrame(slice.axis, slice.index, dims, spacing, cellSize);
   }, [slice, dims, spacing, cellSize]);
 
+  /** Nested edge shells so the outer silhouette reads thicker than 1px WebGL lines. */
+  const frameEdgeShells = useMemo(() => {
+    if (!frame) return [];
+    const [sx, sy, sz] = frame.size;
+    const pads = [0, 0.012, 0.024];
+    return pads.map((pad) => {
+      const box = new BoxGeometry(sx + pad, sy + pad, sz + pad);
+      const geo = new EdgesGeometry(box);
+      box.dispose();
+      return geo;
+    });
+  }, [frame]);
+
   useLayoutEffect(() => {
     const mesh = meshRef.current;
     if (!mesh) return;
@@ -140,7 +152,7 @@ export function ActiveSlice({ dims, spacing = 1 }: ActiveSliceProps) {
         <meshBasicMaterial
           color={FILL_COLOR}
           transparent
-          opacity={0.2}
+          opacity={0.22}
           depthWrite={false}
           fog={false}
         />
@@ -157,26 +169,24 @@ export function ActiveSlice({ dims, spacing = 1 }: ActiveSliceProps) {
             <lineBasicMaterial
               color={EDGE_COLOR}
               transparent
-              opacity={0.88}
+              opacity={0.9}
               depthWrite={false}
               fog={false}
             />
           </lineSegments>
         );
       })}
-      {/* Invisible volume + thick outline so the slice silhouette reads at any angle. */}
-      <mesh position={frame.position} renderOrder={3}>
-        <boxGeometry args={frame.size} />
-        <meshBasicMaterial transparent opacity={0} depthWrite={false} />
-        <Outlines
-          thickness={0.04}
-          color={FRAME_COLOR}
-          opacity={0.95}
-          transparent
-          screenspace={false}
-          renderOrder={3}
-        />
-      </mesh>
+      {frameEdgeShells.map((geo, i) => (
+        <lineSegments key={i} geometry={geo} position={frame.position} renderOrder={3}>
+          <lineBasicMaterial
+            color={FRAME_COLOR}
+            transparent
+            opacity={0.95 - i * 0.12}
+            depthWrite={false}
+            fog={false}
+          />
+        </lineSegments>
+      ))}
     </group>
   );
 }
