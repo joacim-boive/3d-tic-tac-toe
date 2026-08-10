@@ -148,7 +148,11 @@ export function GameChrome({ children }: GameChromeProps) {
                 onClick={placeAtCursor}
                 disabled={dropBusy || swarmBusy}
               >
-                {placement === "drop" ? "Drop" : "Place"}
+                {placedThisTurn && bonusPlacesRemaining === 0
+                  ? "Extra"
+                  : placement === "drop"
+                    ? "Drop"
+                    : "Place"}
                 {!touchUi && (
                   <>
                     {" "}

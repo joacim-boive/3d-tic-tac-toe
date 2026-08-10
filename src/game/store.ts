@@ -2428,8 +2428,43 @@ export const useGameStore = create<GameState>((set, get) => ({
 
   placeAtCursor: () => {
     const state = get();
-    // After ordinary place with Extra available: Space ends the turn.
+    // Extra window: Place/Space spends Extra and drops the bonus ball at the
+    // aimed cell. Ending the turn without Extra is only via Done — mapping
+    // Place→endTurn made players miss their intended Extra cell.
     if (state.placedThisTurn && state.bonusPlacesRemaining === 0) {
+      if (
+        canExtendWithExtra({
+          powerUpsEnabled: state.powerUpsEnabled,
+          playMode: state.playMode,
+          presetId: state.presetId,
+          inventory: state.inventory,
+          currentPlayer: state.currentPlayer,
+        })
+      ) {
+        const preset = getPreset(state.presetId);
+        const resolved = resolvePlaceCoord(
+          state.board,
+          preset.dims,
+          state.cursor,
+          state.placement,
+        );
+        // Don't spend Extra on an illegal / occupied aim — keep the window open.
+        if (!resolved) return false;
+        if (
+          wouldPlaceWin(
+            state.board,
+            preset.dims,
+            resolved,
+            state.currentPlayer,
+            state.placement,
+          )
+        ) {
+          set({ powerUpToast: EXTRA_NO_FINISH_TOAST });
+          return false;
+        }
+        if (!get().activatePowerUp("extra-turn")) return false;
+        return get().place(resolved);
+      }
       return state.endTurn();
     }
     return state.place(state.cursor);
