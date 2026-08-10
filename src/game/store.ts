@@ -2854,3 +2854,8 @@ export function hydrateSetupFromStorage() {
   }
   persistSetupPrefs(useGameStore.getState());
 }
+
+// Expose store for testing
+if (typeof window !== "undefined") {
+  (window as any).__gameStore = useGameStore;
+}
