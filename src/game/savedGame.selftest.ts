@@ -1,12 +1,9 @@
 /**
  * Assert-based self-check for saved-game parse/match — `npm run check:saved`.
  */
-import {
-  parseSavedGame,
-  savedGameMatchesSetup,
-  type SavedGame,
-} from "./savedGame";
+import { parseSavedGame, savedGameMatchesSetup, type SavedGame } from "./savedGame";
 import { emptyInventory } from "./powerUps";
+import { useGameStore } from "./store";
 
 function assert(cond: unknown, msg: string): asserts cond {
   if (!cond) throw new Error(msg);
@@ -107,6 +104,49 @@ function testNullSafe() {
   assert(parseSavedGame("nope") == null, "string");
 }
 
+function testRestoreDropInArmsWithoutStartingClock() {
+  const stacked: SavedGame = {
+    ...base,
+    playMode: "hotseat",
+    powerUpsEnabled: false,
+    board: [
+      ["1,0,0", "a"],
+      ["0,2,1", "b"],
+      ["0,0,0", "a"],
+      ["0,1,0", "b"],
+    ],
+    occupiedCount: 4,
+  };
+
+  useGameStore.getState().restoreGame(stacked);
+  const armed = useGameStore.getState();
+  assert(armed.phase === "playing", "phase");
+  assert(armed.dropBusy === true, "dropBusy while restoring");
+  assert(armed.restoreFallingKeys != null, "keys armed");
+  assert(armed.restoreFallingKeys!.length === 4, "all marks animate");
+  assert(armed.restoreStartedAt == null, "clock waits for scene frame");
+
+  // Bottom-up packing order: lower y first, then x, then z.
+  assert(
+    armed.restoreFallingKeys!.join("|") === "0,0,0|1,0,0|0,1,0|0,2,1",
+    `order was ${armed.restoreFallingKeys!.join("|")}`,
+  );
+
+  useGameStore.getState().startRestoreClock();
+  const started = useGameStore.getState().restoreStartedAt;
+  assert(started != null, "clock stamped");
+  useGameStore.getState().startRestoreClock();
+  assert(useGameStore.getState().restoreStartedAt === started, "clock idempotent");
+
+  for (const key of armed.restoreFallingKeys!) {
+    useGameStore.getState().finishRestoreBall(key);
+  }
+  const done = useGameStore.getState();
+  assert(done.restoreFallingKeys == null, "cleared keys");
+  assert(done.restoreStartedAt == null, "cleared clock");
+  assert(done.dropBusy === false, "dropBusy cleared");
+}
+
 testValidBlob();
 testLegacyPresetId();
 testRejectsEmptyBoard();
@@ -114,4 +154,5 @@ testRejectsOnlineMode();
 testMatchGridAndDifficulty();
 testHotseatIgnoresDifficulty();
 testNullSafe();
+testRestoreDropInArmsWithoutStartingClock();
 console.log("savedGame.selftest: ok");

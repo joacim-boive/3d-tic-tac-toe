@@ -47,15 +47,8 @@ import {
   type SwarmPlan,
   type SwarmTapOutcome,
 } from "./powerUps";
-import {
-  clearSavedGameFromStorage,
-  writeSavedGameToStorage,
-  type SavedGame,
-} from "./savedGame";
-import {
-  recordAiMatchResult,
-  type AiMatchOutcome,
-} from "./gameStats";
+import { clearSavedGameFromStorage, writeSavedGameToStorage, type SavedGame } from "./savedGame";
+import { recordAiMatchResult, type AiMatchOutcome } from "./gameStats";
 import {
   readSetupPrefsFromStorage,
   readSetupPrefsFromUrl,
@@ -235,7 +228,7 @@ function restoreDropOrder(board: Board): string[] {
   return Array.from(board.keys()).sort((a, b) => {
     const [ax, ay, az] = a.split(",").map(Number);
     const [bx, by, bz] = b.split(",").map(Number);
-    return (ay! - by!) || (ax! - bx!) || (az! - bz!);
+    return ay! - by! || ax! - bx! || az! - bz!;
   });
 }
 
@@ -360,7 +353,11 @@ type GameState = {
    * Kept stable until every ball settles — mutating mid-flight restarts delays.
    */
   restoreFallingKeys: string[] | null;
-  /** performance.now() when restore drop-in began; absolute timeline for remounts. */
+  /**
+   * performance.now() when the scene began the restore drop-in clock.
+   * Null while armed (`restoreFallingKeys` set) but the canvas has not started
+   * framing yet — avoids skipping the whole stagger during WebGL mount.
+   */
   restoreStartedAt: number | null;
   /** Date.now() when the current match began — drives vs-AI level time stats. */
   matchStartedAt: number | null;
@@ -391,6 +388,11 @@ type GameState = {
   place: (coord: CellCoord) => boolean;
   applyRemotePlace: (coord: CellCoord, by: PlayerId) => boolean;
   finishDrop: () => void;
+  /**
+   * Stamp restoreStartedAt on the first scene frame after restore.
+   * Idempotent — safe under React Strict remounts.
+   */
+  startRestoreClock: () => void;
   /** One restored ball finished its drop-in bounce. */
   finishRestoreBall: (key: string) => void;
   displayName: (player: PlayerId) => string;
@@ -726,15 +728,7 @@ function scheduleAiMove(get: () => GameState, set: (partial: Partial<GameState>)
 
     // Bonus Extra place cannot finish — skip winning cells.
     if (afterSpend.bonusPlacesRemaining > 0) {
-      if (
-        wouldPlaceWin(
-          afterSpend.board,
-          preset.dims,
-          move,
-          AI_PLAYER,
-          afterSpend.placement,
-        )
-      ) {
+      if (wouldPlaceWin(afterSpend.board, preset.dims, move, AI_PLAYER, afterSpend.placement)) {
         const fallback = pickNonFinishingAiMove(
           afterSpend.board,
           preset.dims,
@@ -788,8 +782,7 @@ function pickNonFinishingAiMove(
   const move = pickAiMove(board, dims, difficulty, aiPlayer, occupiedCount, placement);
   if (move && !wouldPlaceWin(board, dims, move, aiPlayer, placement)) return move;
 
-  const cells =
-    placement === "drop" ? listDropLandings(board, dims) : listEmptyCells(board, dims);
+  const cells = placement === "drop" ? listDropLandings(board, dims) : listEmptyCells(board, dims);
   for (const cell of cells) {
     if (!wouldPlaceWin(board, dims, cell, aiPlayer, placement)) return cell;
   }
@@ -860,7 +853,10 @@ function maybeAiSpendPowerUp(get: () => GameState, set: (partial: Partial<GameSt
 }
 
 /** Flip the seat after an ordinary place when Extra is declined. */
-function endTurnInternal(get: () => GameState, set: (partial: Partial<GameState>) => void): boolean {
+function endTurnInternal(
+  get: () => GameState,
+  set: (partial: Partial<GameState>) => void,
+): boolean {
   const state = get();
   if (state.status !== "playing" || state.phase !== "playing") return false;
   if (!state.placedThisTurn || state.bonusPlacesRemaining > 0) return false;
@@ -2181,18 +2177,12 @@ export const useGameStore = create<GameState>((set, get) => ({
     const powerUpsEnabled = hotseat ? false : saved.powerUpsEnabled;
     const restoreKeys = restoreDropOrder(board);
     const startCursor =
-      saved.placement === "drop"
-        ? snapDropCursor(centerCell(dims), board, dims)
-        : centerCell(dims);
+      saved.placement === "drop" ? snapDropCursor(centerCell(dims), board, dims) : centerCell(dims);
     const animating = restoreKeys.length > 0;
     if (animating) beginRestoreSession();
     else clearRestoreSession();
     const playerNames =
-      saved.playMode === "ai"
-        ? nextVsAiNames()
-        : hotseat
-          ? { ...EMPTY_NAMES }
-          : get().playerNames;
+      saved.playMode === "ai" ? nextVsAiNames() : hotseat ? { ...EMPTY_NAMES } : get().playerNames;
     set({
       phase: "playing",
       playMode: saved.playMode,
@@ -2214,7 +2204,9 @@ export const useGameStore = create<GameState>((set, get) => ({
       fallingKey: null,
       dropBusy: animating,
       restoreFallingKeys: animating ? restoreKeys : null,
-      restoreStartedAt: animating ? performance.now() : null,
+      // Clock starts on first PhysicsMarkers frame — not here — so WebGL mount
+      // latency cannot skip the staggered drop-in.
+      restoreStartedAt: null,
       inventory: cloneInventory(saved.inventory),
       bonusPlacesRemaining: saved.bonusPlacesRemaining,
       placedThisTurn: false,
@@ -2707,22 +2699,11 @@ export const useGameStore = create<GameState>((set, get) => ({
         })
       ) {
         const preset = getPreset(state.presetId);
-        const resolved = resolvePlaceCoord(
-          state.board,
-          preset.dims,
-          state.cursor,
-          state.placement,
-        );
+        const resolved = resolvePlaceCoord(state.board, preset.dims, state.cursor, state.placement);
         // Don't spend Extra on an illegal / occupied aim — keep the window open.
         if (!resolved) return false;
         if (
-          wouldPlaceWin(
-            state.board,
-            preset.dims,
-            resolved,
-            state.currentPlayer,
-            state.placement,
-          )
+          wouldPlaceWin(state.board, preset.dims, resolved, state.currentPlayer, state.placement)
         ) {
           set({ powerUpToast: EXTRA_NO_FINISH_TOAST });
           return false;
@@ -2773,9 +2754,7 @@ export const useGameStore = create<GameState>((set, get) => ({
     // Leave the settled ball — snap aim to the next free cell in that column
     // (or stay on top if full) so the selection box never frames a placed sphere.
     const cursor =
-      state.placement === "drop"
-        ? snapDropCursor(state.cursor, state.board, dims)
-        : state.cursor;
+      state.placement === "drop" ? snapDropCursor(state.cursor, state.board, dims) : state.cursor;
     set({ dropBusy: false, fallingKey: null, pendingSwarmEarner: null, cursor });
     if (earner && get().status === "playing" && get().bonusPlacesRemaining === 0) {
       // Only swarm when the turn has flipped (earner !== current) or was a normal place
@@ -2793,6 +2772,13 @@ export const useGameStore = create<GameState>((set, get) => ({
     ) {
       scheduleAiMove(get, set);
     }
+  },
+
+  startRestoreClock: () => {
+    const state = get();
+    if (!state.restoreFallingKeys || state.restoreFallingKeys.length === 0) return;
+    if (state.restoreStartedAt != null) return;
+    set({ restoreStartedAt: performance.now() });
   },
 
   finishRestoreBall: (key) => {
