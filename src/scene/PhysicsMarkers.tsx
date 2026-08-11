@@ -112,8 +112,9 @@ function easeOutCubic(x: number): number {
   return 1 - (1 - x) ** 3;
 }
 
-/** Stagger window so restored balls don't all release at once. */
-const RESTORE_STAGGER_MAX_MS = 520;
+/** Per-ball delay for restore drop-in; capped so big boards don't wait forever. */
+const RESTORE_STAGGER_STEP_MS = 95;
+const RESTORE_STAGGER_MAX_MS = 1400;
 
 function FallingMarker({
   entry,
@@ -126,6 +127,7 @@ function FallingMarker({
 }) {
   const finishDrop = useGameStore((s) => s.finishDrop);
   const finishRestoreBall = useGameStore((s) => s.finishRestoreBall);
+  const restoreFallingKeys = useGameStore((s) => s.restoreFallingKeys);
   const restoreStartedAt = useGameStore((s) => s.restoreStartedAt);
   const meshRef = useRef<Mesh>(null);
   const finished = useRef(false);
@@ -139,7 +141,7 @@ function FallingMarker({
   const color = useMemo(() => new Color(PLAYER_COLORS[entry.player]), [entry.player]);
   const baseEmissive = 0.28;
   const delayMs = entry.delayMs;
-  const isRestore = restoreStartedAt != null;
+  const isRestore = restoreFallingKeys != null;
 
   useEffect(() => {
     // Restore uses an absolute store clock — don't reset on Strict remount.
@@ -166,7 +168,12 @@ function FallingMarker({
     const now = performance.now();
 
     let t: number;
-    if (isRestore && restoreStartedAt != null) {
+    if (isRestore) {
+      // Wait until PhysicsMarkers stamps the shared clock (first real frame).
+      if (restoreStartedAt == null) {
+        mesh.visible = false;
+        return;
+      }
       const elapsed = now - restoreStartedAt;
       if (elapsed < delayMs) {
         mesh.visible = false;
@@ -175,6 +182,8 @@ function FallingMarker({
       if (!released.current) {
         released.current = true;
         mesh.visible = true;
+        mesh.position.set(tx, spawnY, tz);
+        mesh.scale.set(1, 1, 1);
       }
       t = (elapsed - delayMs) / 1000;
     } else {
@@ -314,7 +323,17 @@ export function PhysicsMarkers({ dims, spacing = 1 }: PhysicsMarkersProps) {
   const winningCell = useGameStore((s) => s.winningCell);
   const fallingKey = useGameStore((s) => s.fallingKey);
   const restoreFallingKeys = useGameStore((s) => s.restoreFallingKeys);
+  const restoreStartedAt = useGameStore((s) => s.restoreStartedAt);
+  const startRestoreClock = useGameStore((s) => s.startRestoreClock);
   const hideKeys = useClearBurstKeySet();
+
+  // Arm the shared restore timeline on the first frame the scene can draw —
+  // not when restoreGame runs — so mount/WebGL latency cannot skip the drop-in.
+  useFrame(() => {
+    if (restoreFallingKeys != null && restoreStartedAt == null) {
+      startRestoreClock();
+    }
+  });
 
   const winSet = useMemo(() => {
     const set = new Set<string>();
@@ -322,15 +341,13 @@ export function PhysicsMarkers({ dims, spacing = 1 }: PhysicsMarkersProps) {
     return set;
   }, [winningLine]);
 
-  const winningMoveKey = winningCell
-    ? cellKey(winningCell.x, winningCell.y, winningCell.z)
-    : null;
+  const winningMoveKey = winningCell ? cellKey(winningCell.x, winningCell.y, winningCell.z) : null;
 
   const restoreDelayByKey = useMemo(() => {
     const map = new Map<string, number>();
     if (!restoreFallingKeys || restoreFallingKeys.length === 0) return map;
     const n = restoreFallingKeys.length;
-    const step = n <= 1 ? 0 : RESTORE_STAGGER_MAX_MS / (n - 1);
+    const step = n <= 1 ? 0 : Math.min(RESTORE_STAGGER_STEP_MS, RESTORE_STAGGER_MAX_MS / (n - 1));
     restoreFallingKeys.forEach((key, i) => {
       map.set(key, i * step);
     });
