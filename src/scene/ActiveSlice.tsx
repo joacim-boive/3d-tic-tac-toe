@@ -85,7 +85,7 @@ function sliceFrame(
 /**
  * Sticky depth highlight: every cell box on the active slice.
  * SelectionCursor owns updates; this only renders.
- * Stays visible after aim ends until the next game / axis change.
+ * Stays visible after aim ends until outside click, axis change, or reset.
  */
 export function ActiveSlice({ dims, spacing = 1 }: ActiveSliceProps) {
   const phase = useGameStore((s) => s.phase);

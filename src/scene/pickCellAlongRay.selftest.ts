@@ -4,7 +4,7 @@
 import { Vector3 } from "three";
 import { cellToWorld } from "@/game/board";
 import type { BoardDims } from "@/game/types";
-import { pickCellAlongRay } from "./pickCellAlongRay";
+import { pickCellAlongRay, rayIntersectsBoardAabb } from "./pickCellAlongRay";
 
 function assert(cond: unknown, msg: string): asserts cond {
   if (!cond) throw new Error(msg);
@@ -39,7 +39,45 @@ function testCornerCell() {
   assert(hit.x === 0 && hit.y === 0 && hit.z === 0, "should pick corner cell");
 }
 
+function testAabbHitAndMiss() {
+  const dims: BoardDims = { x: 3, y: 3, z: 3 };
+  // 3³ board AABB is ±1.5 on each axis.
+  assert(
+    rayIntersectsBoardAabb({
+      origin: new Vector3(0, 0, 8),
+      dir: new Vector3(0, 0, -1),
+      dims,
+    }),
+    "ray through board center should hit AABB",
+  );
+  assert(
+    !rayIntersectsBoardAabb({
+      origin: new Vector3(10, 0, 8),
+      dir: new Vector3(0, 0, -1),
+      dims,
+    }),
+    "ray past the side of the box should miss AABB",
+  );
+  assert(
+    !rayIntersectsBoardAabb({
+      origin: new Vector3(0, 0, 8),
+      dir: new Vector3(0, 0, 1),
+      dims,
+    }),
+    "ray pointing away from the board should miss",
+  );
+  assert(
+    rayIntersectsBoardAabb({
+      origin: new Vector3(0, 0, 0),
+      dir: new Vector3(0, 0, -1),
+      dims,
+    }),
+    "origin inside the box counts as a hit",
+  );
+}
+
 testHitsFrontCellAlongRay();
 testMissesBoard();
 testCornerCell();
+testAabbHitAndMiss();
 console.log("pickCellAlongRay.selftest: ok");
