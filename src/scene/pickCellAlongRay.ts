@@ -2,15 +2,61 @@ import { Vector3 } from "three";
 import { cellToWorld, worldToCell } from "@/game/board";
 import type { BoardDims, CellCoord } from "@/game/types";
 
-type PickCellAlongRayArgs = {
+type RayBoardArgs = {
   origin: Vector3;
   dir: Vector3;
   dims: BoardDims;
   spacing?: number;
+};
+
+type PickCellAlongRayArgs = RayBoardArgs & {
   /** Scratch vectors — reused by callers that run this every frame. */
   point?: Vector3;
   center?: Vector3;
 };
+
+/**
+ * True when a camera ray intersects the board AABB (lattice outer extent).
+ * Used to dismiss sticky depth when clicking empty space around the box.
+ */
+export function rayIntersectsBoardAabb({
+  origin,
+  dir,
+  dims,
+  spacing = 1,
+}: RayBoardArgs): boolean {
+  const halfX = (dims.x * spacing) / 2;
+  const halfY = (dims.y * spacing) / 2;
+  const halfZ = (dims.z * spacing) / 2;
+
+  let tMin = 0;
+  let tMax = Number.POSITIVE_INFINITY;
+
+  const slabs: Array<[number, number, number]> = [
+    [origin.x, dir.x, halfX],
+    [origin.y, dir.y, halfY],
+    [origin.z, dir.z, halfZ],
+  ];
+
+  for (const [o, d, half] of slabs) {
+    if (Math.abs(d) < 1e-12) {
+      if (o < -half || o > half) return false;
+      continue;
+    }
+    let t1 = (-half - o) / d;
+    let t2 = (half - o) / d;
+    if (t1 > t2) {
+      const swap = t1;
+      t1 = t2;
+      t2 = swap;
+    }
+    tMin = Math.max(tMin, t1);
+    tMax = Math.min(tMax, t2);
+    if (tMin > tMax) return false;
+  }
+
+  return tMax >= tMin;
+}
 
 /**
  * Walk a camera ray through the board AABB and return the cell whose center

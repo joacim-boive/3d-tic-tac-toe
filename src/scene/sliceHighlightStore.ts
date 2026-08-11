@@ -4,7 +4,7 @@ import { create } from "zustand";
 import type { SliceHighlight } from "./facingSliceAxis";
 
 type SliceHighlightState = {
-  /** Sticky aim-depth plane — survives orbit until axis changes or game resets. */
+  /** Sticky aim-depth plane — survives orbit until cleared (outside click / reset). */
   slice: SliceHighlight | null;
   setSlice: (slice: SliceHighlight) => void;
   clearSlice: () => void;

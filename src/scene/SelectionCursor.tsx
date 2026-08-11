@@ -8,6 +8,7 @@ import { useGameStore } from "@/game/store";
 import { PLAYER_COLORS, type BoardDims } from "@/game/types";
 import type { SliceAxis } from "./facingSliceAxis";
 import { deepDirection } from "./facingSliceAxis";
+import { rayIntersectsBoardAabb } from "./pickCellAlongRay";
 import { pickCellOnDepthPlane } from "./pickCellOnDepthPlane";
 import { useSliceHighlightStore } from "./sliceHighlightStore";
 import {
@@ -53,6 +54,7 @@ type ModifierDepthSession = {
  * Touch: while aiming, plant a second finger + vertical drag = depth (orbit stays off).
  * Two fingers from rest = orbit/pinch. Desktop: Shift+scroll / Q/E = depth.
  * Aim preview is the cell box only (no ghost marker ball). Click/tap moves aim; Space places.
+ * Click/tap outside the board box clears the sticky depth plane (easier to review the box).
  * Power-ups: swarm blocks pointers; clear-row tap cycles axis (cursor mesh hidden).
  */
 export function SelectionCursor({ dims, spacing = 1 }: SelectionCursorProps) {
@@ -153,14 +155,29 @@ export function SelectionCursor({ dims, spacing = 1 }: SelectionCursorProps) {
     setCursor({ ...cur, [axis]: depth });
   };
 
-  const pickOnDepth = (clientX: number, clientY: number, axis: SliceAxis, depth: number) => {
+  const setClientRay = (clientX: number, clientY: number): boolean => {
     const rect = gl.domElement.getBoundingClientRect();
-    if (rect.width <= 0 || rect.height <= 0) return;
+    if (rect.width <= 0 || rect.height <= 0) return false;
     ndc.set(
       ((clientX - rect.left) / rect.width) * 2 - 1,
       -((clientY - rect.top) / rect.height) * 2 + 1,
     );
     raycaster.setFromCamera(ndc, camera);
+    return true;
+  };
+
+  const clientRayHitsBoard = (clientX: number, clientY: number): boolean => {
+    if (!setClientRay(clientX, clientY)) return false;
+    return rayIntersectsBoardAabb({
+      origin: raycaster.ray.origin,
+      dir: raycaster.ray.direction,
+      dims,
+      spacing,
+    });
+  };
+
+  const pickOnDepth = (clientX: number, clientY: number, axis: SliceAxis, depth: number) => {
+    if (!setClientRay(clientX, clientY)) return;
     const hit = pickCellOnDepthPlane({
       origin: raycaster.ray.origin,
       dir: raycaster.ray.direction,
@@ -192,6 +209,8 @@ export function SelectionCursor({ dims, spacing = 1 }: SelectionCursorProps) {
   beginAimSessionRef.current = beginAimSession;
   const pickOnDepthRef = useRef(pickOnDepth);
   pickOnDepthRef.current = pickOnDepth;
+  const clientRayHitsBoardRef = useRef(clientRayHitsBoard);
+  clientRayHitsBoardRef.current = clientRayHitsBoard;
   const ensureStickyRef = useRef(ensureSticky);
   ensureStickyRef.current = ensureSticky;
   const publishStickyRef = useRef(publishSticky);
@@ -595,19 +614,21 @@ export function SelectionCursor({ dims, spacing = 1 }: SelectionCursorProps) {
       }
 
       // Clear mode: tap/click cycles axis. Click/tap (no drag) moves aim only — Space places.
+      // Click/tap outside the board box clears sticky depth so the box is easier to review.
       if (!active || moved || touchAim || multi) return;
       if (status !== "playing" || dropBusyRef.current || swarmBusyRef.current) return;
       if (clearModeRef.current) {
         cycleClearAxisRef.current();
         return;
       }
+      const { x: clickX, y: clickY } = pendingAimRef.current;
+      if (!clientRayHitsBoardRef.current(clickX, clickY)) {
+        clearSticky();
+        stickyRef.current = null;
+        return;
+      }
       const stickyNow = ensureStickyRef.current();
-      pickOnDepthRef.current(
-        pendingAimRef.current.x,
-        pendingAimRef.current.y,
-        stickyNow.axis,
-        stickyNow.index,
-      );
+      pickOnDepthRef.current(clickX, clickY, stickyNow.axis, stickyNow.index);
     };
 
     el.addEventListener("pointerdown", onDown);
