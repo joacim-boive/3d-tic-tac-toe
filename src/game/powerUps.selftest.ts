@@ -160,11 +160,14 @@ function testExtraTurnBannedOn3x3x3() {
   assert(isPowerUpAllowed("clear-row", "3x3x3"), "clear ok");
   assert(isPowerUpAllowed("tip", "3x3x3"), "tip ok");
   assert(isPowerUpAllowed("extra-turn", "7x6"), "extra ok on flat 7×6");
+  assert(!isPowerUpAllowed("tip", "7x6"), "tip banned on flat 7×6");
+  assert(isPowerUpAllowed("clear-row", "7x6"), "clear ok on flat");
   assert(isPowerUpAllowed("extra-turn", "4x4x4"), "extra ok on 4³");
-  assert(powerUpsForPreset("7x6").length === 3, "all kinds on flat 7×6");
+  assert(powerUpsForPreset("7x6").length === 2, "two kinds on flat 7×6");
   assert(powerUpsForPreset("3x3x3").length === 2, "two kinds on 3³");
   assert(underCapKinds(emptyCounts(), "3x3x3").length === 2, "underCap skips extra");
   assert(awardPowerUp(emptyCounts(), "extra-turn", "3x3x3") === null, "cannot award extra");
+  assert(awardPowerUp(emptyCounts(), "tip", "7x6") === null, "cannot award tip on flat");
   const kind = pickRandomKind(emptyCounts(), () => 0, "3x3x3");
   assert(kind !== "extra-turn", "pick never returns extra on 3³");
 }
