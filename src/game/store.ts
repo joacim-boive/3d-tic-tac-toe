@@ -1306,6 +1306,10 @@ export const useGameStore = create<GameState>((set, get) => ({
     if (presetId === "3x3x3" && get().aiDifficulty === "extreme") {
       patch.aiDifficulty = "hard";
     }
+    // Flat 7×6 plays like Connect Four — Drop is the natural default.
+    if (presetId === "7x6") {
+      patch.placement = "drop";
+    }
     set(patch);
     persistSetupPrefs(get());
   },
