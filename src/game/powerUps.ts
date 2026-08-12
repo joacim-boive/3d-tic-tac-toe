@@ -61,10 +61,15 @@ export type Rng = () => number;
  * Extra turn is banned on 3×3×3 — a second place after one mark is often an
  * instant forced win on win-length 3. On larger boards Extra activates only
  * after the ordinary place, and the bonus ball cannot finish a line.
+ *
+ * Tip is banned on flat 7×6 — tipping a one-cell-deep slab is meaningless.
  */
 export function powerUpsForPreset(presetId: PresetId): readonly PowerUpId[] {
   if (presetId === "3x3x3") {
     return POWER_UP_IDS.filter((id) => id !== "extra-turn");
+  }
+  if (presetId === "7x6") {
+    return POWER_UP_IDS.filter((id) => id !== "tip");
   }
   return POWER_UP_IDS;
 }

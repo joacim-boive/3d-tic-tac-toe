@@ -5,7 +5,7 @@ import { BoxGeometry, EdgesGeometry, InstancedMesh, Object3D } from "three";
 import { cellToWorld } from "@/game/board";
 import { useGameStore } from "@/game/store";
 import type { BoardDims, CellCoord } from "@/game/types";
-import type { SliceAxis } from "./facingSliceAxis";
+import { isFlatBoard, type SliceAxis } from "./facingSliceAxis";
 import { useSliceHighlightStore } from "./sliceHighlightStore";
 
 type ActiveSliceProps = {
@@ -94,7 +94,7 @@ export function ActiveSlice({ dims, spacing = 1 }: ActiveSliceProps) {
 
   const cellSize = spacing * 0.96;
   const cells = useMemo(() => {
-    if (!slice) return [];
+    if (!slice || isFlatBoard(dims)) return [];
     return sliceCells(slice.axis, slice.index, dims);
   }, [slice, dims]);
 
@@ -102,7 +102,7 @@ export function ActiveSlice({ dims, spacing = 1 }: ActiveSliceProps) {
   const edgesGeo = useMemo(() => new EdgesGeometry(boxGeo), [boxGeo]);
 
   const frame = useMemo(() => {
-    if (!slice) return null;
+    if (!slice || isFlatBoard(dims)) return null;
     return sliceFrame(slice.axis, slice.index, dims, spacing, cellSize);
   }, [slice, dims, spacing, cellSize]);
 

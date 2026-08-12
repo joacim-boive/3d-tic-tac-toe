@@ -37,11 +37,12 @@ Without these vars, auth returns 503 and Online create/join fails.
 
 | Preset | Board | Win length |
 | ------ | ----- | ---------- |
+| 7×6    | 7×6×1 | 4          |
 | 3×3×3  | 3³    | 3          |
 | 4×4×4  | 4³    | 4          |
 | 5×5×4  | 5×5×4 | 4          |
 
-Win length follows the board’s Z depth. Lines count along axes, face diagonals, and space diagonals. Mid/large presets need four in a row so Drop and Free games stay competitive past the opening.
+Win length defaults to the board’s Z depth; flat boards set it explicitly (classic 7×6 is one cell deep with 4 in a row). Lines count along axes, face diagonals, and space diagonals. Mid/large presets need four in a row so Drop and Free games stay competitive past the opening.
 
 ## Stack
 

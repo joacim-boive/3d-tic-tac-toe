@@ -47,6 +47,7 @@ function testPowerUpsFlag() {
 function testLegacyPresetId() {
   const prefs = parseSetupPrefs({ presetId: "4x4x3" });
   assert(prefs.presetId === "4x4x4", "legacy 4x4x3 → 4x4x4");
+  assert(parseSetupPrefs({ presetId: "3x3" }).presetId === "7x6", "legacy flat 3x3 → 7x6");
 }
 
 function testIgnoresJunk() {

@@ -11,7 +11,7 @@ import {
 } from "three";
 import { cellToWorld } from "@/game/board";
 import type { BoardDims } from "@/game/types";
-import type { SliceAxis } from "./facingSliceAxis";
+import { isFlatBoard, type SliceAxis } from "./facingSliceAxis";
 import { useSliceHighlightStore } from "./sliceHighlightStore";
 
 type GridProps = {
@@ -178,7 +178,7 @@ export function Grid({ dims, spacing = 1 }: GridProps) {
     uniforms.uNear.value = fadeNear;
     uniforms.uFar.value = fadeFar;
     uniforms.uSliceFalloff.value = sliceFalloff;
-    if (slice) {
+    if (slice && !isFlatBoard(dims)) {
       uniforms.uSliceAxis.value.copy(axisUnit(slice.axis));
       uniforms.uSlicePos.value = sliceWorldPos(slice.axis, slice.index, dims, spacing);
       uniforms.uSliceActive.value = 1;

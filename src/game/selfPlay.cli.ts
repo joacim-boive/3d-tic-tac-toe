@@ -29,7 +29,7 @@ function printHelp() {
   console.log(`Usage: eval:selfplay [options]
 
 Options:
-  --preset <id|all>       3x3x3 | 4x4x4 | 5x5x4 | all   (default: all)
+  --preset <id|all>       7x6 | 3x3x3 | 4x4x4 | 5x5x4 | all   (default: all)
   --placement <mode>      free | drop | both            (default: both)
   --difficulty <level>    easy | medium | hard | extreme  (default: medium)
   --games <n>             games per preset×placement    (default: 2000)
