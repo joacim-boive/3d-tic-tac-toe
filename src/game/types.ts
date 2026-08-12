@@ -23,7 +23,7 @@ export type CellCoord = {
 
 /**
  * Board extent along each axis.
- * Win length defaults to `z`; optional `w` overrides (e.g. flat 3×3 with z=1, w=3).
+ * Win length defaults to `z`; optional `w` overrides (e.g. flat 7×6 with z=1, w=4).
  */
 export type BoardDims = {
   x: number;
@@ -33,7 +33,7 @@ export type BoardDims = {
   w?: number;
 };
 
-export type PresetId = "3x3" | "3x3x3" | "4x4x4" | "5x5x4";
+export type PresetId = "7x6" | "3x3x3" | "4x4x4" | "5x5x4";
 
 export type GamePreset = {
   id: PresetId;

@@ -2,17 +2,17 @@ import type { BoardDims, GamePreset, PresetId } from "./types";
 import { MAX_BOARD_SIZE, winLength } from "./types";
 
 /**
- * Win length defaults to Z; flat boards set `w` explicitly (classic 3×3).
+ * Win length defaults to Z; flat boards set `w` explicitly (7×6 needs 4-in-a-row).
  * Larger footprints with only 3-in-a-row (old 4×4×3 / 5×5×3) let the starter
  * force wins too easily — especially in Drop — so mid/large presets require
  * 4-in-a-row on deeper boards.
  */
 export const PRESETS: readonly GamePreset[] = [
   {
-    id: "3x3",
-    label: "3×3",
-    description: "Classic flat · 3 in a row",
-    dims: { x: 3, y: 3, z: 1, w: 3 },
+    id: "7x6",
+    label: "7×6",
+    description: "Classic flat · 4 in a row",
+    dims: { x: 7, y: 6, z: 1, w: 4 },
   },
   {
     id: "3x3x3",
@@ -56,6 +56,7 @@ export function getPreset(id: PresetId): GamePreset {
 export function resolvePresetId(id: string): PresetId {
   if (id === "4x4x3") return "4x4x4";
   if (id === "5x5x3") return "5x5x4";
-  if (id === "3x3" || id === "3x3x3" || id === "4x4x4" || id === "5x5x4") return id;
+  if (id === "3x3") return "7x6";
+  if (id === "7x6" || id === "3x3x3" || id === "4x4x4" || id === "5x5x4") return id;
   return "3x3x3";
 }

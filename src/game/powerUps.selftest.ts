@@ -155,13 +155,13 @@ function testPickKindRespectsCap() {
   assert(kind === "tip", "only tip open");
 }
 
-function testExtraTurnBannedOnTinyBoards() {
-  assert(!isPowerUpAllowed("extra-turn", "3x3"), "extra banned on flat");
+function testExtraTurnBannedOn3x3x3() {
   assert(!isPowerUpAllowed("extra-turn", "3x3x3"), "extra banned");
   assert(isPowerUpAllowed("clear-row", "3x3x3"), "clear ok");
   assert(isPowerUpAllowed("tip", "3x3x3"), "tip ok");
+  assert(isPowerUpAllowed("extra-turn", "7x6"), "extra ok on flat 7×6");
   assert(isPowerUpAllowed("extra-turn", "4x4x4"), "extra ok on 4³");
-  assert(powerUpsForPreset("3x3").length === 2, "two kinds on flat 3×3");
+  assert(powerUpsForPreset("7x6").length === 3, "all kinds on flat 7×6");
   assert(powerUpsForPreset("3x3x3").length === 2, "two kinds on 3³");
   assert(underCapKinds(emptyCounts(), "3x3x3").length === 2, "underCap skips extra");
   assert(awardPowerUp(emptyCounts(), "extra-turn", "3x3x3") === null, "cannot award extra");
@@ -374,7 +374,7 @@ testInventoryCaps();
 testSwarmGate();
 testPlanSwarmDeterministic();
 testPickKindRespectsCap();
-testExtraTurnBannedOnTinyBoards();
+testExtraTurnBannedOn3x3x3();
 testAiCatch();
 testRaceEndPopped();
 testAiGrabDelay();

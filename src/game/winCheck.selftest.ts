@@ -66,27 +66,38 @@ function testWinLengthIsZ() {
 }
 
 function testFlatClassicWin() {
-  // Classic 3×3: one cell deep, win length overridden via w=3
-  const dims: BoardDims = { x: 3, y: 3, z: 1, w: 3 };
+  // Classic 7×6: one cell deep, win length overridden via w=4
+  const dims: BoardDims = { x: 7, y: 6, z: 1, w: 4 };
   const board = createEmptyBoard();
   placeLine(board, "a", [
     { x: 0, y: 0, z: 0 },
     { x: 1, y: 1, z: 0 },
+    { x: 2, y: 2, z: 0 },
   ]);
-  board.set(cellKey(2, 2, 0), "a");
-  const win = checkWin(board, dims, { x: 2, y: 2, z: 0 }, "a");
-  assert(win !== null, "flat diagonal should win with w=3");
-  assert(win.line.length === 3, "classic line length");
+  board.set(cellKey(3, 3, 0), "a");
+  const win = checkWin(board, dims, { x: 3, y: 3, z: 0 }, "a");
+  assert(win !== null, "flat diagonal should win with w=4");
+  assert(win.line.length === 4, "classic line length");
 }
 
 function testFlatNeedsExplicitWinLength() {
   // Without w, win length would be z=1 — a single cell "wins"
-  const dims: BoardDims = { x: 3, y: 3, z: 1 };
+  const dims: BoardDims = { x: 7, y: 6, z: 1 };
   const board = createEmptyBoard();
-  board.set(cellKey(1, 1, 0), "a");
-  const win = checkWin(board, dims, { x: 1, y: 1, z: 0 }, "a");
+  board.set(cellKey(3, 2, 0), "a");
+  const win = checkWin(board, dims, { x: 3, y: 2, z: 0 }, "a");
   assert(win !== null, "z=1 without w means need=1");
   assert(win.line.length === 1, "single-cell win when need=1");
+}
+
+function testFlatThreeIsNotEnough() {
+  const dims: BoardDims = { x: 7, y: 6, z: 1, w: 4 };
+  const board = createEmptyBoard();
+  board.set(cellKey(0, 0, 0), "a");
+  board.set(cellKey(1, 0, 0), "a");
+  board.set(cellKey(2, 0, 0), "a");
+  const win = checkWin(board, dims, { x: 2, y: 0, z: 0 }, "a");
+  assert(win === null, "3 < w=4 must not win on flat board");
 }
 
 function testDirectionCount() {
@@ -115,6 +126,7 @@ testNoFalseWin();
 testWinLengthIsZ();
 testFlatClassicWin();
 testFlatNeedsExplicitWinLength();
+testFlatThreeIsNotEnough();
 testDirectionCount();
 testWouldPlaceWin();
 console.log("winCheck.selftest: ok");

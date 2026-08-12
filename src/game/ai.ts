@@ -57,9 +57,9 @@ export type AiSearchOptions = {
   maxDepth?: number;
 };
 
-/** Extreme is offered on boards larger than classic 3×3 / 3×3×3. */
+/** Extreme is offered on boards larger than classic 3×3×3. */
 export function isExtremeAllowed(presetId: PresetId): boolean {
-  return presetId !== "3x3" && presetId !== "3x3x3";
+  return presetId !== "3x3x3";
 }
 
 function opponentOf(player: PlayerId): PlayerId {

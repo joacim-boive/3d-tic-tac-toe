@@ -114,7 +114,7 @@ function testBlocksOpponentFork() {
 }
 
 function testExtremeAllowedPresets() {
-  assert(!isExtremeAllowed("3x3"), "no Extreme on flat 3×3");
+  assert(isExtremeAllowed("7x6"), "Extreme on flat 7×6");
   assert(!isExtremeAllowed("3x3x3"), "no Extreme on 3×3×3");
   assert(isExtremeAllowed("4x4x4"), "Extreme on 4×4×4");
   assert(isExtremeAllowed("5x5x4"), "Extreme on 5×5×4");

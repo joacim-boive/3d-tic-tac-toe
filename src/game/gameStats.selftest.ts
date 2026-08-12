@@ -54,7 +54,7 @@ function testNextHarder() {
   assert(nextHarderDifficulty("medium", "4x4x4") === "hard", "medium→hard");
   assert(nextHarderDifficulty("hard", "4x4x4") === "extreme", "hard→extreme");
   assert(nextHarderDifficulty("extreme", "4x4x4") === null, "extreme max");
-  assert(nextHarderDifficulty("hard", "3x3") === null, "flat 3×3 hard is max");
+  assert(nextHarderDifficulty("hard", "7x6") === "extreme", "flat 7×6 hard→extreme");
   assert(nextHarderDifficulty("hard", "3x3x3") === null, "3³ hard is max");
   assert(nextHarderDifficulty("medium", "3x3x3") === "hard", "3³ medium→hard");
 }
