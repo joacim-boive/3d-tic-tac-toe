@@ -3,6 +3,7 @@ import {
   deepDirection,
   facingAxis,
   nearDepthIndex,
+  thinAxis,
   type SliceAxis,
   type SliceHighlight,
 } from "./facingSliceAxis";
@@ -20,6 +21,8 @@ export function reconcileStickyDepth(
   dims: BoardDims,
   placement: Placement,
 ): SliceHighlight {
+  const thin = thinAxis(dims);
+  if (thin) return { axis: thin, index: 0 };
   const axis = facingAxis(camPos, placement);
   if (sticky && sticky.axis === axis) {
     const max = dims[axis] - 1;

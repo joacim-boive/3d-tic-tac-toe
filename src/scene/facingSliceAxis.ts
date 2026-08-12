@@ -12,6 +12,21 @@ export type SliceHighlight = {
 type CamPos = Pick<Vector3, "x" | "y" | "z">;
 
 /**
+ * Axis whose extent is 1 on a single-cell-deep slab (e.g. flat 7×6), else null.
+ * Sticky layer highlight is meaningless on these boards.
+ */
+export function thinAxis(dims: BoardDims): SliceAxis | null {
+  if (dims.x === 1) return "x";
+  if (dims.y === 1) return "y";
+  if (dims.z === 1) return "z";
+  return null;
+}
+
+export function isFlatBoard(dims: BoardDims): boolean {
+  return thinAxis(dims) !== null;
+}
+
+/**
  * Board axis most aligned with the camera (face-on plane normal).
  * Drop mode ignores Y — depth is horizontal; gravity owns vertical.
  */

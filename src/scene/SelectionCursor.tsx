@@ -6,8 +6,7 @@ import { BoxGeometry, EdgesGeometry, Raycaster, Vector2, Vector3 } from "three";
 import { cellKey, cellToWorld, wouldPlaceWin } from "@/game/board";
 import { useGameStore } from "@/game/store";
 import { PLAYER_COLORS, type BoardDims } from "@/game/types";
-import type { SliceAxis } from "./facingSliceAxis";
-import { deepDirection } from "./facingSliceAxis";
+import { deepDirection, isFlatBoard, type SliceAxis } from "./facingSliceAxis";
 import { rayIntersectsBoardAabb } from "./pickCellAlongRay";
 import { pickCellOnDepthPlane } from "./pickCellOnDepthPlane";
 import { useSliceHighlightStore } from "./sliceHighlightStore";
@@ -132,6 +131,12 @@ export function SelectionCursor({ dims, spacing = 1 }: SelectionCursorProps) {
 
   const publishSticky = (axis: SliceAxis, depth: number) => {
     const next = { axis, index: clampDepthIndex(depth, axis, dims) };
+    // Flat boards have no depth layers — never show a selected slice.
+    if (isFlatBoard(dims)) {
+      clearSticky();
+      stickyRef.current = null;
+      return next;
+    }
     setSticky(next);
     stickyRef.current = next;
     return next;
@@ -144,6 +149,11 @@ export function SelectionCursor({ dims, spacing = 1 }: SelectionCursorProps) {
       dims,
       placementRef.current,
     );
+    if (isFlatBoard(dims)) {
+      clearSticky();
+      stickyRef.current = null;
+      return next;
+    }
     setSticky(next);
     stickyRef.current = next;
     return next;
@@ -254,23 +264,25 @@ export function SelectionCursor({ dims, spacing = 1 }: SelectionCursorProps) {
   });
 
   // New / empty board → clear sticky depth once (do not clear when aim ends).
+  // Flat boards never keep a sticky layer highlight.
   useEffect(() => {
-    if (occupiedCount !== 0) return;
+    if (occupiedCount !== 0 && !isFlatBoard(dims)) return;
     clearSticky();
     stickyRef.current = null;
-  }, [occupiedCount, clearSticky]);
+  }, [occupiedCount, dims, clearSticky]);
 
   // WASD along the depth axis updates sticky to match.
   useEffect(() => {
+    if (isFlatBoard(dims)) return;
     const s = stickyRef.current;
     if (!s) return;
     const along = cursor[s.axis];
     if (along !== s.index) publishStickyRef.current(s.axis, along);
-  }, [cursor]);
+  }, [cursor, dims]);
 
   // Q/E + Shift+two-finger scroll = depth. Plain scroll orbits in GameCanvas.
   useEffect(() => {
-    if (status !== "playing") return;
+    if (status !== "playing" || isFlatBoard(dims)) return;
 
     let wheelAccum = 0;
 
@@ -354,6 +366,7 @@ export function SelectionCursor({ dims, spacing = 1 }: SelectionCursorProps) {
     };
 
     const beginModifierDepth = () => {
+      if (isFlatBoard(dims)) return;
       const stickyNow = ensureStickyRef.current();
       modDepthRef.current = {
         startDepth: stickyNow.index,
@@ -471,7 +484,7 @@ export function SelectionCursor({ dims, spacing = 1 }: SelectionCursorProps) {
       if (count >= 2) {
         clearAimDelay();
         // Already aiming → second finger is a depth modifier (orbit stays paused).
-        if (touch && shouldEnterModifierDepth(dragRef.current.touchAim, count)) {
+        if (touch && !isFlatBoard(dims) && shouldEnterModifierDepth(dragRef.current.touchAim, count)) {
           beginModifierDepth();
           return;
         }
