@@ -66,7 +66,7 @@ export type WinResult = {
   line: CellCoord[];
 };
 
-/** Check win from the cell just played. Win length = dims.z. */
+/** Check win from the cell just played. Win length = dims.w ?? dims.z. */
 export function checkWin(
   board: Board,
   dims: BoardDims,

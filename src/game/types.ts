@@ -21,14 +21,19 @@ export type CellCoord = {
   z: number;
 };
 
-/** Board extent along each axis. Win length is always `z`. */
+/**
+ * Board extent along each axis.
+ * Win length defaults to `z`; optional `w` overrides (e.g. flat 3×3 with z=1, w=3).
+ */
 export type BoardDims = {
   x: number;
   y: number;
   z: number;
+  /** Explicit win-in-a-row; when omitted, equals `z`. */
+  w?: number;
 };
 
-export type PresetId = "3x3x3" | "4x4x4" | "5x5x4";
+export type PresetId = "3x3" | "3x3x3" | "4x4x4" | "5x5x4";
 
 export type GamePreset = {
   id: PresetId;
@@ -51,7 +56,7 @@ export const PLAYER_LABELS: Record<PlayerId, string> = {
 };
 
 export function winLength(dims: BoardDims): number {
-  return dims.z;
+  return dims.w ?? dims.z;
 }
 
 export function cellCount(dims: BoardDims): number {

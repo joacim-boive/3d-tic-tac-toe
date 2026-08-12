@@ -58,12 +58,13 @@ export type SwarmTapOutcome = "dud" | "claim" | "deny";
 export type Rng = () => number;
 
 /**
- * Extra turn is banned on 3×3×3 — a second place after one mark is often an
- * instant forced win on win-length 3. On larger boards Extra activates only
- * after the ordinary place, and the bonus ball cannot finish a line.
+ * Extra turn is banned on win-length-3 tiny boards (3×3 flat / 3×3×3) — a
+ * second place after one mark is often an instant forced win. On larger boards
+ * Extra activates only after the ordinary place, and the bonus ball cannot
+ * finish a line.
  */
 export function powerUpsForPreset(presetId: PresetId): readonly PowerUpId[] {
-  if (presetId === "3x3x3") {
+  if (presetId === "3x3" || presetId === "3x3x3") {
     return POWER_UP_IDS.filter((id) => id !== "extra-turn");
   }
   return POWER_UP_IDS;
